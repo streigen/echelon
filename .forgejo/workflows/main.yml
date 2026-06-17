@@ -21,7 +21,6 @@ jobs:
           - platform: 'windows-latest'
             args: ''
 
-    runs-on: hetz
     steps:
       - uses: actions/checkout@v4
 
