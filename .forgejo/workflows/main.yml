@@ -27,6 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-known-hosts: 'git.flaxeneel2.net'
 
       - name: setup node
         uses: actions/setup-node@v4
