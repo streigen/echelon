@@ -28,17 +28,16 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
           chmod 400 ~/.ssh/config
-          alias bun="npm"
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
 
-      - name: setup node
-        uses: actions/setup-node@v4
+      - name: setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: lts/*
+          bun-version: "1.3.9"
 
       - name: install Rust stable
         uses: https://github.com/dtolnay/rust-toolchain@stable
