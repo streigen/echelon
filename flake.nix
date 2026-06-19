@@ -91,9 +91,6 @@
             # 1. Stops gradle from trying to download its own tools
             # 2. Forces gradle to use the nix version of aapt2, so nix does not crash out
             export GRADLE_OPTS="-Dorg.gradle.project.android.sdk.channel=0 -Dorg.gradle.project.android.builder.sdkDownload=false -Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/35.0.0/aapt2"
-            if command -v fish >/dev/null 2>&1; then
-              exec fish
-            fi
           '';
         };
       }

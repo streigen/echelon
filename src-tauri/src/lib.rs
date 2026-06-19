@@ -34,7 +34,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
 
-            keyring::use_native_store(true)?;
+            keyring_init();
 
             #[cfg(target_os = "android")]
             {
@@ -106,4 +106,39 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+
+fn keyring_init() {
+    #[cfg(target_os = "android")]
+    {
+        use android_native_keyring_store::Store as AndroidStore;
+        keyring_core::set_default_store(
+            AndroidStore::new().expect("Failed to initialize Android KeyStore")
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        use apple_native_keyring_store::Store as AppleStore;
+        keyring_core::set_default_store(
+            AppleStore::new().expect("Failed to initialize Apple Keychain store")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows_native_keyring_store::Store as WindowsStore;
+        keyring_core::set_default_store(
+            WindowsStore::new().expect("Failed to initialize Windows Credential Manager store")
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use linux_keyutils_keyring_store::Store as LinuxStore;
+        keyring_core::set_default_store(
+            LinuxStore::new().expect("Failed to initialize Linux Keyutils store")
+        );
+    }
 }
