@@ -28,6 +28,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
           chmod 400 ~/.ssh/config
+          alias bun="npm"
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
