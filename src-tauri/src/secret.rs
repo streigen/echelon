@@ -1,7 +1,8 @@
 use crate::keyring_client::KeyringClient;
+use crate::stronghold_backend::{commit_store, open_store};
 use anyhow::Result;
 use blake3;
-use iota_stronghold::{ClientError, KeyProvider, SnapshotPath, Stronghold};
+use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use rand::distr::{Alphanumeric, SampleString};
 use std::path::PathBuf;
 
@@ -70,27 +71,9 @@ impl SecretService {
     ) -> Result<Option<(Stronghold, iota_stronghold::Store, KeyProvider, SnapshotPath)>> {
         let key_provider = self.key_provider(user_id)?;
         let snapshot_path = self.snapshot_path(user_id);
-        let stronghold = Stronghold::default();
 
-        match stronghold.load_snapshot(&key_provider, &snapshot_path) {
-            Ok(()) => {}
-            Err(ClientError::SnapshotFileMissing(_)) if create_if_missing => {
-                // Snapshot does not exist yet. we will create it on commit.
-            }
-            Err(ClientError::SnapshotFileMissing(_)) => return Ok(None),
-            Err(e) => return Err(e.into()),
-        }
-
-        let client = match stronghold.load_client(user_id) {
-            Ok(c) => c,
-            Err(ClientError::ClientDataNotPresent) if create_if_missing => {
-                stronghold.create_client(user_id)?
-            }
-            Err(ClientError::ClientDataNotPresent) => return Ok(None),
-            Err(e) => return Err(e.into()),
-        };
-
-        Ok(Some((stronghold, client.store(), key_provider, snapshot_path)))
+        let opened = open_store(&key_provider, &snapshot_path, user_id, create_if_missing)?;
+        Ok(opened.map(|(stronghold, store)| (stronghold, store, key_provider, snapshot_path)))
     }
 
     /// Commit changes to disk.
@@ -108,7 +91,7 @@ impl SecretService {
         key_provider: &KeyProvider,
         snapshot_path: &SnapshotPath,
     ) -> Result<()> {
-        Ok(stronghold.commit_with_keyprovider(snapshot_path, key_provider)?)
+        commit_store(stronghold, key_provider, snapshot_path)
     }
 
 
@@ -123,7 +106,9 @@ impl SecretService {
     /// Returns `Ok(())` on success.
     pub fn set_session(&self, session: &Session) -> Result<()> {
         let (stronghold, store, key_provider, snapshot_path) =
-            self.open_store(&session.user_id, true)?.unwrap();
+            self
+                .open_store(&session.user_id, true)?
+                .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
 
         store.insert(b"user_id".to_vec(), session.user_id.as_bytes().to_vec(), None)?;
         store.insert(b"device_id".to_vec(), session.device_id.as_bytes().to_vec(), None)?;
@@ -204,7 +189,9 @@ impl SecretService {
     ///
     pub fn get_or_create_sqlite_pwd(&self, user_id: &str) -> Result<String> {
         let (stronghold, store, key_provider, snapshot_path) =
-            self.open_store(user_id, true)?.unwrap();
+            self
+                .open_store(user_id, true)?
+                .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
 
         if let Some(bytes) = store.get(b"sqlite_password")? {
             return Ok(String::from_utf8(bytes)?);

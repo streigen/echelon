@@ -1,10 +1,11 @@
 use anyhow::Result;
 use blake3;
-use iota_stronghold::{ClientError, KeyProvider, SnapshotPath, Stronghold};
+use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::keyring_client::KeyringClient;
+use crate::stronghold_backend::{commit_store, open_store};
 
 /// The list of known accounts persisted on-device.
 #[derive(Serialize, Deserialize, Default)]
@@ -60,28 +61,14 @@ impl EchelonStore {
     /// Returns an error if the snapshot file exists but cannot be loaded, or if the client cannot be loaded/created.
     fn open(&self) -> Result<(Stronghold, iota_stronghold::Store, KeyProvider)> {
         let key_provider = self.key_provider()?;
-        let stronghold = Stronghold::default();
-
-        match stronghold.load_snapshot(&key_provider, &self.snapshot_path) {
-            Ok(()) => {}
-            Err(ClientError::SnapshotFileMissing(_)) => {
-                // First run: snapshot will be created on commit.
-            }
-            Err(e) => return Err(e.into()),
-        }
-
-        let client = match stronghold.load_client(APP_CLIENT) {
-            Ok(c) => c,
-            Err(ClientError::ClientDataNotPresent) => stronghold.create_client(APP_CLIENT)?,
-            Err(e) => return Err(e.into()),
-        };
-
-        Ok((stronghold, client.store(), key_provider))
+        let (stronghold, store) = open_store(&key_provider, &self.snapshot_path, APP_CLIENT, true)?
+            .ok_or_else(|| anyhow::anyhow!("Failed to open app stronghold store"))?;
+        Ok((stronghold, store, key_provider))
     }
 
     /// Commit changes to the stronghold snapshot.
     fn commit(&self, stronghold: &Stronghold, key_provider: &KeyProvider) -> Result<()> {
-        Ok(stronghold.commit_with_keyprovider(&self.snapshot_path, key_provider)?)
+        commit_store(stronghold, key_provider, &self.snapshot_path)
     }
 
     /// Read the list of accounts from the store, returning an empty list if not present.

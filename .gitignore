@@ -11,3 +11,4 @@ vite.config.ts.timestamp-*
 result
 .direnv
 .idea/discord.xml
+.idea/copilot*
