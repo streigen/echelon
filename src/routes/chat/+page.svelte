@@ -403,7 +403,7 @@
                     <button class="composer-icon-btn" title="add media">
                         <img src="/attach.svg" alt="attach" class="header-empty-icon" />
                     </button>
-                    <textarea rows=1 wrap="hard" maxlength=8000 type="text" placeholder="enter a message..." class="chat-input"/>
+                    <textarea rows=1 wrap="hard" maxlength=8000 placeholder="enter a message..." class="chat-input"></textarea>
                     <button class="composer-send-btn" title="send">
                         <img src="/send.svg" alt="send" class="header-empty-icon" />
                     </button>
