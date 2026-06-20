@@ -2,6 +2,9 @@
 
 A (hopefully) good cross-platform client for matrix servers.
 
+> [!NOTE]
+> The main git is on https://git.flaxeneel2.net/streigen/echelon . Github is just a push mirror
+
 ## Contributing
 
 Currently, this is just a personal project with some uni friends, but we are always open for feature requests and bug reports.
