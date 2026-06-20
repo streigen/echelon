@@ -3,7 +3,7 @@
 A (hopefully) good cross-platform client for matrix servers.
 
 > [!NOTE]
-> The main git is on https://git.flaxeneel2.net/streigen/echelon . This is just a push mirror
+> The main git is on https://git.flaxeneel2.net/streigen/echelon . Github is just a push mirror
 
 ## Contributing
 

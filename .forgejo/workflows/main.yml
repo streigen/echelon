@@ -54,8 +54,20 @@ jobs:
       - name: install frontend dependencies
         run: yarn install # change this to npm, pnpm or bun depending on which one you use.
 
+      - name: Svelte Check & Cargo Check
+        if: github.ref != 'refs/heads/master'
+        run: |
+          # 1. Check frontend (ensure 'check' maps to 'svelte-check' in your package.json)
+          bun run check 
+          
+          # 2. Check backend
+          cd src-tauri
+          cargo check
+
       # If tagName and releaseId are omitted tauri-action will only build the app and won't try to upload any assets.
-      - uses: https://github.com/tauri-apps/tauri-action@v0
+      - name: Tauri build 
+        uses: https://github.com/tauri-apps/tauri-action@v0
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.base_ref == 'master')
         env:
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
         with:
