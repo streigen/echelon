@@ -1,0 +1,74 @@
+name: 'build-test'
+
+on:
+ - pull_request
+ - push
+
+# This workflow will build your tauri app without uploading it anywhere.
+
+jobs:
+  test-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+#          - platform: 'macos-latest' # for Arm based macs (M1 and above).
+#            args: '--target aarch64-apple-darwin'
+#          - platform: 'macos-latest' # for Intel based macs.
+#            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04' # for Tauri v1 you could replace this with ubuntu-20.04.
+            args: ''
+#          - platform: 'windows-latest'
+#            args: ''
+
+    runs-on: hetz
+    steps:
+      - name: setup ssh
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
+          chmod 400 ~/.ssh/config
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+
+      - name: setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.9"
+
+      - name: install Rust stable
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+        with:
+          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
+        run: |
+          apt-get update
+          apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: install frontend dependencies
+        run: yarn install # change this to npm, pnpm or bun depending on which one you use.
+
+      - name: Svelte Check & Cargo Check
+        if: (github.event_name == 'push' && github.ref != 'refs/heads/master') || (github.event_name == 'pull_request' && github.base_ref != 'master')
+        run: |
+          # 1. Check frontend (ensure 'check' maps to 'svelte-check' in your package.json)
+          bun run check 
+          
+          # 2. Check backend
+          cd src-tauri
+          cargo check
+
+      # If tagName and releaseId are omitted tauri-action will only build the app and won't try to upload any assets.
+      - name: Tauri build 
+        uses: https://github.com/tauri-apps/tauri-action@v0
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.base_ref == 'master')
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        with:
+          args: ${{ matrix.args }}

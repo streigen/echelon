@@ -38,20 +38,25 @@ tauri-plugin-store = "2"
 tracing-android = "0.2"
 
 # base keyring, which we then add more features onto later
-keyring-core = "0.7.4"
+keyring-core = "1.0.0"
 
-# Desktop-specific secure storage, apple-native also deals with ios
-[target.'cfg(not(target_os = "android"))'.dependencies]
-keyring = { version = "4.0.0-beta.3" }
 
 # Android-specific secure storage.
 [target.'cfg(target_os = "android")'.dependencies]
-keyring = { version = "4.0.0-beta.3" }
-android-native-keyring-store = { version = "0.6.0", features = ["tracing-subscriber"] }
+android-native-keyring-store = { version = "1.0.0" }
+
+# Apple-specific secure storage.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+apple-native-keyring-store = { version = "1.0.0" }
+
+# Windows-specific secure storage.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = { version = "1.0.0" }
+
+# Linux-specific secure storage.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus-secret-service-keyring-store = { version = "1.0.0", features = ["rt-async-io-crypto-rust"] }
 
 [profile.dev.package.scrypt]
 opt-level = 3
-
-[patch.crates-io]
-android-native-keyring-store = { git = "https://github.com/open-source-cooperative/android-native-keyring-store.git", branch = "next" }
 
