@@ -136,9 +136,9 @@ fn keyring_init() {
 
     #[cfg(target_os = "linux")]
     {
-        use linux_keyutils_keyring_store::Store as LinuxStore;
+        use zbus_secret_service_keyring_store::Store as SecretServiceStore;
         keyring_core::set_default_store(
-            LinuxStore::new().expect("Failed to initialize Linux Keyutils store")
+            SecretServiceStore::new().expect("Failed to initialize Secret Service store")
         );
     }
 }

@@ -55,7 +55,7 @@ windows-native-keyring-store = { version = "1.0.0" }
 
 # Linux-specific secure storage.
 [target.'cfg(target_os = "linux")'.dependencies]
-linux-keyutils-keyring-store = { version = "1.0.0" }
+zbus-secret-service-keyring-store = { version = "1.0.0", features = ["rt-async-io-crypto-rust"] }
 
 [profile.dev.package.scrypt]
 opt-level = 3
