@@ -50,6 +50,18 @@ let
     ];
   };
 
+  runtimeLibs = with pkgs; [
+    wayland
+    libxkbcommon
+    libGL
+
+    # X11 fallbacks (optional but highly recommended)
+    libx11
+    libxcursor
+    libxi
+    libxrandr
+  ];
+
   shellHook = ''
     # Android and Java Paths
     export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
@@ -59,6 +71,7 @@ let
 
     # Exports the android build tools to path
     export PATH="$ANDROID_HOME/build-tools/${buildToolsVersion}:$PATH"
+    export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}:$LD_LIBRARY_PATH"
   '';
 in
 {
@@ -73,16 +86,18 @@ in
 
   shell = pkgs.mkShell {
     nativeBuildInputs = with pkgs; [
-      cargo
+      rustToolchain
       xdg-utils
       pkg-config
     ];
 
-    buildInputs = with pkgs; [
-      rustToolchain
-      fontconfig
-      androidSdk
-    ];
+    buildInputs =
+      with pkgs;
+      [
+        fontconfig
+        androidSdk
+      ]
+      ++ runtimeLibs;
 
     inherit shellHook;
   };
