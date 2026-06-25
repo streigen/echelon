@@ -1,4 +1,8 @@
-{ nixpkgs, rust-overlay, system }:
+{
+  nixpkgs,
+  rust-overlay,
+  system,
+}:
 
 let
   pkgs = import nixpkgs {
@@ -12,14 +16,16 @@ let
     };
   };
 
-
   platformVersion = "36";
   buildToolsVersion = "35.0.0";
 
   androidComposition = pkgs.androidenv.composeAndroidPackages {
     includeNDK = true;
     platformVersions = [ platformVersion ];
-    abiVersions = [ "x86_64" "arm64-v8a" ];
+    abiVersions = [
+      "x86_64"
+      "arm64-v8a"
+    ];
     buildToolsVersions = [ buildToolsVersion ];
     includeSystemImages = true;
     systemImageTypes = [ "google_apis" ];
@@ -28,7 +34,13 @@ let
   androidSdk = androidComposition.androidsdk;
 
   rustToolchain = pkgs.rust-bin.stable."1.93.0".default.override {
-    extensions = [ "rust-src" "rust-analysis" "clippy" "rustfmt" "rust-analyzer" ];
+    extensions = [
+      "rust-src"
+      "rust-analysis"
+      "clippy"
+      "rustfmt"
+      "rust-analyzer"
+    ];
     targets = [
       "aarch64-linux-android"
       "x86_64-unknown-linux-gnu"
@@ -50,7 +62,14 @@ let
   '';
 in
 {
-  inherit pkgs platformVersion buildToolsVersion androidSdk emulatorScript rustToolchain shellHook;
+  inherit
+    pkgs
+    platformVersion
+    buildToolsVersion
+    androidSdk
+    rustToolchain
+    shellHook
+    ;
 
   shell = pkgs.mkShell {
     nativeBuildInputs = with pkgs; [
