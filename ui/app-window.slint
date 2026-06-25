@@ -1,8 +1,9 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import { Button, LineEdit, TextEdit, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
-    in-out property <int> counter: 42;
-    callback request-increase-value();
+    title: "Echelon Command Tester";
+    preferred-width: 960px;
+    preferred-height: 780px;
 
     // Auth commands
     callback login(string, string, string) -> string;
@@ -11,7 +12,6 @@ export component AppWindow inherits Window {
     callback restore-session(string, string) -> string;
     callback oauth-login(string) -> string;
     callback oauth-register(string) -> string;
-    // reset-account(reset_type: int, password: string, key_backup: string) -> string
     // reset_type: 0 = IdentityReset, 1 = KeyBackupReset
     callback reset-account(int, string, string) -> string;
 
@@ -25,15 +25,148 @@ export component AppWindow inherits Window {
     // Incoming Matrix events pushed from backend
     callback on-matrix-message(string, string, string, string);
 
-    VerticalBox {
-        Text {
-            text: "Counter: \{root.counter}";
+    in-out property <string> result: "— ready —";
+
+    // Display incoming matrix messages in result area
+    on-matrix-message(sender, room-id, body, event-id) => {
+        root.result = "[msg] " + sender + " → " + room-id + "\n" + body + "\n(event: " + event-id + ")";
+    }
+
+    VerticalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalBox {
+                padding: 10px;
+                spacing: 6px;
+
+                // ── Authentication ──────────────────────────────────────
+                Text { text: "── Authentication ──"; font-weight: 700; font-size: 13px; }
+
+                HorizontalBox {
+                    spacing: 4px;
+                    Text { text: "Login:"; vertical-alignment: center; width: 60px; }
+                    login-user := LineEdit { placeholder-text: "username"; width: 150px; }
+                    login-pass := LineEdit { placeholder-text: "password"; input-type: password; width: 150px; }
+                    login-hs   := LineEdit { placeholder-text: "https://matrix.org"; horizontal-stretch: 1; }
+                    Button {
+                        text: "Login";
+                        clicked => { root.result = root.login(login-user.text, login-pass.text, login-hs.text); }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 4px;
+                    Text { text: "Register:"; vertical-alignment: center; width: 60px; }
+                    reg-user  := LineEdit { placeholder-text: "username"; width: 130px; }
+                    reg-pass  := LineEdit { placeholder-text: "password"; input-type: password; width: 130px; }
+                    reg-hs    := LineEdit { placeholder-text: "homeserver"; width: 160px; }
+                    reg-tok   := LineEdit { placeholder-text: "token (optional)"; horizontal-stretch: 1; }
+                    Button {
+                        text: "Register";
+                        clicked => { root.result = root.register(reg-user.text, reg-pass.text, reg-hs.text, reg-tok.text); }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 4px;
+                    Text { text: "Restore:"; vertical-alignment: center; width: 60px; }
+                    rs-user := LineEdit { placeholder-text: "username"; width: 200px; }
+                    rs-hs   := LineEdit { placeholder-text: "homeserver"; horizontal-stretch: 1; }
+                    Button {
+                        text: "Restore Session";
+                        clicked => { root.result = root.restore-session(rs-user.text, rs-hs.text); }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 4px;
+                    Text { text: ""; width: 60px; }
+                    Button {
+                        text: "Logout";
+                        clicked => { root.result = root.logout(); }
+                    }
+                }
+
+                // ── OAuth ───────────────────────────────────────────────
+                Text { text: "── OAuth ──"; font-weight: 700; font-size: 13px; }
+
+                HorizontalBox {
+                    spacing: 4px;
+                    Text { text: "Server:"; vertical-alignment: center; width: 60px; }
+                    oauth-hs := LineEdit { placeholder-text: "homeserver"; horizontal-stretch: 1; }
+                    Button {
+                        text: "OAuth Login";
+                        clicked => { root.result = root.oauth-login(oauth-hs.text); }
+                    }
+                    Button {
+                        text: "OAuth Register";
+                        clicked => { root.result = root.oauth-register(oauth-hs.text); }
+                    }
+                }
+
+                // ── Account Reset ────────────────────────────────────────
+                Text { text: "── Account Reset ──"; font-weight: 700; font-size: 13px; }
+
+                HorizontalBox {
+                    spacing: 4px;
+                    Text { text: ""; width: 60px; }
+                    ar-pass   := LineEdit { placeholder-text: "password (for identity reset)"; input-type: password; width: 220px; }
+                    ar-backup := LineEdit { placeholder-text: "key backup (for backup reset)"; horizontal-stretch: 1; }
+                    Button {
+                        text: "Identity Reset";
+                        clicked => { root.result = root.reset-account(0, ar-pass.text, ar-backup.text); }
+                    }
+                    Button {
+                        text: "Key Backup Reset";
+                        clicked => { root.result = root.reset-account(1, ar-pass.text, ar-backup.text); }
+                    }
+                }
+
+                // ── Data Queries ─────────────────────────────────────────
+                Text { text: "── Data Queries ──"; font-weight: 700; font-size: 13px; }
+
+                HorizontalBox {
+                    spacing: 4px;
+                    Text { text: ""; width: 60px; }
+                    Button { text: "Get Spaces";       clicked => { root.result = root.get-spaces(); } }
+                    Button { text: "Get Rooms";        clicked => { root.result = root.get-rooms(); } }
+                    Button { text: "Get DM Rooms";     clicked => { root.result = root.get-dm-rooms(); } }
+                    Button { text: "All Spaces+Trees"; clicked => { root.result = root.get-all-spaces-with-trees(); } }
+                }
+
+                HorizontalBox {
+                    spacing: 4px;
+                    Text { text: "Space ID:"; vertical-alignment: center; width: 60px; }
+                    space-id := LineEdit { placeholder-text: "!roomid:server.tld"; horizontal-stretch: 1; }
+                    Button {
+                        text: "Get Space Tree";
+                        clicked => { root.result = root.get-space-tree(space-id.text); }
+                    }
+                }
+            }
         }
 
-        Button {
-            text: "Increase value";
-            clicked => {
-                root.request-increase-value();
+        // ── Result pane ──────────────────────────────────────────────────
+        Rectangle {
+            height: 200px;
+            background: #111;
+            border-color: #444;
+            border-width: 1px;
+
+            VerticalBox {
+                padding: 6px;
+                spacing: 2px;
+                Text { text: "Result"; color: #888; font-size: 11px; }
+                TextEdit {
+                    text <=> root.result;
+                    read-only: true;
+                    wrap: word-wrap;
+                    vertical-stretch: 1;
+                }
             }
         }
     }

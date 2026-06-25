@@ -70,14 +70,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let client = rt.block_on(ClientHandler::new(app_state.clone(), ui_handle.clone()))?;
     let client_state: ClientState = Arc::new(RwLock::new(Some(client)));
 
-    ui.on_request_increase_value({
-        let ui_handle = ui.as_weak();
-        move || {
-            let ui = ui_handle.unwrap();
-            ui.set_counter(ui.get_counter() + 1);
-        }
-    });
-
     ui.on_login({
         let state = client_state.clone();
         let handle = rt.handle().clone();
