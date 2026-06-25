@@ -1,16 +1,14 @@
 use matrix_sdk::authentication::oauth::registration::{
     ApplicationType, ClientMetadata, Localized, OAuthGrantType,
 };
-use matrix_sdk::authentication::oauth::UrlOrQuery;
+use matrix_sdk::utils::UrlOrQuery;
 use matrix_sdk::utils::local_server::LocalServerBuilder;
 use ruma::serde::Raw;
-use tauri::{Manager, Url};
-use tauri_plugin_opener::OpenerExt;
+use url::Url;
 
 use crate::events::client_events::ClientEvents;
 use crate::secret::Session;
 use crate::sync_manager::SyncManager;
-use crate::{SecretState, StoreState};
 
 use super::ClientHandler;
 
@@ -61,9 +59,8 @@ impl ClientHandler {
             .login(redirect_uri.clone(), None, None, None)
             .build()
             .await?;
-        self.app_handle
-            .opener()
-            .open_url(auth_data.url, None::<&str>)?;
+        open::that(auth_data.url.as_str())
+            .map_err(|e| anyhow::anyhow!("Failed to open URL in browser: {}", e))?;
 
         // Wait for redirect
         let query = redirect_handle
@@ -83,8 +80,7 @@ impl ClientHandler {
             .user_id()
             .ok_or_else(|| anyhow::anyhow!("Missing user_id after OAuth login"))?
             .to_string();
-        let secrets = self.app_handle.state::<SecretState>();
-        secrets.0.set_session(&Session {
+        self.app_state.secret_service.set_session(&Session {
             user_id: user_id.clone(),
             device_id: new_client.device_id().map(|d| d.to_string()).unwrap_or_default(),
             access_token: session_tokens.access_token,
@@ -92,18 +88,15 @@ impl ClientHandler {
         })?;
 
         // store the new username
-        let echelon_store = self.app_handle.state::<StoreState>();
-        echelon_store.0.add_account(&user_id)?;
+        self.app_state.echelon_store.add_account(&user_id)?;
 
-        ClientEvents::register_events(&new_client, self.app_handle.clone());
+        ClientEvents::register_events(&new_client, self.ui_handle.clone());
 
         Ok(Some(ClientHandler {
             matrix_client: new_client,
             sync_manager: SyncManager::new(),
-            app_handle: self.app_handle.clone(),
+            app_state: self.app_state.clone(),
+            ui_handle: self.ui_handle.clone(),
         }))
     }
 }
-
-
-

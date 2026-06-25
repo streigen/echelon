@@ -1,12 +1,11 @@
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::{AuthSession, SessionMeta, SessionTokens};
 use ruma::{OwnedDeviceId, OwnedUserId};
-use tauri::{Manager, Url};
+use url::Url;
 
 use crate::events::client_events::ClientEvents;
 use crate::secret::Session;
 use crate::sync_manager::SyncManager;
-use crate::{SecretState, StoreState};
 
 use super::ClientHandler;
 
@@ -30,8 +29,7 @@ impl ClientHandler {
             username,
             Url::parse(&homeserver)?.domain().unwrap_or(&homeserver)
         );
-        let secrets = self.app_handle.state::<SecretState>();
-        let sqlite_pwd = secrets.0.get_or_create_sqlite_pwd(&user_id)?;
+        let sqlite_pwd = self.app_state.secret_service.get_or_create_sqlite_pwd(&user_id)?;
 
         let new_client = self
             .get_new_client(&username, &homeserver, Some(sqlite_pwd))
@@ -43,7 +41,7 @@ impl ClientHandler {
             .send()
             .await?;
 
-        ClientEvents::register_events(&new_client, self.app_handle.clone());
+        ClientEvents::register_events(&new_client, self.ui_handle.clone());
 
         // store the session tokens in stronghold
         let session_tokens = new_client
@@ -53,7 +51,7 @@ impl ClientHandler {
             .user_id()
             .ok_or_else(|| anyhow::anyhow!("Missing user_id after login"))?
             .to_string();
-        secrets.0.set_session(&Session {
+        self.app_state.secret_service.set_session(&Session {
             user_id: user_id.clone(),
             device_id: new_client.device_id().map(|d| d.to_string()).unwrap_or_default(),
             access_token: session_tokens.access_token,
@@ -61,13 +59,13 @@ impl ClientHandler {
         })?;
 
         // store the new username
-        let echelon_store = self.app_handle.state::<StoreState>();
-        echelon_store.0.add_account(&user_id)?;
+        self.app_state.echelon_store.add_account(&user_id)?;
 
         Ok(Some(ClientHandler {
             matrix_client: new_client,
             sync_manager: SyncManager::new(),
-            app_handle: self.app_handle.clone(),
+            app_state: self.app_state.clone(),
+            ui_handle: self.ui_handle.clone(),
         }))
     }
 
@@ -88,12 +86,10 @@ impl ClientHandler {
             username,
             Url::parse(&homeserver)?.domain().unwrap_or(&homeserver)
         );
-        let secrets = self.app_handle.state::<SecretState>();
-        let sqlite_pwd = secrets.0.get_sqlite_pwd(&user_id)?;
+        let sqlite_pwd = self.app_state.secret_service.get_sqlite_pwd(&user_id)?;
 
         let new_client = self.get_new_client(&username, &homeserver, sqlite_pwd).await?;
-        let session = secrets
-            .0
+        let session = self.app_state.secret_service
             .get_session(&user_id)?
             .ok_or_else(|| anyhow::anyhow!("No stored session found for user"))?;
 
@@ -110,15 +106,13 @@ impl ClientHandler {
             }))
             .await?;
 
-        ClientEvents::register_events(&new_client, self.app_handle.clone());
+        ClientEvents::register_events(&new_client, self.ui_handle.clone());
 
         Ok(Some(ClientHandler {
             matrix_client: new_client,
             sync_manager: SyncManager::new(),
-            app_handle: self.app_handle.clone(),
+            app_state: self.app_state.clone(),
+            ui_handle: self.ui_handle.clone(),
         }))
     }
 }
-
-
-

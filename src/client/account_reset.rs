@@ -1,5 +1,5 @@
 use matrix_sdk::encryption::CrossSigningResetAuthType;
-use ruma::api::client::uiaa::{AuthData, Password, UserIdentifier};
+use ruma::api::client::uiaa::{AuthData, MatrixUserIdentifier, Password, UserIdentifier};
 use tracing::debug;
 
 use crate::account::account_reset_types::AccountResetType;
@@ -30,7 +30,7 @@ impl ClientHandler {
                                     .ok_or_else(|| anyhow::anyhow!("No user ID available"))?;
 
                                 let mut password_auth = Password::new(
-                                    UserIdentifier::UserIdOrLocalpart(user_id.to_string()),
+                                    UserIdentifier::Matrix(MatrixUserIdentifier::new(user_id.to_string())),
                                     pwd,
                                 );
 
@@ -76,5 +76,3 @@ impl ClientHandler {
         Ok(())
     }
 }
-
-

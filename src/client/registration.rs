@@ -36,7 +36,8 @@ impl ClientHandler {
                 Ok(ClientHandler {
                     matrix_client: client,
                     sync_manager: SyncManager::new(),
-                    app_handle: self.app_handle.clone(),
+                    app_state: self.app_state.clone(),
+                    ui_handle: self.ui_handle.clone(),
                 })
             }
             Err(e) => {
@@ -63,7 +64,8 @@ impl ClientHandler {
                             Ok(ClientHandler {
                                 matrix_client: client,
                                 sync_manager: SyncManager::new(),
-                                app_handle: self.app_handle.clone(),
+                                app_state: self.app_state.clone(),
+                                ui_handle: self.ui_handle.clone(),
                             })
                         }
                         Err(e) => {
@@ -82,5 +84,3 @@ impl ClientHandler {
         }
     }
 }
-
-

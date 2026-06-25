@@ -1,7 +1,7 @@
 use anyhow::Result;
 use matrix_sdk::Client;
 use std::path::Path;
-use tauri::{Manager, Url};
+use url::Url;
 
 use crate::secret::SecretService;
 
@@ -18,7 +18,7 @@ impl ClientHandler {
             .homeserver_url(new_homeserver)
             .sqlite_store(
                 Path::join(
-                    &self.app_handle.path().app_data_dir()?.join("accounts"),
+                    &self.app_state.data_dir.join("accounts"),
                     SecretService::user_id_hash(&format!(
                         "@{}:{}",
                         username,
@@ -43,6 +43,3 @@ impl ClientHandler {
         Ok(client)
     }
 }
-
-
-

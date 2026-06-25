@@ -3,6 +3,28 @@ import { Button, VerticalBox } from "std-widgets.slint";
 export component AppWindow inherits Window {
     in-out property <int> counter: 42;
     callback request-increase-value();
+
+    // Auth commands
+    callback login(string, string, string) -> string;
+    callback logout() -> string;
+    callback register(string, string, string, string) -> string;
+    callback restore-session(string, string) -> string;
+    callback oauth-login(string) -> string;
+    callback oauth-register(string) -> string;
+    // reset-account(reset_type: int, password: string, key_backup: string) -> string
+    // reset_type: 0 = IdentityReset, 1 = KeyBackupReset
+    callback reset-account(int, string, string) -> string;
+
+    // Room/space queries
+    callback get-spaces() -> string;
+    callback get-rooms() -> string;
+    callback get-all-spaces-with-trees() -> string;
+    callback get-space-tree(string) -> string;
+    callback get-dm-rooms() -> string;
+
+    // Incoming Matrix events pushed from backend
+    callback on-matrix-message(string, string, string, string);
+
     VerticalBox {
         Text {
             text: "Counter: \{root.counter}";
