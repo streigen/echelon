@@ -1,16 +1,59 @@
 [package]
-name = "slint-rust-template"
+name = "Echelon"
 version = "0.1.0"
-edition = "2021"
+authors = [
+  "Siddhant Misra <me@flaxeneel2.net>",
+  "Rayyan Parkar <rayyan@streigen.com>",
+  "Yahya Ahmad <me@yahya-ahmad.com>"
+]
+
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-slint = "1.14.1"
+slint = "1.17.0"
+keyring-core = "1.0.0"
+serde = { version = "1", features = ["derive"] }
+matrix-sdk = { version = "0.18.0", features = ["anyhow", "e2e-encryption", "markdown", "bundled-sqlite", "local-server"] }
+tokio = { version = "1.49.0", features = ["sync"] }
+ruma = "0.16.0"
+anyhow = "1.0.102"
+serde_json = "1"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.22"
+rand = "0.10.0"
+iota_stronghold = "2.1.0"
+futures-util = "0.3.31"
+futures-core = "0.3.31"
+blake3 = "1.8.3"
+
+
+
+
+# Android-specific secure storage.
+[target.'cfg(target_os = "android")'.dependencies]
+android-native-keyring-store = { version = "1.0.0" }
+
+# Apple-specific secure storage.
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+apple-native-keyring-store = { version = "1.0.0" }
+
+# Windows-specific secure storage.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = { version = "1.1.0" }
+
+# Linux-specific secure storage.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus-secret-service-keyring-store = { version = "1.0.0", features = ["rt-async-io-crypto-rust"] }
+
 
 [build-dependencies]
-slint-build = "1.14.1"
+slint-build = "1.17.0"
 
 [profile.release]
 codegen-units = 1
 lto = true
+
+
+
