@@ -75,11 +75,12 @@ in
     nativeBuildInputs = with pkgs; [
       cargo
       xdg-utils
-      bun
+      pkg-config
     ];
 
     buildInputs = with pkgs; [
       rustToolchain
+      fontconfig
       androidSdk
     ];
 
