@@ -1,0 +1,764 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="ALL" />
+  </component>
+  <component name="CargoProjects">
+    <cargoProject FILE="$PROJECT_DIR$/src-tauri/Cargo.toml">
+      <package file="$PROJECT_DIR$/src-tauri">
+        <feature name="default" enabled="true" />
+      </package>
+    </cargoProject>
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="20e8d654-5168-44e0-b151-67b19d531786" name="Changes" comment="merge stronghold logic into a common backend. make a closure for stuff to do with active client to reduce the duplication">
+      <change afterPath="$PROJECT_DIR$/.envrc" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.forgejo/workflows/main.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/codeStyles/codeStyleConfig.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.agent.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.ask2agent.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.edit.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/echelon.iml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.vscode/extensions.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.vscode/settings.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/bun.lock" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/common.nix" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/flake.lock" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/flake.nix" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/shell.nix" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/Cargo.lock" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/Cargo.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/build.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/capabilities/default.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/.editorconfig" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/build.gradle.kts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/proguard-rules.pro" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/AndroidManifest.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/java/net/flaxeneel2/echelon/MainActivity.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/drawable/ic_launcher_background.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/layout/activity_main.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/values-night/themes.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/values/colors.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/values/strings.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/values/themes.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/app/src/main/res/xml/file_paths.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/build.gradle.kts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/buildSrc/build.gradle.kts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/buildSrc/src/main/java/net/flaxeneel2/echelon/kotlin/BuildTask.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/buildSrc/src/main/java/net/flaxeneel2/echelon/kotlin/RustPlugin.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/gradle.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.jar" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/gradlew" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/gradlew.bat" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/gen/android/settings.gradle" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/128x128.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/128x128@2x.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/32x32.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/Square107x107Logo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/Square142x142Logo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/Square150x150Logo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/Square284x284Logo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/Square30x30Logo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/Square310x310Logo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/Square44x44Logo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/Square71x71Logo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/Square89x89Logo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/StoreLogo.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/icon.icns" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/icon.ico" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/icons/icon.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/account.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/account/account_reset_types.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/client_handler.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/client_handler/account_reset.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/client_handler/factory.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/client_handler/oauth_auth.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/client_handler/password_auth.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/client_handler/registration.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/commands.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/commands/account.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/commands/auth.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/commands/dm.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/commands/rooms.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/commands/spaces.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/events.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/events/client_events.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/keyring_client.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/lib.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/main.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/rooms.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/rooms/room_types.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/secret.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/spaces.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/spaces/raw_space.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/store.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/stronghold_backend.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/src/sync_manager.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src-tauri/tauri.conf.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/app.d.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/app.html" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/lib/styles/chat.css" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/lib/styles/login.css" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/lib/utils.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/routes/+layout.svelte" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/routes/+layout.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/routes/+page.svelte" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/routes/chat/+page.svelte" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/THIRD_PARTY_LICENSES.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/apple.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/attach.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/bars.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/deafened.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/dm.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/dropdown.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/encrypted.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/facebook.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/favicon.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/github.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/gitlab.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/google.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/hide.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/info.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/members.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/muted.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/pin.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/reply.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/screenshare.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/see.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/send.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/svelte.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/tauri.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/undeafened.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/unencrypted.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/unmuted.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/video.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/vite.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/voicechat.svg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/svelte.config.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tsconfig.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/vite.config.js" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="CopilotPersistence">
+    <persistenceIdMap>
+      <entry key="_/home/flax/Documents/projects/rust/echelon" value="39dtv5FiV7CzYHJiZTZtPLCIixZ" />
+    </persistenceIdMap>
+  </component>
+  <component name="CopilotUserSelectedModel">
+    <selectedModels>
+      <entry key="chat-panel" value="GPT-5.3-Codex" />
+      <entry key="agent-panel" value="GPT-5.3-Codex" />
+    </selectedModels>
+  </component>
+  <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:dev" />
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Rust File" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="file://$USER_HOME$/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hex-0.4.3/src/lib.rs" root0="SKIP_INSPECTION" />
+    <setting file="file://$PROJECT_DIR$/src-tauri/src/main.rs" root0="FORCE_HIGHLIGHTING" />
+  </component>
+  <component name="MacroExpansionManager">
+    <option name="directoryName" value="4huxMKDh" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 3
+}</component>
+  <component name="ProjectId" id="39dtv5FiV7CzYHJiZTZtPLCIixZ" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Cargo.Run echelon.executor": "Run",
+    "Cargo.Test echelon.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "NIXITCH_NIXPKGS_CONFIG": "/etc/nix/nixpkgs-config.nix",
+    "NIXITCH_NIX_CONF_DIR": "",
+    "NIXITCH_NIX_OTHER_STORES": "",
+    "NIXITCH_NIX_PATH": "nixpkgs=flake:nixpkgs:/nix/var/nix/profiles/per-user/root/channels",
+    "NIXITCH_NIX_PROFILES": "/run/current-system/sw /nix/var/nix/profiles/default /etc/profiles/per-user/flax /home/flax/.local/state/nix/profile /nix/profile /home/flax/.nix-profile /var/lib/flatpak/exports /home/flax/.local/share/flatpak/exports",
+    "NIXITCH_NIX_REMOTE": "",
+    "NIXITCH_NIX_USER_PROFILE_DIR": "/nix/var/nix/profiles/per-user/flax",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.rust.reset.selective.auto.import": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "copilot.chat.legacySessionMetadata.migrated": "true",
+    "git-widget-placeholder": "slint-migration",
+    "last_opened_file_path": "/home/flax/Documents/projects/rust/echelon",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "bun",
+    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
+    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
+    "org.rust.first.attach.projects": "true",
+    "settings.editor.selected.configurable": "language.rust",
+    "ts.external.directory.path": "/home/flax/Documents/projects/rust/echelon/node_modules/typescript/lib",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RunManager" selected="Cargo.Run echelon">
+    <configuration name="Run echelon" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="buildProfileId" value="dev" />
+      <option name="command" value="run --package echelon --bin echelon" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$/src-tauri" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Test echelon" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="buildProfileId" value="test" />
+      <option name="command" value="test --workspace" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$/src-tauri" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+  </component>
+  <component name="RustProjectSettings">
+    <option name="rustcTarget" value="x86_64-pc-windows-msvc" />
+    <option name="toolchainHomeDirectory" value="/nix/store/v3j8ls4nla1h09m30n9jgim36kayh35i-rust-default-1.93.0/bin" />
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="20e8d654-5168-44e0-b151-67b19d531786" name="Changes" comment="" />
+      <created>1771038002501</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1771038002501</updated>
+      <workItem from="1771038003643" duration="2812000" />
+      <workItem from="1771097299116" duration="7178000" />
+      <workItem from="1771111417171" duration="21000" />
+      <workItem from="1771111443577" duration="10229000" />
+      <workItem from="1771177525223" duration="5000" />
+      <workItem from="1771366773841" duration="17553000" />
+      <workItem from="1771447607882" duration="19185000" />
+      <workItem from="1771469680246" duration="8071000" />
+      <workItem from="1771526854727" duration="1319000" />
+      <workItem from="1771531923987" duration="350000" />
+      <workItem from="1771532469736" duration="216000" />
+      <workItem from="1771532702019" duration="35000" />
+      <workItem from="1771533270612" duration="2314000" />
+      <workItem from="1771540190980" duration="13244000" />
+      <workItem from="1771600030226" duration="18925000" />
+      <workItem from="1771696677354" duration="23015000" />
+      <workItem from="1771769100432" duration="30384000" />
+      <workItem from="1772038111801" duration="21000" />
+      <workItem from="1772038152842" duration="26000" />
+      <workItem from="1772571738231" duration="3755000" />
+      <workItem from="1772829466609" duration="1398000" />
+      <workItem from="1772897176689" duration="33000" />
+      <workItem from="1772916411273" duration="696000" />
+      <workItem from="1772917432775" duration="898000" />
+      <workItem from="1772918345050" duration="19572000" />
+      <workItem from="1772973459157" duration="6043000" />
+      <workItem from="1773012369675" duration="6336000" />
+      <workItem from="1773166903909" duration="16280000" />
+      <workItem from="1773248095719" duration="3676000" />
+      <workItem from="1773251781868" duration="15778000" />
+      <workItem from="1773327193823" duration="2006000" />
+      <workItem from="1773442390738" duration="5042000" />
+      <workItem from="1773880049454" duration="53000" />
+      <workItem from="1774133698343" duration="13214000" />
+      <workItem from="1774200220996" duration="2367000" />
+      <workItem from="1774464376311" duration="684000" />
+      <workItem from="1781897978857" duration="2855000" />
+      <workItem from="1781900889067" duration="21205000" />
+    </task>
+    <task id="LOCAL-00001" summary="registration works (backend side)">
+      <option name="closed" value="true" />
+      <created>1771379824288</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1771379824288</updated>
+    </task>
+    <task id="LOCAL-00002" summary="login for now, its scuffed asf, will fix later">
+      <option name="closed" value="true" />
+      <created>1771382889404</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1771382889404</updated>
+    </task>
+    <task id="LOCAL-00003" summary="tiny disclaimer">
+      <option name="closed" value="true" />
+      <created>1771382932707</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1771382932707</updated>
+    </task>
+    <task id="LOCAL-00004" summary="logout + sync on a new thread">
+      <option name="closed" value="true" />
+      <created>1771441075906</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1771441075906</updated>
+    </task>
+    <task id="LOCAL-00005" summary="expose messages to frontend via events">
+      <option name="closed" value="true" />
+      <created>1771441926732</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1771441926732</updated>
+    </task>
+    <task id="LOCAL-00006" summary="reset account done + fixed locks not being released.">
+      <option name="closed" value="true" />
+      <created>1771463764524</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1771463764524</updated>
+    </task>
+    <task id="LOCAL-00007" summary="move to tracing for logging">
+      <option name="closed" value="true" />
+      <created>1771470834445</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1771470834445</updated>
+    </task>
+    <task id="LOCAL-00008" summary="add .direnv to .gitignore">
+      <option name="closed" value="true" />
+      <created>1771470862742</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1771470862742</updated>
+    </task>
+    <task id="LOCAL-00009" summary="get rooms and spaces">
+      <option name="closed" value="true" />
+      <created>1771553196880</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1771553196880</updated>
+    </task>
+    <task id="LOCAL-00010" summary="this is hell, but it works, i guess?">
+      <option name="closed" value="true" />
+      <created>1771556597697</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1771556597697</updated>
+    </task>
+    <task id="LOCAL-00011" summary="forgot tauri lets u give the struct directly">
+      <option name="closed" value="true" />
+      <created>1771600417312</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1771600417312</updated>
+    </task>
+    <task id="LOCAL-00012" summary="remove children thing for now, redundant since parent there">
+      <option name="closed" value="true" />
+      <created>1771646242000</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1771646242000</updated>
+    </task>
+    <task id="LOCAL-00013" summary="get all spaces with trees">
+      <option name="closed" value="true" />
+      <created>1771697708496</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1771697708496</updated>
+    </task>
+    <task id="LOCAL-00014" summary="made fetch spaces faster (parallelized the futures)">
+      <option name="closed" value="true" />
+      <created>1771699486632</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1771699486632</updated>
+    </task>
+    <task id="LOCAL-00015" summary="get rid of space info as it was too similar to room info">
+      <option name="closed" value="true" />
+      <created>1771701135668</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1771701135668</updated>
+    </task>
+    <task id="LOCAL-00016" summary="some room related refactoring">
+      <option name="closed" value="true" />
+      <created>1771702421660</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1771702421660</updated>
+    </task>
+    <task id="LOCAL-00017" summary="get rooms doesnt need to return space rooms so-">
+      <option name="closed" value="true" />
+      <created>1771710972968</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1771710972968</updated>
+    </task>
+    <task id="LOCAL-00018" summary="technically, spaces are just special rooms">
+      <option name="closed" value="true" />
+      <created>1771711527066</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1771711527066</updated>
+    </task>
+    <task id="LOCAL-00019" summary="get dm rooms fetched from cache for now">
+      <option name="closed" value="true" />
+      <created>1771737064796</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1771737064796</updated>
+    </task>
+    <task id="LOCAL-00020" summary="ensure one full sync before any of the cache-hitting functions are called">
+      <option name="closed" value="true" />
+      <created>1771738940946</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1771738940947</updated>
+    </task>
+    <task id="LOCAL-00021" summary="im sorry rust compiler please dont scream at me">
+      <option name="closed" value="true" />
+      <created>1771740454521</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1771740454521</updated>
+    </task>
+    <task id="LOCAL-00022" summary="never hardcoding device id again">
+      <option name="closed" value="true" />
+      <created>1771773665927</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1771773665927</updated>
+    </task>
+    <task id="LOCAL-00023" summary="group chats are properly fetched now">
+      <option name="closed" value="true" />
+      <created>1771781665739</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1771781665739</updated>
+    </task>
+    <task id="LOCAL-00024" summary="document user.rs">
+      <option name="closed" value="true" />
+      <created>1771796331096</created>
+      <option name="number" value="00024" />
+      <option name="presentableId" value="LOCAL-00024" />
+      <option name="project" value="LOCAL" />
+      <updated>1771796331096</updated>
+    </task>
+    <task id="LOCAL-00025" summary="send message stash">
+      <option name="closed" value="true" />
+      <created>1772916432562</created>
+      <option name="number" value="00025" />
+      <option name="presentableId" value="LOCAL-00025" />
+      <option name="project" value="LOCAL" />
+      <updated>1772916432562</updated>
+    </task>
+    <task id="LOCAL-00026" summary="temporary, will merge with rayyan's thing later">
+      <option name="closed" value="true" />
+      <created>1772916455543</created>
+      <option name="number" value="00026" />
+      <option name="presentableId" value="LOCAL-00026" />
+      <option name="project" value="LOCAL" />
+      <updated>1772916455543</updated>
+    </task>
+    <task id="LOCAL-00027" summary="android support and rand">
+      <option name="closed" value="true" />
+      <created>1772937843595</created>
+      <option name="number" value="00027" />
+      <option name="presentableId" value="LOCAL-00027" />
+      <option name="project" value="LOCAL" />
+      <updated>1772937843595</updated>
+    </task>
+    <task id="LOCAL-00028" summary="android support and using rand instead of getrandom">
+      <option name="closed" value="true" />
+      <created>1772937870834</created>
+      <option name="number" value="00028" />
+      <option name="presentableId" value="LOCAL-00028" />
+      <option name="project" value="LOCAL" />
+      <updated>1772937870834</updated>
+    </task>
+    <task id="LOCAL-00029" summary="use app id instead of hard coded echelon in keyring">
+      <option name="closed" value="true" />
+      <created>1772939338537</created>
+      <option name="number" value="00029" />
+      <option name="presentableId" value="LOCAL-00029" />
+      <option name="project" value="LOCAL" />
+      <updated>1772939338537</updated>
+    </task>
+    <task id="LOCAL-00030" summary="downgrade to rust 1.93.0 due to queries overflow.&#10;&#10;&#10;Related bug reports: https://github.com/rust-lang/rust/issues/152942 and https://github.com/matrix-org/matrix-rust-sdk/issues/6254">
+      <option name="closed" value="true" />
+      <created>1772944059923</created>
+      <option name="number" value="00030" />
+      <option name="presentableId" value="LOCAL-00030" />
+      <option name="project" value="LOCAL" />
+      <updated>1772944059923</updated>
+    </task>
+    <task id="LOCAL-00031" summary="try simplify logic for secrets a bit. docs need to be done still">
+      <option name="closed" value="true" />
+      <created>1772944748207</created>
+      <option name="number" value="00031" />
+      <option name="presentableId" value="LOCAL-00031" />
+      <option name="project" value="LOCAL" />
+      <updated>1772944748207</updated>
+    </task>
+    <task id="LOCAL-00032" summary="android keyring works now i think">
+      <option name="closed" value="true" />
+      <created>1773189711849</created>
+      <option name="number" value="00032" />
+      <option name="presentableId" value="LOCAL-00032" />
+      <option name="project" value="LOCAL" />
+      <updated>1773189711849</updated>
+    </task>
+    <task id="LOCAL-00033" summary="push keyring version for both android and non-android to 4.0.0-beta.3">
+      <option name="closed" value="true" />
+      <created>1773271192833</created>
+      <option name="number" value="00033" />
+      <option name="presentableId" value="LOCAL-00033" />
+      <option name="project" value="LOCAL" />
+      <updated>1773271192833</updated>
+    </task>
+    <task id="LOCAL-00034" summary="tmp">
+      <option name="closed" value="true" />
+      <created>1773271199810</created>
+      <option name="number" value="00034" />
+      <option name="presentableId" value="LOCAL-00034" />
+      <option name="project" value="LOCAL" />
+      <updated>1773271199810</updated>
+    </task>
+    <task id="LOCAL-00035" summary="abstract keyring stuff to keyring client">
+      <option name="closed" value="true" />
+      <created>1773271467340</created>
+      <option name="number" value="00035" />
+      <option name="presentableId" value="LOCAL-00035" />
+      <option name="project" value="LOCAL" />
+      <updated>1773271467340</updated>
+    </task>
+    <task id="LOCAL-00036" summary="use encrypted store">
+      <option name="closed" value="true" />
+      <created>1773271491611</created>
+      <option name="number" value="00036" />
+      <option name="presentableId" value="LOCAL-00036" />
+      <option name="project" value="LOCAL" />
+      <updated>1773271491611</updated>
+    </task>
+    <task id="LOCAL-00037" summary="make secret use the abstracted keyring client">
+      <option name="closed" value="true" />
+      <created>1773271504866</created>
+      <option name="number" value="00037" />
+      <option name="presentableId" value="LOCAL-00037" />
+      <option name="project" value="LOCAL" />
+      <updated>1773271504866</updated>
+    </task>
+    <task id="LOCAL-00038" summary="use native store for now, need to test on windows">
+      <option name="closed" value="true" />
+      <created>1773271529384</created>
+      <option name="number" value="00038" />
+      <option name="presentableId" value="LOCAL-00038" />
+      <option name="project" value="LOCAL" />
+      <updated>1773271529384</updated>
+    </task>
+    <task id="LOCAL-00039" summary="do not store usernames/homeservers on disk in plaintext">
+      <option name="closed" value="true" />
+      <created>1773273849577</created>
+      <option name="number" value="00039" />
+      <option name="presentableId" value="LOCAL-00039" />
+      <option name="project" value="LOCAL" />
+      <updated>1773273849577</updated>
+    </task>
+    <task id="LOCAL-00040" summary="Document store.rs">
+      <option name="closed" value="true" />
+      <created>1773277293923</created>
+      <option name="number" value="00040" />
+      <option name="presentableId" value="LOCAL-00040" />
+      <option name="project" value="LOCAL" />
+      <updated>1773277293923</updated>
+    </task>
+    <task id="LOCAL-00041" summary="Document secret.rs">
+      <option name="closed" value="true" />
+      <created>1773277663443</created>
+      <option name="number" value="00041" />
+      <option name="presentableId" value="LOCAL-00041" />
+      <option name="project" value="LOCAL" />
+      <updated>1773277663443</updated>
+    </task>
+    <task id="LOCAL-00042" summary="tiny cleanup">
+      <option name="closed" value="true" />
+      <created>1773329310416</created>
+      <option name="number" value="00042" />
+      <option name="presentableId" value="LOCAL-00042" />
+      <option name="project" value="LOCAL" />
+      <updated>1773329310416</updated>
+    </task>
+    <task id="LOCAL-00043" summary="apply suggested comment for duplicated code">
+      <option name="closed" value="true" />
+      <created>1773444168459</created>
+      <option name="number" value="00043" />
+      <option name="presentableId" value="LOCAL-00043" />
+      <option name="project" value="LOCAL" />
+      <updated>1773444168459</updated>
+    </task>
+    <task id="LOCAL-00044" summary="try remove panic situations">
+      <option name="closed" value="true" />
+      <created>1774150893143</created>
+      <option name="number" value="00044" />
+      <option name="presentableId" value="LOCAL-00044" />
+      <option name="project" value="LOCAL" />
+      <updated>1774150893143</updated>
+    </task>
+    <task id="LOCAL-00045" summary="dont really need copilot files in the repo">
+      <option name="closed" value="true" />
+      <created>1774151044207</created>
+      <option name="number" value="00045" />
+      <option name="presentableId" value="LOCAL-00045" />
+      <option name="project" value="LOCAL" />
+      <updated>1774151044207</updated>
+    </task>
+    <task id="LOCAL-00046" summary="split client handler up into smaller files">
+      <option name="closed" value="true" />
+      <created>1774151903964</created>
+      <option name="number" value="00046" />
+      <option name="presentableId" value="LOCAL-00046" />
+      <option name="project" value="LOCAL" />
+      <updated>1774151903964</updated>
+    </task>
+    <task id="LOCAL-00047" summary="merge stronghold logic into a common backend. make a closure for stuff to do with active client to reduce the duplication">
+      <option name="closed" value="true" />
+      <created>1774152665019</created>
+      <option name="number" value="00047" />
+      <option name="presentableId" value="LOCAL-00047" />
+      <option name="project" value="LOCAL" />
+      <updated>1774152665019</updated>
+    </task>
+    <option name="localTasksCounter" value="48" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="group chats are properly fetched now" />
+    <MESSAGE value="document user.rs" />
+    <MESSAGE value="send message stash" />
+    <MESSAGE value="temporary, will merge with rayyan's thing later" />
+    <MESSAGE value="android support and rand" />
+    <MESSAGE value="android support and using rand instead of getrandom" />
+    <MESSAGE value="use app id instead of hard coded echelon in keyring" />
+    <MESSAGE value="downgrade to rust 1.93.0 due to queries overflow.&#10;&#10;&#10;Related bug reports: https://github.com/rust-lang/rust/issues/152942 and https://github.com/matrix-org/matrix-rust-sdk/issues/6254" />
+    <MESSAGE value="try simplify logic for secrets a bit. docs need to be done still" />
+    <MESSAGE value="android keyring works now i think" />
+    <MESSAGE value="push keyring version for both android and non-android to 4.0.0-beta.3" />
+    <MESSAGE value="tmp" />
+    <MESSAGE value="abstract keyring stuff to keyring client" />
+    <MESSAGE value="use encrypted store" />
+    <MESSAGE value="make secret use the abstracted keyring client" />
+    <MESSAGE value="use native store for now, need to test on windows" />
+    <MESSAGE value="do not store usernames/homeservers on disk in plaintext" />
+    <MESSAGE value="Document store.rs" />
+    <MESSAGE value="Document secret.rs" />
+    <MESSAGE value="tiny cleanup" />
+    <MESSAGE value="apply suggested comment for duplicated code" />
+    <MESSAGE value="try remove panic situations" />
+    <MESSAGE value="dont really need copilot files in the repo" />
+    <MESSAGE value="split client handler up into smaller files" />
+    <MESSAGE value="merge stronghold logic into a common backend. make a closure for stuff to do with active client to reduce the duplication" />
+    <option name="LAST_COMMIT_MESSAGE" value="merge stronghold logic into a common backend. make a closure for stuff to do with active client to reduce the duplication" />
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
+  </component>
+  <component name="github-copilot-workspace">
+    <instructionFileLocations>
+      <option value=".github/instructions" />
+    </instructionFileLocations>
+    <promptFileLocations>
+      <option value=".github/prompts" />
+    </promptFileLocations>
+  </component>
+</project>
