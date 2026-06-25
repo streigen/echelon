@@ -56,4 +56,6 @@ codegen-units = 1
 lto = true
 
 
+[profile.dev.package.scrypt]
+opt-level = 3
 
