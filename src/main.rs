@@ -69,132 +69,189 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let client = rt.block_on(ClientHandler::new(app_state.clone(), ui_handle.clone()))?;
     let client_state: ClientState = Arc::new(RwLock::new(Some(client)));
+    let rt_handle = rt.handle().clone();
 
     ui.on_login({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move |username, password, homeserver| {
-            handle.block_on(commands::auth::login(
-                username.into(), password.into(), homeserver.into(), state.clone(),
-            )).map_or_else(|e| e.into(), |s| s.into())
+            let (state, ui) = (state.clone(), ui.clone());
+            let (username, password, homeserver) = (username.to_string(), password.to_string(), homeserver.to_string());
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::auth::login(username, password, homeserver, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into());
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_logout({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move || {
-            handle.block_on(commands::auth::logout(state.clone()))
-                .map_or_else(|e| e.into(), |s| s.into())
+            let (state, ui) = (state.clone(), ui.clone());
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::auth::logout(state)
+                    .await.map_or_else(|e| e.into(), |s| s.into());
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_register({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move |username, password, homeserver, token| {
-            let token: Option<String> = if token.is_empty() { None } else { Some(token.into()) };
-            handle.block_on(commands::auth::register(
-                username.into(), password.into(), homeserver.into(), token, state.clone(),
-            )).map_or_else(|e| e.into(), |s| s.into())
+            let (state, ui) = (state.clone(), ui.clone());
+            let token: Option<String> = if token.is_empty() { None } else { Some(token.to_string()) };
+            let (username, password, homeserver) = (username.to_string(), password.to_string(), homeserver.to_string());
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::auth::register(username, password, homeserver, token, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into());
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_restore_session({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move |username, homeserver| {
-            handle.block_on(commands::auth::restore_session(
-                username.into(), homeserver.into(), state.clone(),
-            )).map_or_else(|e| e.into(), |s| s.into())
+            let (state, ui) = (state.clone(), ui.clone());
+            let (username, homeserver) = (username.to_string(), homeserver.to_string());
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::auth::restore_session(username, homeserver, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into());
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_oauth_login({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move |homeserver| {
-            handle.block_on(commands::auth::oauth_login(
-                homeserver.into(), state.clone(),
-            )).map_or_else(|e| e.into(), |s| s.into())
+            let (state, ui) = (state.clone(), ui.clone());
+            let homeserver = homeserver.to_string();
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::auth::oauth_login(homeserver, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into());
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_oauth_register({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move |homeserver| {
-            handle.block_on(commands::auth::oauth_register(
-                homeserver.into(), state.clone(),
-            )).map_or_else(|e| e.into(), |s| s.into())
+            let (state, ui) = (state.clone(), ui.clone());
+            let homeserver = homeserver.to_string();
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::auth::oauth_register(homeserver, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into());
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_reset_account({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move |reset_type, password, key_backup| {
             use crate::account::account_reset_types::AccountResetType;
+            let (state, ui) = (state.clone(), ui.clone());
             let account_reset_type = if reset_type == 0 {
                 AccountResetType::IdentityReset
             } else {
                 AccountResetType::KeyBackupReset
             };
-            let password = if password.is_empty() { None } else { Some(password.into()) };
-            let key_backup = if key_backup.is_empty() { None } else { Some(key_backup.into()) };
-            handle.block_on(commands::account::reset_account(
-                account_reset_type, password, key_backup, state.clone(),
-            )).map_or_else(|e| e.into(), |s| s.into())
+            let password = if password.is_empty() { None } else { Some(password.to_string()) };
+            let key_backup = if key_backup.is_empty() { None } else { Some(key_backup.to_string()) };
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::account::reset_account(account_reset_type, password, key_backup, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into());
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_get_spaces({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move || {
-            handle.block_on(commands::spaces::get_spaces(state.clone()))
-                .map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default())
-                .into()
+            let (state, ui) = (state.clone(), ui.clone());
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::spaces::get_spaces(state)
+                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_get_rooms({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move || {
-            #[allow(deprecated)]
-            let result = handle.block_on(commands::rooms::get_rooms(state.clone()));
-            result.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into()
+            let (state, ui) = (state.clone(), ui.clone());
+            handle.spawn(async move {
+                #[allow(deprecated)]
+                let msg: slint::SharedString = commands::rooms::get_rooms(state)
+                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_get_all_spaces_with_trees({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move || {
-            handle.block_on(commands::spaces::get_all_spaces_with_trees(state.clone()))
-                .map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default())
-                .into()
+            let (state, ui) = (state.clone(), ui.clone());
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::spaces::get_all_spaces_with_trees(state)
+                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_get_space_tree({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move |space_id| {
-            handle.block_on(commands::spaces::get_space_tree(space_id.into(), state.clone()))
-                .map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default())
-                .into()
+            let (state, ui) = (state.clone(), ui.clone());
+            let space_id = space_id.to_string();
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::spaces::get_space_tree(space_id, state)
+                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 
     ui.on_get_dm_rooms({
         let state = client_state.clone();
-        let handle = rt.handle().clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move || {
-            handle.block_on(commands::dm::get_dm_rooms(state.clone()))
-                .map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default())
-                .into()
+            let (state, ui) = (state.clone(), ui.clone());
+            handle.spawn(async move {
+                let msg: slint::SharedString = commands::dm::get_dm_rooms(state)
+                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
+                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            });
         }
     });
 

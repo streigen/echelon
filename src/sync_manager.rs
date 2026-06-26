@@ -1,8 +1,32 @@
 use matrix_sdk::Client;
 use matrix_sdk::config::SyncSettings;
+use matrix_sdk::ruma::api::client::{
+    filter::{FilterDefinition, LazyLoadOptions, RoomEventFilter, RoomFilter},
+    sync::sync_events::v3::Filter,
+};
+use matrix_sdk::ruma::uint;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
+
+fn build_sync_filter() -> FilterDefinition {
+    let mut state_filter = RoomEventFilter::default();
+    state_filter.lazy_load_options = LazyLoadOptions::Enabled {
+        include_redundant_members: false,
+    };
+
+    let mut timeline_filter = RoomEventFilter::default();
+    timeline_filter.limit = Some(uint!(20));
+
+    let mut room_filter = RoomFilter::default();
+    room_filter.include_leave = false;
+    room_filter.state = state_filter;
+    room_filter.timeline = timeline_filter;
+
+    let mut filter = FilterDefinition::default();
+    filter.room = room_filter;
+    filter
+}
 
 pub struct SyncManager {
     sync_handle: RwLock<Option<JoinHandle<()>>>,
@@ -17,28 +41,47 @@ impl SyncManager {
 
     /// Start the sync loop for a given Matrix client
     pub async fn start_sync(&self, client: Client) {
-        // Stop any existing sync first
         self.stop_sync().await;
-
-        let sync_settings = SyncSettings::default();
-
-        let initial_response = client.sync_once(sync_settings.clone().full_state(true)).await.expect("failed to perform initial sync");
-        let next_batch = initial_response.next_batch;
 
         let handle = tokio::spawn(async move {
             debug!("Starting Matrix sync loop...");
 
-            let mut since = next_batch;
+            // Upload filter once. server caches it and returns a short ID we reuse every sync.
+            // Falls back to inline filter on error (still applies filtering, just less efficient).
+            let filter_id: Option<String> = match client
+                .get_or_upload_filter("echelon_v1", build_sync_filter())
+                .await
+            {
+                Ok(id) => {
+                    debug!("Using server-side sync filter: {}", id);
+                    Some(id)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to upload sync filter, falling back to inline: {:?}",
+                        e
+                    );
+                    None
+                }
+            };
+
+            let mut since: Option<String> = None;
             loop {
-                let settings = SyncSettings::default().token(since.clone());
+                let base = match &filter_id {
+                    Some(id) => SyncSettings::default().filter(Filter::FilterId(id.clone())),
+                    None => SyncSettings::default()
+                        .filter(Filter::FilterDefinition(build_sync_filter())),
+                };
+                let settings = match &since {
+                    Some(token) => base.token(token.clone()),
+                    None => base,
+                };
                 match client.sync_once(settings).await {
                     Ok(response) => {
-                        debug!("Sync completed successfully, next batch: {}", response.next_batch);
-                        since = response.next_batch;
-                    },
+                        since = Some(response.next_batch);
+                    }
                     Err(e) => {
                         error!("Sync error: {:?}", e);
-                        // Wait a bit before retrying on error
                         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     }
                 }
@@ -71,7 +114,12 @@ impl SyncManager {
 impl Drop for SyncManager {
     fn drop(&mut self) {
         // Try to stop sync when the manager is dropped
-        if let Some(handle) = self.sync_handle.try_write().ok().and_then(|mut guard| guard.take()) {
+        if let Some(handle) = self
+            .sync_handle
+            .try_write()
+            .ok()
+            .and_then(|mut guard| guard.take())
+        {
             handle.abort();
         }
     }

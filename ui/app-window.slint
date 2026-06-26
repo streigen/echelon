@@ -6,21 +6,21 @@ export component AppWindow inherits Window {
     preferred-height: 780px;
 
     // Auth commands
-    callback login(string, string, string) -> string;
-    callback logout() -> string;
-    callback register(string, string, string, string) -> string;
-    callback restore-session(string, string) -> string;
-    callback oauth-login(string) -> string;
-    callback oauth-register(string) -> string;
+    callback login(string, string, string);
+    callback logout();
+    callback register(string, string, string, string);
+    callback restore-session(string, string);
+    callback oauth-login(string);
+    callback oauth-register(string);
     // reset_type: 0 = IdentityReset, 1 = KeyBackupReset
-    callback reset-account(int, string, string) -> string;
+    callback reset-account(int, string, string);
 
     // Room/space queries
-    callback get-spaces() -> string;
-    callback get-rooms() -> string;
-    callback get-all-spaces-with-trees() -> string;
-    callback get-space-tree(string) -> string;
-    callback get-dm-rooms() -> string;
+    callback get-spaces();
+    callback get-rooms();
+    callback get-all-spaces-with-trees();
+    callback get-space-tree(string);
+    callback get-dm-rooms();
 
     // Incoming Matrix events pushed from backend
     callback on-matrix-message(string, string, string, string);
@@ -54,7 +54,7 @@ export component AppWindow inherits Window {
                     login-hs   := LineEdit { placeholder-text: "https://matrix.org"; horizontal-stretch: 1; }
                     Button {
                         text: "Login";
-                        clicked => { root.result = root.login(login-user.text, login-pass.text, login-hs.text); }
+                        clicked => { root.result = "logging in..."; root.login(login-user.text, login-pass.text, login-hs.text); }
                     }
                 }
 
@@ -67,7 +67,7 @@ export component AppWindow inherits Window {
                     reg-tok   := LineEdit { placeholder-text: "token (optional)"; horizontal-stretch: 1; }
                     Button {
                         text: "Register";
-                        clicked => { root.result = root.register(reg-user.text, reg-pass.text, reg-hs.text, reg-tok.text); }
+                        clicked => { root.result = "registering..."; root.register(reg-user.text, reg-pass.text, reg-hs.text, reg-tok.text); }
                     }
                 }
 
@@ -78,7 +78,7 @@ export component AppWindow inherits Window {
                     rs-hs   := LineEdit { placeholder-text: "homeserver"; horizontal-stretch: 1; }
                     Button {
                         text: "Restore Session";
-                        clicked => { root.result = root.restore-session(rs-user.text, rs-hs.text); }
+                        clicked => { root.result = "restoring session..."; root.restore-session(rs-user.text, rs-hs.text); }
                     }
                 }
 
@@ -87,7 +87,7 @@ export component AppWindow inherits Window {
                     Text { text: ""; width: 60px; }
                     Button {
                         text: "Logout";
-                        clicked => { root.result = root.logout(); }
+                        clicked => { root.result = "logging out..."; root.logout(); }
                     }
                 }
 
@@ -100,11 +100,11 @@ export component AppWindow inherits Window {
                     oauth-hs := LineEdit { placeholder-text: "homeserver"; horizontal-stretch: 1; }
                     Button {
                         text: "OAuth Login";
-                        clicked => { root.result = root.oauth-login(oauth-hs.text); }
+                        clicked => { root.result = "starting oauth..."; root.oauth-login(oauth-hs.text); }
                     }
                     Button {
                         text: "OAuth Register";
-                        clicked => { root.result = root.oauth-register(oauth-hs.text); }
+                        clicked => { root.result = "starting oauth..."; root.oauth-register(oauth-hs.text); }
                     }
                 }
 
@@ -118,11 +118,11 @@ export component AppWindow inherits Window {
                     ar-backup := LineEdit { placeholder-text: "key backup (for backup reset)"; horizontal-stretch: 1; }
                     Button {
                         text: "Identity Reset";
-                        clicked => { root.result = root.reset-account(0, ar-pass.text, ar-backup.text); }
+                        clicked => { root.result = "resetting..."; root.reset-account(0, ar-pass.text, ar-backup.text); }
                     }
                     Button {
                         text: "Key Backup Reset";
-                        clicked => { root.result = root.reset-account(1, ar-pass.text, ar-backup.text); }
+                        clicked => { root.result = "resetting..."; root.reset-account(1, ar-pass.text, ar-backup.text); }
                     }
                 }
 
@@ -132,10 +132,10 @@ export component AppWindow inherits Window {
                 HorizontalBox {
                     spacing: 4px;
                     Text { text: ""; width: 60px; }
-                    Button { text: "Get Spaces";       clicked => { root.result = root.get-spaces(); } }
-                    Button { text: "Get Rooms";        clicked => { root.result = root.get-rooms(); } }
-                    Button { text: "Get DM Rooms";     clicked => { root.result = root.get-dm-rooms(); } }
-                    Button { text: "All Spaces+Trees"; clicked => { root.result = root.get-all-spaces-with-trees(); } }
+                    Button { text: "Get Spaces";       clicked => { root.result = "loading..."; root.get-spaces(); } }
+                    Button { text: "Get Rooms";        clicked => { root.result = "loading..."; root.get-rooms(); } }
+                    Button { text: "Get DM Rooms";     clicked => { root.result = "loading..."; root.get-dm-rooms(); } }
+                    Button { text: "All Spaces+Trees"; clicked => { root.result = "loading..."; root.get-all-spaces-with-trees(); } }
                 }
 
                 HorizontalBox {
@@ -144,7 +144,7 @@ export component AppWindow inherits Window {
                     space-id := LineEdit { placeholder-text: "!roomid:server.tld"; horizontal-stretch: 1; }
                     Button {
                         text: "Get Space Tree";
-                        clicked => { root.result = root.get-space-tree(space-id.text); }
+                        clicked => { root.result = "loading..."; root.get-space-tree(space-id.text); }
                     }
                 }
             }
