@@ -1,0 +1,28 @@
+import "../../static/JetBrainsMono-Regular.ttf";
+import { LeftPanel } from "./left-panel.slint";
+import { ChatMain } from "./chat-main.slint";
+import { ParticipantsPanel } from "./participants-panel.slint";
+
+export component ChatPage inherits Rectangle {
+    background: #000000;
+    
+    in-out property <bool> sidebar-collapsed: false;
+    in-out property <bool> participants-visible: true;
+    in-out property <string> active-room: "general";
+    
+    HorizontalLayout {
+        LeftPanel {
+            sidebar-collapsed <=> root.sidebar-collapsed;
+            active-room <=> root.active-room;
+            width: root.sidebar-collapsed ? 70px : 320px;
+            animate width { duration: 420ms; easing: ease; }
+        }
+        ChatMain {
+            participants-visible <=> root.participants-visible;
+            active-room <=> root.active-room;
+        }
+        if root.participants-visible : ParticipantsPanel {
+            width: 250px;
+        }
+    }
+}

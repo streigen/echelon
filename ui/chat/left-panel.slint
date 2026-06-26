@@ -1,0 +1,305 @@
+import "../../static/JetBrainsMono-Regular.ttf";
+
+struct VoiceParticipant {
+    name: string,
+    pfp: string,
+}
+
+import { RoomItem, RoomData } from "../components/room-item.slint";
+
+struct CategoryData {
+    name: string,
+    rooms: [RoomData],
+    collapsed: bool,
+}
+
+export component LeftPanel inherits Rectangle {
+    in-out property <bool> sidebar-collapsed: false;
+    in-out property <string> active-room: "general";
+    
+    in-out property <string> active-voice-room: "";
+    in-out property <bool> muted: false;
+    in-out property <bool> deafened: false;
+    in-out property <bool> profile-stack-visible: false;
+    
+    in-out property <[CategoryData]> categories: [
+        { name: "ROOMS", collapsed: false, rooms: [
+            { name: "announcements", r_type: "text", encrypted: true },
+            { name: "general", r_type: "text", encrypted: true },
+            { name: "very trustworthy", r_type: "text", encrypted: false },
+            { name: "very trustworthy x2", r_type: "text", encrypted: false },
+        ]},
+        { name: "COOKING", collapsed: false, rooms: [
+            { name: "cookies", r_type: "text", encrypted: false },
+            { name: "creme", r_type: "text", encrypted: true },
+        ]},
+        { name: "VOICE ROOMS", collapsed: false, rooms: [
+            { name: "voice room", r_type: "voice", encrypted: false },
+        ]},
+    ];
+    
+    in-out property <[string]> voice-participants: ["Clumsy ☆", "Human", "flaxeneel2"];
+    
+    background: #000000;
+    
+    HorizontalLayout {
+        // Spaces Bar
+        Rectangle {
+            width: 70px;
+            background: #000000;
+            
+            Rectangle {
+                x: parent.width - 1px;
+                width: 1px;
+                height: parent.height;
+                background: rgba(255, 255, 255, 0.18);
+            }
+            
+            VerticalLayout {
+                alignment: space-between;
+                
+                // Top section
+                VerticalLayout {
+                    alignment: start;
+                    spacing: 16px;
+                    padding-top: 16px;
+                    
+                    // DM Icon
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 48px;
+                            height: 48px;
+                            border-radius: 16px;
+                            background: #0C103B;
+                            Image {
+                                source: @image-url("../../static/dm.svg");
+                                width: 24px;
+                                height: 24px;
+                                colorize: #FFFFFF;
+                            }
+                        }
+                    }
+                    
+                    Rectangle { height: 1px; background: rgba(255, 255, 255, 0.18); width: 48px; x: (parent.width - 48px) / 2; }
+                    
+                    // Spaces list
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 48px;
+                            height: 48px;
+                            border-radius: 16px;
+                            background: #29356A; // Active space
+                            Text { text: "ec"; color: #59B5D1; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 48px;
+                            height: 48px;
+                            border-radius: 16px;
+                            background: #0C103B;
+                            Text { text: "sp"; color: rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
+                        }
+                    }
+                }
+                
+                // Bottom section
+                VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 24px;
+                    spacing: 16px;
+                    
+                    // Collapse button
+                    HorizontalLayout {
+                        alignment: center;
+                        if !root.sidebar-collapsed : Rectangle {
+                            width: 32px;
+                            height: 32px;
+                            border-radius: 8px;
+                            background: transparent;
+                            Image {
+                                source: @image-url("../../static/dropdown.svg");
+                                width: 16px;
+                                height: 16px;
+                                colorize: #59B5D1;
+                                transform-rotation: 90deg; // rotate to point left to collapse
+                            }
+                            TouchArea {
+                                clicked => { root.sidebar-collapsed = true; }
+                                mouse-cursor: pointer;
+                            }
+                        }
+                    }
+                    
+                    // Profile dock
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: 18px;
+                            background: #d9dde4; // placeholder pfp
+                            
+                            // Hover stack for collapsed view
+                            if root.sidebar-collapsed : TouchArea {
+                                width: 100%; height: 100%;
+                                mouse-cursor: pointer;
+                                clicked => { root.sidebar-collapsed = false; }
+                                // Simulate hover stack with simple click to expand
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Rooms Sidebar
+        if !root.sidebar-collapsed : Rectangle {
+            width: 250px;
+            background: #000000; // sidebar container
+            
+            Rectangle {
+                x: parent.width - 1px;
+                width: 1px;
+                height: parent.height;
+                background: rgba(255, 255, 255, 0.18);
+            }
+            
+            // sidebar container
+            
+            VerticalLayout {
+                alignment: space-between;
+                
+                // Rooms list
+                Flickable {
+                    height: 100%;
+                    width: 100%;
+                    viewport-height: rooms-layout.preferred-height;
+                    rooms-layout := VerticalLayout {
+                        padding: 16px;
+                        spacing: 12px;
+                        alignment: start;
+                        
+                        // Header
+                        HorizontalLayout {
+                            alignment: space-between;
+                            VerticalLayout {
+                                Text { text: "echelon"; color: #FFFFFF; font-size: 16px; font-weight: 700; }
+                                Text { text: "matrix.org"; color: #40529F; font-size: 11px; }
+                            }
+                            Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: rgba(255, 255, 255, 0.7); y: 4px; }
+                        }
+                        
+                        Rectangle { height: 12px; }
+                        
+                        for category[idx] in root.categories : VerticalLayout {
+                            spacing: 8px;
+                            padding-bottom: 8px;
+                            
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Image {
+                                    source: @image-url("../../static/dropdown.svg");
+                                    width: 12px;
+                                    height: 12px;
+                                    colorize: rgba(255, 255, 255, 0.45);
+                                    transform-rotation: category.collapsed ? -90deg : 0deg;
+                                    y: 2px;
+                                }
+                                Text { text: category.name; color: rgba(255, 255, 255, 0.45); font-size: 12px; font-weight: 700; }
+                                
+                                TouchArea {
+                                    clicked => { root.categories[idx].collapsed = !root.categories[idx].collapsed; }
+                                    mouse-cursor: pointer;
+                                }
+                            }
+                            
+                            if !category.collapsed : VerticalLayout {
+                                spacing: 4px;
+                                for room in category.rooms : RoomItem {
+                                    room: room;
+                                    active-room: root.active-room;
+                                    active-voice-room: root.active-voice-room;
+                                    voice-participants: root.voice-participants;
+                                    
+                                    clicked => {
+                                        if room.r_type == "text" { root.active-room = room.name; }
+                                        else { root.active-voice-room = (root.active-voice-room == room.name) ? "" : room.name; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // User bar
+                Rectangle {
+                    background: #000000;
+                    
+                    VerticalLayout {
+                        if root.active-voice-room != "" : Rectangle {
+                            background: transparent;
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 8px;
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Text { text: "connected"; color: #38BDF8; font-size: 12px; font-weight: 700; }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    Text { text: root.active-voice-room; color: #FFFFFF; font-size: 14px; }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: #FFFFFF; }
+                                    }
+                                }
+                                Rectangle { height: 1px; background: rgba(89, 181, 209, 0.4); }
+                            }
+                        }
+                        
+                        HorizontalLayout {
+                            padding: 16px;
+                            alignment: space-between;
+                            
+                            HorizontalLayout {
+                                spacing: 12px;
+                                // Placeholder for persistent pfp which would be positioned absolutely in svelte, here just inline
+                                Rectangle { width: 36px; height: 36px; border-radius: 18px; background: #d9dde4; }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text { text: "Clumsy ☆"; color: #FFFFFF; font-size: 14px; font-weight: 700; }
+                                    Text { text: "matrix.org"; color: #40529F; font-size: 11px; }
+                                }
+                            }
+                            
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: center;
+                                Rectangle {
+                                    width: 30px; height: 30px; border-radius: 8px;
+                                    background: root.muted ? rgba(237, 66, 69, 0.24) : transparent;
+                                    Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: #FFFFFF; } // Use proper mute icon in real
+                                    TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
+                                }
+                                Rectangle {
+                                    width: 30px; height: 30px; border-radius: 8px;
+                                    background: root.deafened ? rgba(237, 66, 69, 0.24) : transparent;
+                                    Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: #FFFFFF; transform-rotation: 180deg; }
+                                    TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

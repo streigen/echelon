@@ -1,0 +1,41 @@
+import "../../static/JetBrainsMono-Regular.ttf";
+
+export component CustomButton {
+    in property <string> text;
+    in property <bool> enabled: true;
+    
+    // Customizable colors
+    in property <color> bg-color: #000000;
+    in property <color> border-color-normal: #312E81;
+    in property <color> border-color-hover: #38BDF8;
+    in property <color> text-color: rgba(255, 255, 255, 0.55);
+    
+    callback clicked();
+
+    height: 48px;
+
+    Rectangle {
+        background: root.bg-color;
+        border-width: 2px;
+        border-color: ta.has-hover ? root.border-color-hover : root.border-color-normal;
+        border-top-left-radius: 20px;
+        border-bottom-right-radius: 20px;
+        opacity: root.enabled ? 1.0 : 0.5;
+
+        animate border-color { duration: 200ms; easing: ease-in-out; }
+
+        Text {
+            text: root.text;
+            color: root.text-color;
+            font-size: 16px;
+            font-family: "JetBrains Mono";
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        ta := TouchArea {
+            clicked => { if (root.enabled) { root.clicked(); } }
+            mouse-cursor: root.enabled ? pointer : default;
+        }
+    }
+}

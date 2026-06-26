@@ -1,0 +1,94 @@
+import "../../static/JetBrainsMono-Regular.ttf";
+
+export component CustomInput {
+    in property <string> placeholder;
+    in property <InputType> input-type: InputType.text;
+    in-out property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> has-focus: text-input.has-focus;
+    in property <bool> is-password: false;
+    in property <bool> is-homeserver: false;
+    in-out property <bool> show-password: false;
+    
+    // Customizable colors
+    in property <color> bg-color: #000000;
+    in property <color> focus-color: #38BDF8;
+    in property <color> text-color: #FFFFFF;
+    in property <color> icon-color: #38BDF8;
+    
+    callback accepted();
+
+    min-width: 100px;
+    height: 48px;
+
+    Rectangle {
+        background: root.bg-color;
+        border-width: 2px;
+        border-color: root.has-focus ? root.focus-color : #1a2255;
+        border-top-left-radius: 20px;
+        border-bottom-right-radius: 20px;
+
+        drop-shadow-color: root.has-focus ? root.focus-color.with-alpha(0.25) : transparent;
+        drop-shadow-blur: root.has-focus ? 10px : 0px;
+
+        animate border-color { duration: 200ms; easing: ease; }
+        animate drop-shadow-color { duration: 200ms; easing: ease; }
+        animate drop-shadow-blur { duration: 200ms; easing: ease; }
+        
+        text-input := TextInput {
+            text <=> root.text;
+            color: root.text-color;
+            font-size: 16px;
+            font-family: "JetBrains Mono";
+            input-type: root.input-type;
+            vertical-alignment: center;
+            x: 18px;
+            width: (root.is-password || root.is-homeserver) ? parent.width - 50px : parent.width - 36px;
+            enabled: root.enabled;
+            accepted => { root.accepted(); }
+        }
+
+        if (root.text == "") : Text {
+            text: root.placeholder;
+            color: root.has-focus ? root.text-color.with-alpha(0.3) : root.text-color.with-alpha(0.55);
+            font-size: 16px;
+            font-family: "JetBrains Mono";
+            vertical-alignment: center;
+            x: 18px;
+            animate color { duration: 200ms; easing: ease; }
+        }
+
+        if (root.is-password) : Rectangle {
+            width: 18px;
+            height: 18px;
+            x: parent.width - 32px;
+            y: (parent.height - self.height) / 2;
+            opacity: ta.has-hover ? 1.0 : 0.5;
+            animate opacity { duration: 200ms; easing: ease; }
+
+            Image {
+                source: root.show-password ? @image-url("../../static/hide.svg") : @image-url("../../static/see.svg");
+                width: 100%;
+                height: 100%;
+                colorize: root.icon-color;
+            }
+            ta := TouchArea {
+                clicked => { root.show-password = !root.show-password; }
+                mouse-cursor: pointer;
+            }
+        }
+
+        if (root.is-homeserver) : Rectangle {
+            width: 18px;
+            height: 18px;
+            x: parent.width - 32px;
+            y: (parent.height - self.height) / 2;
+            Image {
+                source: @image-url("../../static/info.svg");
+                width: 100%;
+                height: 100%;
+                colorize: root.icon-color;
+            }
+        }
+    }
+}

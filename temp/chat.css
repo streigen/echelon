@@ -1,0 +1,1210 @@
+/* ============================================================
+   chat.css — main layout & component styles for the chat view
+   ============================================================ */
+
+/* ── Design tokens ──────────────────────────────────────────── */
+:root {
+    --panel-pad:         clamp(0.625rem, 0.781vw, 0.9375rem);
+    --line-color:        rgba(255, 255, 255, 0.18);
+    --header-row-height: clamp(3.625rem, 6.574vh, 4.4375rem);
+    --line-inset:        8%;
+    --spaces-size:       clamp(2.5rem, 2.604vw, 3.125rem);
+    --spaces-inset:      clamp(0.625rem, 0.781vw, 0.9375rem);
+    --left-sidebar-width:  clamp(13.75rem, 16vw, 18.75rem);
+    --right-panel-width:   clamp(13.75rem, 19vw, 21.25rem);
+
+    /* Shared easing curve used throughout */
+    --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-butter: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* ── Reset ──────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: #00050e;
+    font-family: 'JetBrains Mono', monospace;
+    color: #fff;
+    overflow: hidden;
+}
+
+button {
+    font-family: inherit;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+}
+
+img { display: block; }
+
+/* ── Decorative divider lines ───────────────────────────────── */
+/* Used on header rows: thin inset rule rendered via pseudo-element */
+.gapped-line-bottom,
+.gapped-line-top {
+    position: relative;
+}
+
+.gapped-line-bottom::after,
+.gapped-line-top::before {
+    content: "";
+    position: absolute;
+    left: var(--line-inset-left, var(--line-inset));
+    width: calc(100% - var(--line-inset-left, var(--line-inset)) - var(--line-inset-right, var(--line-inset)));
+    height: 0.09375rem;
+    background: var(--line-color);
+    border-radius: 0.625rem;
+    pointer-events: none;
+}
+
+.gapped-line-bottom::after { bottom: 0; }
+.gapped-line-top::before   { top: 0; }
+
+/* Fixed-height header strip shared by all panel headers */
+.section-header-row {
+    height: var(--header-row-height);
+    min-height: var(--header-row-height);
+    max-height: var(--header-row-height);
+}
+
+/* Dashed circle placeholder for unloaded icons/avatars */
+.placeholder-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 50%;
+    border: 0.0625rem dashed rgba(255, 255, 255, 0.45);
+    opacity: 0.7;
+}
+
+/* ── Root layout ────────────────────────────────────────────── */
+.app-container {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ── Left panel (spaces rail + sidebar + user bar) ──────────── */
+
+/*
+ * The left panel is a flex column: [spaces-rail | sidebar-shell] on top, user-bar below.
+ * Collapse width animation is isolated to `.sidebar-shell` (lightweight wrapper),
+ * while `.sidebar-container` itself only animates transform/opacity.
+ * This avoids repeatedly relaying out/painting the heavy sidebar content tree.
+ */
+.left-panel {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    height: 100%;
+    overflow: hidden;
+    /* Width includes spaces rail + sidebar */
+    width: calc(var(--spaces-size) + (var(--spaces-inset) * 2) + var(--left-sidebar-width));
+    min-width: calc(var(--spaces-size) + (var(--spaces-inset) * 2));
+    position: relative;
+    transition: width 0.42s var(--ease-smooth);
+}
+
+/* Row that holds the spaces rail and sidebar side by side */
+.left-panel-columns {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ── Spaces rail ────────────────────────────────────────────── */
+.spaces-bar {
+    width: calc(var(--spaces-size) + (var(--spaces-inset) * 2));
+    height: 100%;
+    background: #070912;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.625rem;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Header row inside the spaces rail */
+.spaces-bar-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    --line-inset-left: var(--spaces-inset);
+    --line-inset-right: var(--spaces-inset);
+}
+
+/* DM shortcut icon */
+.spaces-dm-icon-wrapper {
+    width: var(--spaces-size);
+    height: var(--spaces-size);
+    border-radius: 0.625rem;
+    background: #0C103B;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0.125rem solid transparent;
+    transition: border-radius 0.2s, background 0.2s;
+}
+
+.spaces-dm-icon-wrapper:hover {
+    border-radius: 0.75rem;
+    background: #2D1B8E;
+}
+
+.spaces-dm-icon {
+    width: calc(var(--spaces-size) * 0.55);
+    height: calc(var(--spaces-size) * 0.55);
+    filter: brightness(0) invert(1);
+}
+
+/* Scrollable list of space icons */
+.spaces-list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    align-items: center;
+    flex: 1;
+    min-height: 0;
+}
+
+.space {
+    width: var(--spaces-size);
+    height: var(--spaces-size);
+    border-radius: 0.625rem;
+    background: #0C103B;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.55);
+    border: 0.125rem solid transparent;
+    transition: border-radius 0.2s, background 0.2s, color 0.2s;
+}
+
+.space:hover {
+    border-radius: 0.75rem;
+    background: #2D1B8E;
+    color: #fff;
+}
+
+.space.active {
+    border-radius: 0.75rem;
+    background: #29356A;
+    color: #59B5D1;
+    border-color: #59B5D1;
+}
+
+/* ── Sidebar collapse button (bottom of spaces rail) ────────── */
+.spaces-bottom-zone {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    padding-bottom: 0.375rem;
+}
+
+.spaces-collapse-btn {
+    width: 2.375rem;
+    height: 2.375rem;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.spaces-collapse-btn:hover { background: rgba(89, 181, 209, 0.12); }
+
+/*
+ * Arrow icon: starts pointing right (→ = sidebar open).
+ * `.rotated` flips it left (← = sidebar collapsed).
+ * Only `transform` is animated — GPU-composited, no layout cost.
+ */
+.spaces-collapse-arrow {
+    width: 1.125rem;
+    height: 1.125rem;
+    transform: rotate(90deg);
+    filter: brightness(0) saturate(100%) invert(84%) sepia(19%) saturate(1074%)
+            hue-rotate(156deg) brightness(91%) contrast(85%);
+    transition: transform 0.28s var(--ease-out), filter 0.2s;
+    will-change: transform;
+    backface-visibility: hidden;    /* Fixes "micro-stutters" in WebKit */
+}
+
+.spaces-collapse-btn.rotated .spaces-collapse-arrow { transform: rotate(-90deg); }
+.spaces-collapse-btn:hover .spaces-collapse-arrow   { filter: brightness(0) invert(1); }
+
+/* ── Collapsed-state dock (replaces collapse btn when sidebar is hidden) ── */
+/*
+ * Sits pinned to the bottom of the spaces rail.
+ * Hidden (opacity 0, no pointer events) when sidebar is expanded.
+ * Only `opacity` is transitioned — GPU-composited.
+ */
+.spaces-collapsed-dock {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: #070912;
+    padding: 0.5rem 0 1.125rem;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s var(--ease-out);
+}
+
+/*
+ * Wrapper div around the profile + floating button stack.
+ * mouseenter/mouseleave are tracked here so the hide-timer logic
+ * lives in one place (see +page.svelte).
+ */
+.spaces-dock-zone {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Profile circle in the collapsed dock — now just a hover/click anchor, no visual pfp */
+.spaces-collapsed-profile {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+/* Online dot, offset to top-right of the profile circle */
+.spaces-collapsed-profile .activity-status {
+    position: absolute;
+    top: 0.0625rem;
+    right: 0.0625rem;
+    border-color: #070912;
+}
+
+/*
+ * Floating action stack that pops up above the profile on hover.
+ *
+ * ANIMATION STRATEGY: only `opacity` and `transform` are animated.
+ * Both are GPU-composited properties — no layout or paint on each frame.
+ * `will-change: opacity, transform` promotes this element to its own
+ * compositor layer so transitions run entirely on the GPU thread.
+ */
+.spaces-hover-stack {
+    position: absolute;
+    bottom: calc(100% + 0.375rem); /* floats 0.375rem above the profile */
+    left: 50%;
+    transform: translateX(-50%) translateY(0.375rem); /* starts slightly lower */
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 0.375rem;
+    align-items: center;
+    padding-bottom: 0.25rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s var(--ease-out), transform 0.22s var(--ease-out);
+    will-change: opacity, transform;
+    backface-visibility: hidden;    /* Fixes "micro-stutters" in WebKit */
+}
+
+/*
+ * Invisible hit-area bridge: stretches downward from the stack to cover
+ * the 0.375rem gap + profile height, so the mouse never "leaves" the dock-zone
+ * while moving between the profile and the buttons.
+ * Only exists when the stack is visible — no stray hit area when hidden.
+ */
+.spaces-hover-stack.stack-visible::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 3.75rem;
+    /* padding-bottom(4) + gap(6) + profile(38) + dock-padding(8) */
+    height: 3.5rem;
+    pointer-events: auto;
+}
+
+/* Shown state: slides up and fades in */
+.app-container.sidebar-collapsed .spaces-hover-stack.stack-visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Thin rule above the action buttons */
+.spaces-collapsed-divider {
+    width: 70%;
+    height: 0.09375rem;
+    background: var(--line-color);
+    border-radius: 0.625rem;
+    align-self: center;
+}
+
+/* Individual action buttons in the floating stack */
+.spaces-hover-btn {
+    width: 2.125rem;
+    height: 2.125rem;
+    border-radius: 0.5rem;
+    background: rgba(45, 53, 106, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.18s var(--ease-out), transform 0.18s var(--ease-out);
+}
+
+.spaces-hover-btn:hover {
+    background: rgba(89, 181, 209, 0.18);
+    transform: scale(1.08);
+}
+
+/* Active state used for muted/deafened */
+.spaces-hover-btn.active { background: rgba(237, 66, 69, 0.24); }
+
+.spaces-hover-icon {
+    width: 1.125rem;
+    height: 1.125rem;
+    filter: brightness(0) invert(1);
+}
+
+/* Re-open button points left; flip-h mirrors an icon horizontally */
+.spaces-hover-icon.reopen { transform: rotate(-90deg); }
+.spaces-hover-icon.flip-h  { transform: scaleX(-1); }
+
+/* ── Sidebar collapsed state overrides ──────────────────────── */
+
+.app-container.sidebar-collapsed .left-panel {
+    width: calc(var(--spaces-size) + (var(--spaces-inset) * 2));
+}
+
+/* Hide the regular collapse button when collapsed */
+.app-container.sidebar-collapsed .spaces-collapse-btn,
+.app-container.sidebar-collapsed .spaces-bottom-zone {
+    display: none;
+}
+
+/* Extra bottom padding so space icons don't hide behind the pinned dock */
+.app-container.sidebar-collapsed .spaces-list {
+    padding-bottom: calc(2.375rem + 1rem + 0.375rem);
+    overflow-y: auto;
+}
+
+/* Show the collapsed dock */
+.app-container.sidebar-collapsed .spaces-collapsed-dock {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/*
+ * Collapsing the channel sidebar: animate `width` to 0.
+ * `opacity` fades content so it doesn't abruptly cut off mid-transition.
+ * Same easing + near-same duration keeps the two in sync visually.
+ */
+.sidebar-shell {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+    background: #0a1128;
+}
+
+.sidebar-container {
+    width: var(--left-sidebar-width);
+    min-width: var(--left-sidebar-width);
+    height: 100%;
+    background: #070d2a;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 1;
+    transition: transform 0.42s var(--ease-smooth);
+    will-change: transform;
+}
+
+.app-container.sidebar-collapsed .sidebar-container {
+    transform: translateX(-100%);
+    pointer-events: none;
+}
+
+/*
+ * User bar collapse: use `opacity` + `transform` instead of `max-height`.
+ * `max-height` triggers a layout recalculation on every animation frame.
+ * `transform: translateY` + `opacity` are both composited — smooth 60fps.
+ */
+.user-bar {
+    display: flex;
+    flex-direction: column;
+    background: #040b1f;
+    flex-shrink: 0;
+    padding: 0 0 0.5rem;
+    overflow: hidden;
+    transition: opacity 0.42s var(--ease-smooth), transform 0.42s var(--ease-smooth);
+    will-change: transform;
+}
+
+.app-container.sidebar-collapsed .user-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    opacity: 0;
+    transform: translateX(-100%);
+    pointer-events: none;
+    height: 0;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+    width: calc(var(--spaces-size) + (var(--spaces-inset) * 2));
+    max-width: calc(var(--spaces-size) + (var(--spaces-inset) * 2));
+}
+
+/* ── Space name / info header ────────────────────────────────── */
+.space-nameinfo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--panel-pad);
+    gap: 0.5rem;
+    flex-shrink: 0;
+    --line-inset-left: var(--panel-pad);
+    --line-inset-right: var(--panel-pad);
+}
+
+.space-nameinfo-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+}
+
+.space-title {
+    font-size: clamp(1rem, 1.1vw, 1.25rem);
+    line-height: 1;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.space-homeserver {
+    font-size: clamp(0.75rem, 0.95vw, 1rem);
+    line-height: 1;
+    margin-left: 1.5ch;
+    color: #40529F;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.space-dropdown-arrow {
+    width: 1.875rem;
+    height: 1.875rem;
+    flex-shrink: 0;
+    filter: brightness(0) invert(1);
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.space-dropdown-arrow:hover { opacity: 1; }
+
+/* ── Room list ───────────────────────────────────────────────── */
+.rooms {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0.625rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+/* Thin scrollbar */
+.rooms::-webkit-scrollbar       { width: 0.25rem; }
+.rooms::-webkit-scrollbar-track { background: transparent; }
+.rooms::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 0.125rem; }
+
+/* Category header row */
+.sub-space {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.625rem 0.25rem;
+    cursor: pointer;
+    user-select: none;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+    transition: color 0.15s;
+}
+
+.sub-space:hover { color: rgba(255, 255, 255, 0.75); }
+
+/* Arrow rotates when category is collapsed */
+.sub-space-arrow {
+    width: 0.75rem;
+    height: 0.75rem;
+    flex-shrink: 0;
+    filter: brightness(0) saturate(100%) invert(40%);
+    transition: transform 0.22s var(--ease-out);
+    will-change: transform;
+    backface-visibility: hidden;    /* Fixes "micro-stutters" in WebKit */
+}
+
+.sub-space-arrow-collapsed { transform: rotate(-90deg); }
+
+/* Individual room row */
+.room {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3125rem 0.75rem 0.3125rem 1.25rem;
+    border-radius: 0.375rem;
+    margin: 0 0.375rem;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.9375rem;
+    min-width: 0;
+    transition: background 0.15s, color 0.15s;
+}
+
+.room span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.room:hover { background: rgba(89, 181, 209, 0.08); color: rgba(255, 255, 255, 0.85); }
+.room.active { background: #2D1B8E; color: #fff; }
+
+.room-icon {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    filter: brightness(0) saturate(100%) invert(40%) sepia(15%) saturate(500%) hue-rotate(190deg);
+    transition: filter 0.15s;
+}
+
+/* Highlight icon when room is hovered or active */
+.room:hover .room-icon,
+.room.active .room-icon {
+    filter: brightness(0) saturate(100%) invert(84%) sepia(19%) saturate(1074%)
+            hue-rotate(156deg) brightness(91%) contrast(85%);
+}
+
+/* Active voice room row: open-bottom border joins the participant list below */
+.room.voice-room-active {
+    background: #1a2255;
+    color: #59B5D1;
+    border: 0.0625rem solid #59B5D1;
+    border-radius: 0.375rem 0.375rem 0 0;
+    margin-bottom: 0;
+}
+
+.room.voice-room-active .room-icon {
+    filter: brightness(0) saturate(100%) invert(84%) sepia(19%) saturate(1074%)
+            hue-rotate(156deg) brightness(91%) contrast(85%);
+}
+
+/* Animated participant list that expands below the active voice room */
+.voice-participants {
+    display: flex;
+    flex-direction: column;
+    margin: 0 0.375rem 0.25rem;
+    background: #1a2255;
+    border: 0.0625rem solid #59B5D1;
+    border-top: none;
+    border-radius: 0 0 0.375rem 0.375rem;
+    padding: 0.25rem 0 0.375rem;
+    overflow: hidden;
+    /* Slide + fade in — transform+opacity = composited, no layout cost */
+    animation: voice-participants-in 0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+@keyframes voice-participants-in {
+    from { opacity: 0; transform: translateY(-0.5rem); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.voice-participant {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem 0.25rem 1.75rem;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.8125rem;
+}
+
+.voice-participant-pfp {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    filter: brightness(0) saturate(100%) invert(84%) sepia(19%) saturate(1074%)
+            hue-rotate(156deg) brightness(91%) contrast(85%);
+    opacity: 0.7;
+}
+
+/* ── User bar ────────────────────────────────────────────────── */
+.voice-call-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    /* Left-align with the pfp, right padding matches user-bar-main */
+    padding: 0.5rem 0.75rem 0.75rem 1.25rem;
+}
+
+.voice-call-status {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.voice-call-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.voice-call-actions { display: flex; gap: 0.25rem; }
+
+.voice-action-btn {
+    width: 1.875rem;
+    height: 1.875rem;
+    border-radius: 0.5rem;
+    background: rgba(45, 53, 106, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.voice-action-btn:hover { background: rgba(89, 181, 209, 0.2); }
+
+.voice-action-icon {
+    width: 1rem;
+    height: 1rem;
+    filter: brightness(0) invert(1);
+    opacity: 0.75;
+}
+
+.voice-call-icon  { width: 0.875rem; height: 0.875rem; }
+
+.voice-call-label {
+    font-size: 0.6875rem;
+    color: #59B5D1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.voice-call-room {
+    font-size: 0.9375rem;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.voice-call-divider {
+    height: 0.09375rem;
+    background: rgba(89, 181, 209, 0.4);
+    margin: 0 0.75rem;
+    border-radius: 0.625rem;
+}
+
+/*
+ * Persistent pfp: lives directly on .left-panel (position:relative),
+ * never inside sidebar-container or user-bar scaleX transforms.
+ * Pinned to bottom-left so it sits at the same screen position in
+ * both collapsed and expanded states — no squish, no jump.
+ *
+ * Vertical:   bottom = user-bar padding-bottom (0.5rem) + user-bar-main padding-bottom (0.625rem) = 1.125rem
+ * Horizontal: left   = --spaces-inset (same as the spaces rail icon inset)
+ */
+.persistent-pfp {
+    position: absolute;
+    bottom: 1rem;
+    /* Centre within the spaces rail: (rail-width - pfp-width) / 2 */
+    left: calc((var(--spaces-size) + var(--spaces-inset) * 2 - 2.25rem) / 2);
+    width: 2.25rem;
+    height: 2.25rem;
+    flex-shrink: 0;
+    z-index: 5;
+    pointer-events: none;
+}
+
+.user-bar-main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    /*
+     * padding-left reserves space for the persistent-pfp (2.25rem) + gap (0.5rem),
+     * offset from --spaces-inset so content starts right after the pfp.
+     */
+    padding: 0.625rem 0.75rem 0.625rem calc(var(--spaces-inset) + 2.25rem + 0.5rem);
+}
+
+.pfp-placeholder {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: #d9dde4;
+}
+
+/* Online/offline dot; border colour matches the element's background */
+.activity-status {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 0.6875rem;
+    height: 0.6875rem;
+    border-radius: 50%;
+    border: 0.125rem solid #040b1f;
+    background: #3d3d3d;
+}
+
+.activity-status.online { background: #3ba55c; }
+
+.user-bar-info {
+    margin-left: 0.4375rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.0625rem;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Both text nodes share truncation behaviour */
+.user-bar-name,
+.user-bar-homeserver {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-bar-name       { font-size: 0.875rem; color: #fff; }
+.user-bar-homeserver { font-size: 0.75rem; color: #40529F; }
+
+.user-bar-controls { display: flex; gap: 0.25rem; flex-shrink: 0; }
+
+.control-btn {
+    width: 1.875rem;
+    height: 1.875rem;
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+
+.control-btn:hover  { background: rgba(255, 255, 255, 0.08); }
+.control-btn.active { background: rgba(237, 66, 69, 0.2); }
+
+.control-btn img {
+    width: 1.125rem;
+    height: 1.125rem;
+    filter: brightness(0) saturate(100%) invert(40%) sepia(15%) saturate(500%) hue-rotate(190deg);
+}
+
+.control-btn img.flip-h { transform: scaleX(-1); }
+.control-btn:hover img  { filter: brightness(0) invert(1); }
+
+/* ── Main content area (chat + participants) ─────────────────── */
+.app-layout {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+}
+
+/* Chat column */
+.chat-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 0.0625rem solid rgba(255,255,255,0.06);
+    overflow: hidden;
+    background: #0a1128;
+}
+
+/* Chat column header */
+.chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--panel-pad);
+    --line-inset-left: var(--panel-pad);
+    --line-inset-right: var(--panel-pad);
+}
+
+.chat-header-left,
+.chat-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.chat-header-room-icon {
+    width: 1rem;
+    height: 1rem;
+    filter: brightness(0) invert(1);
+}
+
+.chat-header-room-name { font-size: 1.125rem; color: #fff; }
+
+/* Icons inside header and composer buttons */
+.header-empty-icon {
+    width: 1rem;
+    height: 1rem;
+    filter: brightness(0) invert(1);
+    opacity: 0.7;
+}
+
+/* Small icon buttons used in the chat header and composer */
+.header-icon-btn,
+.composer-icon-btn,
+.composer-send-btn {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.header-icon-btn:hover,
+.composer-icon-btn:hover,
+.composer-send-btn:hover { background: rgba(255,255,255,0.08); }
+
+/* Scrollable message feed */
+.chat-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.75rem var(--panel-pad);
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+/* Individual message bubble */
+.message {
+    position: relative;
+    display: flex;
+    width: 100%;
+    gap: 0.75rem;
+    padding: 0.5rem 0.625rem;
+    border-radius: 0.5rem;
+    align-items: flex-start;
+    transition: background 0.15s;
+}
+
+.message:hover { background: rgba(101, 112, 181, 0.45); }
+
+.message-avatar {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: #c9ccd1;
+    flex-shrink: 0;
+    /* Nudge down slightly so avatar optically aligns with the author row */
+    margin-top: 0.125rem;
+}
+
+/* When a reply-link is present, push the avatar down past it so it stays
+   level with the author name row, not the reply citation above it */
+.message:has(.message-reply-link) .message-avatar {
+    margin-top: calc(0.6875rem * 1.2 + 0.3125rem + 0.125rem); /* reply line-height + margins + base nudge */
+}
+
+.message-content {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1875rem;
+}
+
+.message-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.message-author { font-size: 1rem; color: #fff;                  line-height: 1.15; }
+.message-time   { font-size: 0.625rem; color: rgba(255,255,255,0.4); line-height: 1.15; }
+.message-text   { font-size: 1rem; color: #fff;                  line-height: 1.35; }
+
+.message-reply-link {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin: 0.125rem 0 0.1875rem;
+    font-size: 0.6875rem;
+    color: rgba(255,255,255,0.55);
+}
+
+.reply-link-icon {
+    width: 0.9375rem;
+    height: 0.9375rem;
+    flex-shrink: 0;
+    opacity: 0.8;
+    transform: scaleX(-1);
+}
+
+/* Reply button appears only when the message is hovered */
+.message-reply-btn {
+    position: absolute;
+    right: 0.625rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, background 0.15s;
+}
+
+.reply-icon {
+    width: 1rem;
+    height: 1rem;
+    display: block;
+    opacity: 0.8;
+}
+
+.message:hover .message-reply-btn { opacity: 1; pointer-events: auto; }
+.message-reply-btn:hover           { background: rgba(255,255,255,0.08); }
+
+/* Image placeholder */
+.message-image-placeholder {
+    width: min(21.25rem, 100%);
+    aspect-ratio: 4 / 3;
+    margin-top: 0.5rem;
+    border-radius: 0.125rem;
+    background: radial-gradient(circle at 35% 20%, #ad2f1f, #2b130d 60%, #160c07 100%);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 0.75rem;
+    font-size: 1.125rem;
+    font-weight: 700;
+}
+
+/* Message composer strip */
+.chat-composer-area {
+    padding: 0.5rem var(--panel-pad) 0.625rem;
+}
+
+.typing-indicator {
+    font-size: 0.875rem;
+    color: rgba(255,255,255,0.45);
+    padding: 0 0 0.375rem calc(var(--panel-pad) + 0.75rem);
+}
+
+.chat-composer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #060d34;
+    border-radius: 0.5rem;
+    padding: 0.625rem 0.75rem;
+}
+
+.chat-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 0.875rem;
+    font-family: inherit;
+    margin-left: 0.8125rem;
+    resize: none;
+    overflow-y: hidden;
+    line-height: 1.4;
+}
+
+.chat-input:focus { outline: none; }
+
+/* ── Participants panel ───────────────────────────────────────── */
+/*
+ * Same shell+slide pattern as the left sidebar: the shell transitions
+ * its own width, and the panel content slides with translateX inside it.
+ */
+.participants-panel {
+    width: var(--right-panel-width);
+    min-width: var(--right-panel-width);
+    height: 100%;
+    flex-shrink: 0;
+    background: #070d2a;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 1;
+    transition: transform 0.4s var(--ease-smooth);
+    will-change: transform;
+}
+
+.participants-shell {
+    width: var(--right-panel-width);
+    flex-shrink: 0;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+    background: #0a1128;
+    transition: width 0.4s var(--ease-smooth);
+}
+
+.participants-shell.hidden {
+    width: 0;
+}
+
+.participants-shell.hidden .participants-panel {
+    transform: translateX(100%);
+    opacity: 1;
+    pointer-events: none;
+}
+
+/* Shrink participants panel on narrower screens rather than abruptly hiding it */
+@media (max-width: 68.75rem) {
+    .participants-shell:not(.hidden) {
+        width: clamp(11.25rem, 15vw, var(--right-panel-width));
+    }
+    .participants-panel {
+        width: clamp(11.25rem, 15vw, var(--right-panel-width));
+        min-width: clamp(11.25rem, 15vw, var(--right-panel-width));
+    }
+}
+
+@media (max-width: 43.75rem) {
+    .participants-shell { display: none; }
+    .chat-main          { border-right: none; }
+}
+
+/* Participants panel header */
+.participants-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0 var(--panel-pad);
+    gap: 0.25rem;
+    --line-inset-left: var(--panel-pad);
+    --line-inset-right: var(--panel-pad);
+}
+
+.room-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.3125rem;
+    width: 100%;
+    white-space: nowrap;
+}
+
+.room-stat--centered { justify-content: center; }
+.room-stat--centered .room-stat-label { font-size: 1rem; }
+.room-stat--centered .room-stat-value { font-size: 0.875rem; }
+
+.room-stat-label {
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    color: #40529F;
+    text-transform: uppercase;
+}
+
+.room-stat-value { font-size: 0.6875rem; color: rgba(255,255,255,0.4); }
+.room-stat-num   { color: #59B5D1; font-weight: 700; }
+
+/* Segmented fill bar — purely CSS, no JS */
+.room-stat-bar {
+    flex: 1;
+    min-width: 1.875rem;
+    height: 0.5rem;
+    border-radius: 0.125rem;
+    border: 0.0625rem solid rgba(89, 181, 209, 0.2);
+    background:
+        repeating-linear-gradient(
+            to right,
+            transparent 0rem, transparent 0.25rem,
+            #050919     0.25rem, #050919     0.3125rem
+        ),
+        linear-gradient(
+            to right,
+            #59B5D1 0%,
+            #59B5D1 calc(var(--fill, 0) * 100%),
+            #0C103B calc(var(--fill, 0) * 100%),
+            #0C103B 100%
+        );
+}
+
+.room-stat-pct { font-size: 0.6875rem; color: #59B5D1; font-weight: 700; min-width: 3ch; }
+
+/* Scrollable member list */
+.participants-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.625rem var(--panel-pad);
+}
+
+.participants-group { margin-bottom: 0.625rem; }
+
+.participants-group-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: rgba(255,255,255,0.7);
+    font-size: 1.25rem;
+    margin-bottom: 0.25rem;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s;
+}
+
+.participants-group-title:hover { color: #fff; }
+
+.participants-group-arrow {
+    width: 0.75rem;
+    height: 0.75rem;
+    filter: brightness(0) invert(1);
+    opacity: 0.7;
+    transition: transform 0.22s var(--ease-out);
+    will-change: transform;
+    backface-visibility: hidden;
+}
+
+.participants-group-arrow-collapsed { transform: rotate(-90deg); }
+
+.participants-member {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3125rem 0.5rem;
+    border-radius: 0.3125rem;
+    color: rgba(255,255,255,0.75);
+    font-size: 0.875rem;
+    margin-bottom: 0.1875rem;
+    background: rgba(45, 58, 139, 0.25);
+}
+

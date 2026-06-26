@@ -1,0 +1,29 @@
+export component OAuthIcon {
+    in property <image> icon;
+    in property <string> provider-id;
+    in property <color> icon-color: #38BDF8;
+    
+    callback clicked(string);
+
+    width: 28px;
+    height: 30px;
+    
+    Rectangle {
+        width: 28px;
+        height: 28px;
+        y: p-ta.has-hover ? 0px : 2px;
+        animate y { duration: 200ms; easing: ease; }
+
+        Image {
+            source: root.icon;
+            width: 100%;
+            height: 100%;
+            colorize: root.icon-color;
+        }
+
+        p-ta := TouchArea {
+            clicked => { root.clicked(root.provider-id); }
+            mouse-cursor: pointer;
+        }
+    }
+}

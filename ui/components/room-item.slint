@@ -1,0 +1,61 @@
+import "../../static/JetBrainsMono-Regular.ttf";
+
+export struct RoomData {
+    name: string,
+    r_type: string, // "text" | "voice"
+    encrypted: bool,
+}
+
+export component RoomItem inherits VerticalLayout {
+    in property <RoomData> room;
+    in property <string> active-room;
+    in property <string> active-voice-room;
+    in property <[string]> voice-participants;
+    
+    callback clicked();
+    
+    property <bool> is-active: room.r_type == "text" ? room.name == root.active-room : root.active-voice-room == room.name;
+    
+    room-rect := Rectangle {
+        background: root.is-active ? (root.room.r_type == "voice" ? #1a2255 : #2D1B8E) : transparent;
+        border-radius: 6px;
+        
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            padding-left: 22px;
+            
+            Image {
+                source: root.room.r_type == "voice" ? @image-url("../../static/voicechat.svg") : (root.room.encrypted ? @image-url("../../static/encrypted.svg") : @image-url("../../static/unencrypted.svg"));
+                width: 16px;
+                height: 16px;
+                colorize: root.is-active ? #59B5D1 : rgba(255, 255, 255, 0.55);
+            }
+            Text {
+                text: root.room.name;
+                color: root.is-active ? (root.room.r_type == "voice" ? #59B5D1 : #FFFFFF) : rgba(255, 255, 255, 0.55);
+                font-size: 14px;
+                font-weight: root.is-active ? 700 : 400;
+            }
+        }
+        
+        TouchArea {
+            clicked => { root.clicked(); }
+            mouse-cursor: pointer;
+        }
+    }
+    
+    if root.room.r_type == "voice" && root.active-voice-room == root.room.name : VerticalLayout {
+        padding-left: 38px;
+        spacing: 6px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        for participant in root.voice-participants : HorizontalLayout {
+            spacing: 8px;
+            Rectangle { width: 20px; height: 20px; border-radius: 10px; background: rgba(255, 255, 255, 0.1); }
+            Text { text: participant; color: rgba(255, 255, 255, 0.75); font-size: 13px; vertical-alignment: center; }
+        }
+    }
+}

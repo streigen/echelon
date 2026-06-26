@@ -1,18 +1,166 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+
+
+import "../static/JetBrainsMono-Regular.ttf";
+import { CustomInput } from "./components/input-field.slint";
+import { CustomButton } from "./components/button.slint";
+import { OAuthIcon } from "./components/oauth-icon.slint";
+import { ChatPage } from "./chat/chat-page.slint";
 
 export component AppWindow inherits Window {
-    in-out property <int> counter: 42;
-    callback request-increase-value();
-    VerticalBox {
-        Text {
-            text: "Counter: \{root.counter}";
-        }
+    title: "echelon";
+    preferred-width: 1000px;
+    preferred-height: 800px;
+    background: #000000;
+    default-font-family: "JetBrains Mono";
 
-        Button {
-            text: "Increase value";
-            clicked => {
-                root.request-increase-value();
+    in-out property <string> username: "";
+    in-out property <string> password: "";
+    in-out property <string> homeserver: "matrix.org";
+    in-out property <string> error: "";
+    in-out property <bool> loading: false;
+    in-out property <bool> show_password: false;
+
+    callback login(string, string, string);
+    callback oauth_action(string, string);
+    callback open_chat();
+    callback forgot_password();
+
+    in-out property <int> active-page: 0;
+
+    if active-page == 0 : VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            VerticalLayout {
+                width: 320px; // roughly 26vw
+                alignment: center;
+                spacing: 12px;
+
+                Text {
+                    text: "echelon";
+                    color: #38BDF8;
+                    font-size: 64px;
+                    font-weight: 400;
+                    horizontal-alignment: center;
+                }
+
+                Rectangle { height: 28px; }
+
+                CustomInput {
+                    placeholder: "username";
+                    text <=> root.username;
+                    enabled: !root.loading;
+                    accepted => { root.login(root.username, root.password, root.homeserver); }
+                }
+
+                CustomInput {
+                    placeholder: "password";
+                    text <=> root.password;
+                    input-type: root.show_password ? InputType.text : InputType.password;
+                    is-password: true;
+                    show-password <=> root.show_password;
+                    enabled: !root.loading;
+                    accepted => { root.login(root.username, root.password, root.homeserver); }
+                }
+
+                CustomInput {
+                    placeholder: "homeserver";
+                    text <=> root.homeserver;
+                    bg-color: #000000;
+                    is-homeserver: true;
+                    enabled: !root.loading;
+                    accepted => { root.login(root.username, root.password, root.homeserver); }
+                }
+
+                if root.error != "" : Text {
+                    text: root.error;
+                    color: #ff5555;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+
+                Rectangle { height: 4px; }
+
+                Rectangle {
+                    height: 20px;
+                    Text {
+                        text: "forgot your password?";
+                        color: f-ta.has-hover ? #38BDF8 : #818CF8;
+                        font-size: 16px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        animate color { duration: 200ms; easing: ease; }
+                    }
+                    f-ta := TouchArea {
+                        clicked => { root.forgot_password(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                Rectangle { height: 12px; }
+
+                HorizontalLayout {
+                    alignment: center;
+                    CustomButton {
+                        text: root.loading ? "..." : "login";
+                        enabled: !root.loading;
+                        width: 150px;
+                        clicked => { root.login(root.username, root.password, root.homeserver); }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 20px;
+                    padding-top: 30px;
+                    padding-bottom: 30px;
+
+                    for provider in [
+                        { id: "google", img: @image-url("../static/google.svg") },
+                        { id: "github", img: @image-url("../static/github.svg") },
+                        { id: "apple", img: @image-url("../static/apple.svg") },
+                        { id: "facebook", img: @image-url("../static/facebook.svg") },
+                        { id: "gitlab", img: @image-url("../static/gitlab.svg") }
+                    ] : OAuthIcon {
+                        icon: provider.img;
+                        provider-id: provider.id;
+                        clicked(id) => { root.oauth_action("login", id); }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    padding-top: 8px;
+                    CustomButton {
+                        text: "register";
+                        enabled: !root.loading;
+                        width: parent.width * 0.8;
+                        clicked => { root.oauth_action("register", root.homeserver); }
+                    }
+                }
+
+                Rectangle { height: 16px; }
+
+                Rectangle {
+                    height: 32px;
+                    Text {
+                        text: "→ open chat (dev)";
+                        color: chat-ta.has-hover ? #38BDF8 : rgba(56, 189, 248, 0.45);
+                        font-size: 13px;
+                        letter-spacing: 0.39px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        animate color { duration: 200ms; easing: ease; }
+                    }
+                    chat-ta := TouchArea {
+                        clicked => { root.active-page = 1; root.open_chat(); }
+                        mouse-cursor: pointer;
+                    }
+                }
             }
         }
     }
+
+    if active-page == 1 : ChatPage {}
 }

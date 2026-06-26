@@ -1,0 +1,186 @@
+import "../../static/JetBrainsMono-Regular.ttf";
+import { CustomInput } from "../components/input-field.slint";
+
+struct Message {
+    user: string,
+    time: string,
+    text: string,
+    repliedTo: string,
+    image: bool,
+}
+
+export component ChatMain inherits Rectangle {
+    background: #000000;
+    
+    in-out property <string> active-room: "general";
+    in-out property <bool> participants-visible: true;
+    
+    in-out property <[Message]> messages: [
+        { user: "Clumsy ☆", time: "12:02 pm", text: "hello world", repliedTo: "", image: false },
+        { user: "flaxeneel2", time: "12:03 pm", text: "hello clumsy", repliedTo: "Clumsy ☆: hello world", image: false },
+        { user: "Clumsy ☆", time: "12:03 pm", text: "look, cool img:", repliedTo: "", image: true },
+        { user: "Clumsy ☆", time: "12:05 pm", text: "very nice image", repliedTo: "flaxeneel2: hello clumsy", image: false },
+    ];
+    
+    VerticalLayout {
+        // Header
+        Rectangle {
+            height: 64px;
+            background: transparent;
+            
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: rgba(255, 255, 255, 0.18);
+            }
+            
+            HorizontalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                alignment: space-between;
+                
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    
+                    Image { source: @image-url("../../static/dropdown.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
+                    VerticalLayout {
+                        alignment: center;
+                        Text { text: root.active-room; color: #FFFFFF; font-size: 18px; font-weight: 700; }
+                        Text { text: "matrix.org"; color: #40529F; font-size: 12px; }
+                    }
+                }
+                
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: center;
+                    
+                    Image { source: @image-url("../../static/dropdown.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
+                    Image { source: @image-url("../../static/dropdown.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
+                    Image { source: @image-url("../../static/dropdown.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
+                    
+                    if !root.participants-visible : Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: 24px;
+                        background: #000000;
+                        Image { source: @image-url("../../static/dropdown.svg"); width: 20px; height: 20px; colorize: #FFFFFF; y: 14px; x: 14px;}
+                        TouchArea { clicked => { root.participants-visible = true; } mouse-cursor: pointer; }
+                    }
+                }
+            }
+        }
+        
+        // Messages Area
+        Rectangle {
+            Flickable {
+                height: 100%;
+                width: 100%;
+                viewport-height: msg-layout.preferred-height;
+                msg-layout := VerticalLayout {
+                    padding: 24px;
+                    spacing: 24px;
+                    alignment: start;
+                    
+                    for msg in root.messages : Rectangle {
+                        background: transparent;
+                        border-radius: 8px;
+                        
+                        HorizontalLayout {
+                            padding: 12px;
+                            spacing: 16px;
+                            alignment: start;
+                            
+                            // Avatar
+                            Rectangle {
+                                width: 44px;
+                                height: 44px;
+                                border-radius: 22px;
+                                background: #d9dde4;
+                            }
+                            
+                            VerticalLayout {
+                                spacing: 4px;
+                                alignment: start;
+                                
+                                if msg.repliedTo != "" : HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    Image { source: @image-url("../../static/dropdown.svg"); width: 14px; height: 14px; colorize: rgba(255, 255, 255, 0.55); transform-rotation: 90deg; }
+                                    Text { text: msg.repliedTo; color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+                                }
+                                
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    alignment: start;
+                                    Text { text: msg.user; color: #FFFFFF; font-weight: 700; font-size: 15px; }
+                                    Text { text: msg.time; color: #40529F; font-size: 13px; }
+                                }
+                                
+                                Text { text: msg.text; color: rgba(255, 255, 255, 0.85); font-size: 15px; wrap: word-wrap; }
+                                
+                                if msg.image : Rectangle {
+                                    width: 200px;
+                                    height: 120px;
+                                    background: #c9ccd1;
+                                    border-radius: 8px;
+                                    Text { text: "LET IT BURN"; color: #00050e; horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Composer area
+        Rectangle {
+            height: 100px;
+            
+            VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-bottom: 16px;
+                
+                // Typing indicator
+                Rectangle {
+                    height: 20px;
+                    HorizontalLayout {
+                        padding-left: 64px;
+                        Text { text: "... flaxeneel2 is typing"; color: rgba(255, 255, 255, 0.55); font-size: 12px; font-weight: 700; }
+                    }
+                }
+                
+                // Composer
+                HorizontalLayout {
+                    spacing: 12px;
+                    
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        background: #000000;
+                        border-radius: 24px;
+                        Image { source: @image-url("../../static/attach.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.7); y: 12px; x: 12px;}
+                        TouchArea { mouse-cursor: pointer; }
+                    }
+                    
+                    CustomInput {
+                        placeholder: "enter a message...";
+                        bg-color: #000000;
+                        horizontal-stretch: 1;
+                    }
+                    
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        background: #2D1B8E;
+                        border-radius: 24px;
+                        Image { source: @image-url("../../static/send.svg"); width: 20px; height: 20px; colorize: #FFFFFF; y: 14px; x: 14px;}
+                        TouchArea { mouse-cursor: pointer; }
+                    }
+                }
+            }
+        }
+    }
+}

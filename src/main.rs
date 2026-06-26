@@ -8,11 +8,35 @@ slint::include_modules!();
 fn main() -> Result<(), Box<dyn Error>> {
     let ui = AppWindow::new()?;
 
-    ui.on_request_increase_value({
+    ui.on_login({
         let ui_handle = ui.as_weak();
-        move || {
+        move |username, password, homeserver| {
             let ui = ui_handle.unwrap();
-            ui.set_counter(ui.get_counter() + 1);
+            println!("Login request: username={}, password={}, homeserver={}", username, password, homeserver);
+            ui.set_loading(true);
+            // Simulate a login process
+            // ui.set_loading(false);
+        }
+    });
+
+    ui.on_oauth_action({
+        let _ui_handle = ui.as_weak();
+        move |action, provider| {
+            println!("OAuth request: action={}, provider={}", action, provider);
+        }
+    });
+
+    ui.on_open_chat({
+        let _ui_handle = ui.as_weak();
+        move || {
+            println!("Open chat (dev)");
+        }
+    });
+
+    ui.on_forgot_password({
+        let _ui_handle = ui.as_weak();
+        move || {
+            println!("Forgot password");
         }
     });
 

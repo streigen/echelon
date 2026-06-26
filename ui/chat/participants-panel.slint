@@ -1,0 +1,105 @@
+import "../../static/JetBrainsMono-Regular.ttf";
+
+struct ParticipantGroup {
+    title: string,
+    users: [string],
+    collapsed: bool,
+}
+
+export component ParticipantsPanel inherits Rectangle {
+    width: 250px;
+    background: #000000;
+    
+    in-out property <[ParticipantGroup]> groups: [
+        { title: "OWNERS", collapsed: false, users: ["flaxeneel2"] },
+        { title: "MODERATORS", collapsed: false, users: ["helloflaxee:)", "jkhala"] },
+        { title: "MEMBERS", collapsed: false, users: ["clumsy ☆"] }
+    ];
+    
+    Rectangle {
+        x: 0px;
+        width: 1px;
+        height: parent.height;
+        background: rgba(255, 255, 255, 0.18);
+    }
+    
+    VerticalLayout {
+        // Header
+        Rectangle {
+            height: 64px;
+            background: transparent;
+            
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: rgba(255, 255, 255, 0.18);
+            }
+            
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                alignment: space-between;
+                
+                VerticalLayout {
+                    alignment: center;
+                    Text { text: "ONLINE [ 72k ]"; color: rgba(255, 255, 255, 0.45); font-size: 11px; font-weight: 700; }
+                }
+            }
+        }
+        
+        // Participants list
+        Flickable {
+            height: 100%;
+            width: 100%;
+            viewport-height: participants-layout.preferred-height;
+            participants-layout := VerticalLayout {
+                padding: 20px;
+                spacing: 20px;
+                alignment: start;
+                
+                for group[idx] in root.groups : VerticalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: group.title; color: rgba(255, 255, 255, 0.45); font-size: 13px; font-weight: 700; }
+                        Image {
+                            source: @image-url("../../static/dropdown.svg");
+                            width: 14px; height: 14px;
+                            colorize: rgba(255, 255, 255, 0.45);
+                            transform-rotation: group.collapsed ? -90deg : 0deg;
+                            y: 2px;
+                        }
+                        TouchArea {
+                            clicked => { root.groups[idx].collapsed = !root.groups[idx].collapsed; }
+                            mouse-cursor: pointer;
+                        }
+                    }
+                    
+                    if !group.collapsed : VerticalLayout {
+                        spacing: 12px;
+                        for user in group.users : HorizontalLayout {
+                            spacing: 12px;
+                            alignment: start;
+                            padding-left: 8px;
+                            
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: #d9dde4;
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text { text: user; color: #FFFFFF; font-size: 14px; font-weight: 700; }
+                                Text { text: "matrix.org"; color: #40529F; font-size: 11px; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
