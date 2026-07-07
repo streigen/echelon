@@ -2,8 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::error::Error;
+use std::future::Future;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 mod account;
 mod app_state;
@@ -24,11 +24,24 @@ use keyring_client::KeyringClient;
 use secret::SecretService;
 use store::EchelonStore;
 
+pub use client::ClientState;
+
 slint::include_modules!();
 
-pub type ClientState = Arc<RwLock<Option<ClientHandler>>>;
-
 const APP_ID: &str = "net.flaxeneel2.echelon";
+
+fn spawn_ui_command<F, Fut>(handle: &tokio::runtime::Handle, ui: slint::Weak<AppWindow>, f: F)
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = slint::SharedString> + Send + 'static,
+{
+    handle.spawn(async move {
+        let start = std::time::Instant::now();
+        let msg = f().await;
+        let msg: slint::SharedString = format!("{msg}\n[{}ms]", start.elapsed().as_millis()).into();
+        let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+    });
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
@@ -68,7 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let ui_handle = ui.as_weak();
 
     let client = rt.block_on(ClientHandler::new(app_state.clone(), ui_handle.clone()))?;
-    let client_state: ClientState = Arc::new(RwLock::new(Some(client)));
+    let client_state: ClientState = Arc::new(tokio::sync::RwLock::new(Some(client)));
     let rt_handle = rt.handle().clone();
 
     ui.on_login({
@@ -78,10 +91,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |username, password, homeserver| {
             let (state, ui) = (state.clone(), ui.clone());
             let (username, password, homeserver) = (username.to_string(), password.to_string(), homeserver.to_string());
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::auth::login(username, password, homeserver, state)
-                    .await.map_or_else(|e| e.into(), |s| s.into());
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::auth::login(username, password, homeserver, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into())
             });
         }
     });
@@ -92,10 +104,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ui = ui_handle.clone();
         move || {
             let (state, ui) = (state.clone(), ui.clone());
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::auth::logout(state)
-                    .await.map_or_else(|e| e.into(), |s| s.into());
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::auth::logout(state)
+                    .await.map_or_else(|e| e.into(), |s| s.into())
             });
         }
     });
@@ -108,10 +119,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             let (state, ui) = (state.clone(), ui.clone());
             let token: Option<String> = if token.is_empty() { None } else { Some(token.to_string()) };
             let (username, password, homeserver) = (username.to_string(), password.to_string(), homeserver.to_string());
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::auth::register(username, password, homeserver, token, state)
-                    .await.map_or_else(|e| e.into(), |s| s.into());
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::auth::register(username, password, homeserver, token, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into())
             });
         }
     });
@@ -123,10 +133,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |username, homeserver| {
             let (state, ui) = (state.clone(), ui.clone());
             let (username, homeserver) = (username.to_string(), homeserver.to_string());
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::auth::restore_session(username, homeserver, state)
-                    .await.map_or_else(|e| e.into(), |s| s.into());
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::auth::restore_session(username, homeserver, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into())
             });
         }
     });
@@ -138,10 +147,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |homeserver| {
             let (state, ui) = (state.clone(), ui.clone());
             let homeserver = homeserver.to_string();
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::auth::oauth_login(homeserver, state)
-                    .await.map_or_else(|e| e.into(), |s| s.into());
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::auth::oauth_login(homeserver, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into())
             });
         }
     });
@@ -153,10 +161,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |homeserver| {
             let (state, ui) = (state.clone(), ui.clone());
             let homeserver = homeserver.to_string();
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::auth::oauth_register(homeserver, state)
-                    .await.map_or_else(|e| e.into(), |s| s.into());
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::auth::oauth_register(homeserver, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into())
             });
         }
     });
@@ -175,10 +182,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             let password = if password.is_empty() { None } else { Some(password.to_string()) };
             let key_backup = if key_backup.is_empty() { None } else { Some(key_backup.to_string()) };
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::account::reset_account(account_reset_type, password, key_backup, state)
-                    .await.map_or_else(|e| e.into(), |s| s.into());
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::account::reset_account(account_reset_type, password, key_backup, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into())
             });
         }
     });
@@ -189,10 +195,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ui = ui_handle.clone();
         move || {
             let (state, ui) = (state.clone(), ui.clone());
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::spaces::get_spaces(state)
-                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::spaces::get_spaces(state)
+                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into()
             });
         }
     });
@@ -203,11 +208,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ui = ui_handle.clone();
         move || {
             let (state, ui) = (state.clone(), ui.clone());
-            handle.spawn(async move {
+            spawn_ui_command(&handle, ui, move || async move {
                 #[allow(deprecated)]
-                let msg: slint::SharedString = commands::rooms::get_rooms(state)
-                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+                let result = commands::rooms::get_rooms(state).await;
+                result.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into()
             });
         }
     });
@@ -218,10 +222,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ui = ui_handle.clone();
         move || {
             let (state, ui) = (state.clone(), ui.clone());
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::spaces::get_all_spaces_with_trees(state)
-                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::spaces::get_all_spaces_with_trees(state)
+                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into()
             });
         }
     });
@@ -233,10 +236,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |space_id| {
             let (state, ui) = (state.clone(), ui.clone());
             let space_id = space_id.to_string();
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::spaces::get_space_tree(space_id, state)
-                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::spaces::get_space_tree(space_id, state)
+                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into()
             });
         }
     });
@@ -247,10 +249,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ui = ui_handle.clone();
         move || {
             let (state, ui) = (state.clone(), ui.clone());
-            handle.spawn(async move {
-                let msg: slint::SharedString = commands::dm::get_dm_rooms(state)
-                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into();
-                let _ = ui.upgrade_in_event_loop(move |win| win.set_result(msg));
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::dm::get_dm_rooms(state)
+                    .await.map_or_else(|e| e, |v| serde_json::to_string(&v).unwrap_or_default()).into()
             });
         }
     });

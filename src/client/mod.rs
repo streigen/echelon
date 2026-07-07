@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use matrix_sdk::Client;
+use tokio::sync::RwLock;
 use url::Url;
 
 use crate::app_state::AppState;
@@ -13,9 +14,11 @@ mod oauth;
 mod password_auth;
 mod registration;
 
+pub type ClientState = Arc<RwLock<Option<ClientHandler>>>;
+
 pub struct ClientHandler {
     matrix_client: Client,
-    pub sync_manager: SyncManager,
+    sync_manager: SyncManager,
     pub(crate) app_state: Arc<AppState>,
     pub(crate) ui_handle: slint::Weak<AppWindow>,
 }
@@ -34,5 +37,13 @@ impl ClientHandler {
 
     pub fn get_client(&self) -> &Client {
         &self.matrix_client
+    }
+
+    pub async fn start_sync(&self) {
+        self.sync_manager.start_sync(self.matrix_client.clone()).await;
+    }
+
+    pub async fn stop_sync(&self) {
+        self.sync_manager.stop_sync().await;
     }
 }

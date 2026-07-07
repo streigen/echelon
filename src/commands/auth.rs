@@ -1,16 +1,11 @@
 use crate::ClientState;
 use tracing::{debug, trace};
 
-/// Log in a user with OAuth2 authentication using their homeserver
-///
-/// # Arguments
-/// * `homeserver` - The URL of the homeserver to log in to.
-/// * `state` - The client state containing the Matrix client to perform the login on.
-pub async fn oauth_login(
+async fn oauth_impl(
     homeserver: String,
     state: ClientState,
+    is_login: bool,
 ) -> Result<String, String> {
-    trace!("Starting OAuth login for homeserver: {}", homeserver);
     if homeserver.trim().is_empty() {
         return Err("homeserver is required".to_string());
     }
@@ -21,21 +16,33 @@ pub async fn oauth_login(
         let Some(client_handler) = state_r.as_ref() else {
             return Err("No active client session".to_string());
         };
-        client_handler.oauth_login(homeserver, true).await
+        client_handler.oauth_login(homeserver, is_login).await
     };
 
+    let action = if is_login { "login" } else { "registration" };
     match result {
         Ok(Some(handler)) => {
-            let client = handler.get_client().clone();
-            handler.sync_manager.start_sync(client).await;
-
+            handler.start_sync().await;
             let mut write_guard = state.write().await;
             *write_guard = Some(handler);
-            Ok("oauth login successful".into())
+            Ok(format!("oauth {action} successful"))
         }
-        Ok(None) => Err("OAuth login failed: no handler returned".into()),
-        Err(e) => Err(format!("OAuth login failed: {}", e)),
+        Ok(None) => Err(format!("OAuth {action} failed: no handler returned")),
+        Err(e) => Err(format!("OAuth {action} failed: {e}")),
     }
+}
+
+/// Log in a user with OAuth2 authentication using their homeserver
+///
+/// # Arguments
+/// * `homeserver` - The URL of the homeserver to log in to.
+/// * `state` - The client state containing the Matrix client to perform the login on.
+pub async fn oauth_login(
+    homeserver: String,
+    state: ClientState,
+) -> Result<String, String> {
+    trace!("Starting OAuth login for homeserver: {}", homeserver);
+    oauth_impl(homeserver, state, true).await
 }
 
 /// Register a user with OAuth2 authentication using their homeserver
@@ -48,31 +55,7 @@ pub async fn oauth_register(
     state: ClientState,
 ) -> Result<String, String> {
     trace!("Starting OAuth register for homeserver: {}", homeserver);
-    if homeserver.trim().is_empty() {
-        return Err("homeserver is required".to_string());
-    }
-
-    // Call oauth_login in a separate scope to drop the read lock
-    let result = {
-        let state_r = state.read().await;
-        let Some(client_handler) = state_r.as_ref() else {
-            return Err("No active client session".to_string());
-        };
-        client_handler.oauth_login(homeserver, false).await
-    };
-
-    match result {
-        Ok(Some(handler)) => {
-            let client = handler.get_client().clone();
-            handler.sync_manager.start_sync(client).await;
-
-            let mut write_guard = state.write().await;
-            *write_guard = Some(handler);
-            Ok("oauth registration successful".into())
-        }
-        Ok(None) => Err("OAuth registration failed: no handler returned".into()),
-        Err(e) => Err(format!("OAuth registration failed: {}", e)),
-    }
+    oauth_impl(homeserver, state, false).await
 }
 
 /// Register a new user with the given username, password, and homeserver. Optionally takes a
@@ -111,8 +94,7 @@ pub async fn register(
     let handler = handler.map_err(|e| format!("Registration failed: {}", e))?;
 
     // Start sync before swapping the state handler.
-    let client = handler.get_client().clone();
-    handler.sync_manager.start_sync(client).await;
+    handler.start_sync().await;
 
     // Persist the new handler once the read lock scope has ended.
     let mut write_guard = state.write().await;
@@ -151,8 +133,7 @@ pub async fn login(
     match result {
         Ok(Some(handler)) => {
             // Start sync before swapping the state handler.
-            let client = handler.get_client().clone();
-            handler.sync_manager.start_sync(client).await;
+            handler.start_sync().await;
 
             // Persist the new handler once the read lock scope has ended.
             let mut write_guard = state.write().await;
@@ -172,7 +153,7 @@ pub async fn logout(state: ClientState) -> Result<String, String> {
     {
         let state_r = state.read().await;
         if let Some(handler) = state_r.as_ref() {
-            handler.sync_manager.stop_sync().await;
+            handler.stop_sync().await;
         }
     }
 
@@ -214,8 +195,7 @@ pub async fn restore_session(
     match handler {
         Ok(Some(handler)) => {
             // Start sync before swapping the state handler.
-            let client = handler.get_client().clone();
-            handler.sync_manager.start_sync(client).await;
+            handler.start_sync().await;
 
             // Persist the new handler once the read lock scope has ended.
             let mut write_guard = state.write().await;
