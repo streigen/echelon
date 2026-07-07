@@ -68,10 +68,14 @@ export component ChatMain inherits Rectangle {
         
         // Messages Area
         Rectangle {
-            Flickable {
+            msg-flickable := Flickable {
                 height: 100%;
                 width: 100%;
                 viewport-height: msg-layout.preferred-height;
+                
+                changed viewport-height => {
+                    self.viewport-y = min(0px, self.height - self.viewport-height);
+                }
                 
                 TouchArea {
                     width: 100%;
@@ -85,7 +89,7 @@ export component ChatMain inherits Rectangle {
                     alignment: start;
                     
                     for msg in root.messages : Rectangle {
-                        background: msg-ta.has-hover ? rgba(255, 255, 255, 0.04) : transparent;
+                        background: msg-ta.has-hover || reply-ta.has-hover ? rgba(255, 255, 255, 0.04) : transparent;
                         border-radius: 8px;
                         animate background { duration: 150ms; }
                         
@@ -115,8 +119,11 @@ export component ChatMain inherits Rectangle {
                                 if msg.repliedTo != "" : HorizontalLayout {
                                     spacing: 8px;
                                     alignment: start;
-                                    Image { source: @image-url("../../static/reply.svg"); width: 14px; height: 14px; colorize: rgba(255, 255, 255, 0.55); transform-rotation: 180deg; }
-                                    Text { text: msg.repliedTo; color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Image { source: @image-url("../../static/reply-right.svg"); width: 14px; height: 14px; colorize: rgba(255, 255, 255, 0.55); }
+                                    }
+                                    Text { text: msg.repliedTo; color: rgba(255, 255, 255, 0.55); font-size: 12px; vertical-alignment: center; }
                                 }
                                 
                                 HorizontalLayout {
@@ -139,15 +146,31 @@ export component ChatMain inherits Rectangle {
                         }
                         
                         // Floating reply button
-                        if msg-ta.has-hover : Rectangle {
+                        reply-btn := Rectangle {
+                            visible: msg-ta.has-hover || reply-ta.has-hover;
                             x: parent.width - 48px;
-                            y: 12px;
+                            y: (parent.height - self.height) / 2;
                             width: 32px;
                             height: 32px;
-                            border-radius: 8px;
-                            background: rgba(45, 53, 106, 0.95);
-                            Image { source: @image-url("../../static/reply.svg"); width: 16px; height: 16px; colorize: #FFFFFF; x: 8px; y: 8px; }
-                            TouchArea { mouse-cursor: pointer; }
+                            border-radius: 16px;
+                            background: reply-ta.has-hover ? #2D1B8E : transparent;
+                            animate background { duration: 150ms; }
+                            
+                            Image {
+                                source: @image-url("../../static/reply.svg");
+                                width: 16px;
+                                height: 16px;
+                                colorize: reply-ta.has-hover ? #FFFFFF : rgba(255, 255, 255, 0.55);
+                                x: 8px;
+                                y: 8px;
+                                animate colorize { duration: 150ms; }
+                            }
+                            
+                            reply-ta := TouchArea {
+                                width: 100%;
+                                height: 100%;
+                                mouse-cursor: pointer;
+                            }
                         }
                     }
                 }
