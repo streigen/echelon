@@ -16,11 +16,11 @@ struct CategoryData {
 export component LeftPanel inherits Rectangle {
     in-out property <bool> sidebar-collapsed: false;
     in-out property <string> active-room: "general";
-    
     in-out property <string> active-voice-room: "";
     in-out property <bool> muted: false;
     in-out property <bool> deafened: false;
     in-out property <bool> profile-stack-visible: false;
+    in-out property <int> active-space: 0;
     
     in-out property <[CategoryData]> categories: [
         { name: "ROOMS", collapsed: false, rooms: [
@@ -42,113 +42,199 @@ export component LeftPanel inherits Rectangle {
     
     background: #000000;
     
-    HorizontalLayout {
-        // Spaces Bar
-        Rectangle {
-            width: 70px;
-            background: #000000;
-            
+    VerticalLayout {
+        // TOP SECTION: Spaces Bar + Rooms Sidebar
+        HorizontalLayout {
+            // Spaces Bar
             Rectangle {
-                x: parent.width - 1px;
-                width: 1px;
-                height: parent.height;
-                background: rgba(255, 255, 255, 0.18);
-            }
-            
-            VerticalLayout {
-                alignment: space-between;
+                width: 70px;
+                background: #000000;
                 
-                // Top section
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: parent.height;
+                    background: rgba(255, 255, 255, 0.18);
+                }
+                
                 VerticalLayout {
-                    alignment: start;
-                    spacing: 16px;
-                    padding-top: 16px;
+                    alignment: space-between;
                     
-                    // DM Icon
-                    HorizontalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 48px;
-                            height: 48px;
-                            border-radius: 16px;
-                            background: #0C103B;
-                            Image {
-                                source: @image-url("../../static/dm.svg");
-                                width: 24px;
-                                height: 24px;
-                                colorize: #FFFFFF;
+                    // Top section
+                    VerticalLayout {
+                        alignment: start;
+                        spacing: 16px;
+                        padding-top: 16px;
+                        
+                        // DM Icon
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 48px;
+                                height: 48px;
+                                border-radius: 16px;
+                                background: #0C103B;
+                                Image {
+                                    source: @image-url("../../static/dm.svg");
+                                    width: 24px;
+                                    height: 24px;
+                                    colorize: #FFFFFF;
+                                }
+                            }
+                        }
+                        
+                        Rectangle { height: 1px; background: rgba(255, 255, 255, 0.18); width: 48px; x: (parent.width - 48px) / 2; }
+                        
+                        // Spaces list
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 48px;
+                                height: 48px;
+                                border-radius: 16px;
+                                background: root.active-space == 0 ? #29356A : #0C103B;
+                                Text { text: "ec"; color: root.active-space == 0 ? #59B5D1 : rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
+                                TouchArea { clicked => { root.active-space = 0; } mouse-cursor: pointer; }
+                            }
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 48px;
+                                height: 48px;
+                                border-radius: 16px;
+                                background: root.active-space == 1 ? #29356A : #0C103B;
+                                Text { text: "sp"; color: root.active-space == 1 ? #59B5D1 : rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
+                                TouchArea { clicked => { root.active-space = 1; } mouse-cursor: pointer; }
                             }
                         }
                     }
                     
-                    Rectangle { height: 1px; background: rgba(255, 255, 255, 0.18); width: 48px; x: (parent.width - 48px) / 2; }
-                    
-                    // Spaces list
-                    HorizontalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 48px;
-                            height: 48px;
-                            border-radius: 16px;
-                            background: #29356A; // Active space
-                            Text { text: "ec"; color: #59B5D1; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
-                        }
-                    }
-                    HorizontalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 48px;
-                            height: 48px;
-                            border-radius: 16px;
-                            background: #0C103B;
-                            Text { text: "sp"; color: rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
+                    // Bottom section: Collapse button always visible
+                    VerticalLayout {
+                        alignment: end;
+                        padding-bottom: 24px;
+                        
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: 8px;
+                                background: transparent;
+                                Image {
+                                    source: @image-url("../../static/dropdown.svg");
+                                    width: 16px;
+                                    height: 16px;
+                                    colorize: #59B5D1;
+                                    transform-rotation: root.sidebar-collapsed ? -90deg : 90deg; // point left if expanded, right if collapsed
+                                }
+                                TouchArea {
+                                    clicked => { root.sidebar-collapsed = !root.sidebar-collapsed; }
+                                    mouse-cursor: pointer;
+                                }
+                            }
                         }
                     }
                 }
+            }
+            
+            // Rooms Sidebar
+            Rectangle {
+                width: root.sidebar-collapsed ? 0px : 250px;
+                animate width { duration: 200ms; easing: ease-in-out; }
+                clip: true;
+                background: #000000;
                 
-                // Bottom section
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: parent.height;
+                    background: rgba(255, 255, 255, 0.18);
+                }
+                
                 VerticalLayout {
-                    alignment: end;
-                    padding-bottom: 24px;
-                    spacing: 16px;
+                    alignment: start; // Fixes the gap issue (prevents space-between pushing flickable down)
                     
-                    // Collapse button
-                    HorizontalLayout {
-                        alignment: center;
-                        if !root.sidebar-collapsed : Rectangle {
-                            width: 32px;
-                            height: 32px;
-                            border-radius: 8px;
-                            background: transparent;
-                            Image {
-                                source: @image-url("../../static/dropdown.svg");
-                                width: 16px;
-                                height: 16px;
-                                colorize: #59B5D1;
-                                transform-rotation: 90deg; // rotate to point left to collapse
+                    // Header
+                    Rectangle {
+                        height: 64px;
+                        
+                        Rectangle {
+                            y: parent.height - 1px;
+                            x: 16px;
+                            width: parent.width - 32px;
+                            height: 1px;
+                            background: rgba(255, 255, 255, 0.18);
+                        }
+                        
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            alignment: space-between;
+                            VerticalLayout {
+                                alignment: center;
+                                Text { text: "echelon"; color: #FFFFFF; font-size: 16px; font-weight: 700; }
+                                Text { text: "matrix.org"; color: #40529F; font-size: 11px; }
                             }
-                            TouchArea {
-                                clicked => { root.sidebar-collapsed = true; }
-                                mouse-cursor: pointer;
+                            VerticalLayout {
+                                alignment: center;
+                                Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: rgba(255, 255, 255, 0.7); }
                             }
                         }
                     }
                     
-                    // Profile dock
-                    HorizontalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 36px;
-                            height: 36px;
-                            border-radius: 18px;
-                            background: #d9dde4; // placeholder pfp
+                    // Rooms list
+                    Flickable {
+                        vertical-stretch: 1; // Stretches to fill remaining space
+                        width: 100%;
+                        viewport-height: rooms-layout.preferred-height;
+                        rooms-layout := VerticalLayout {
+                            padding: 16px;
+                            spacing: 12px;
+                            alignment: start;
                             
-                            // Hover stack for collapsed view
-                            if root.sidebar-collapsed : TouchArea {
-                                width: 100%; height: 100%;
-                                mouse-cursor: pointer;
-                                clicked => { root.sidebar-collapsed = false; }
-                                // Simulate hover stack with simple click to expand
+                            for category[idx] in root.categories : VerticalLayout {
+                                spacing: 8px;
+                                padding-bottom: 8px;
+                                
+                                Rectangle {
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        alignment: start;
+                                        Image {
+                                            source: @image-url("../../static/dropdown.svg");
+                                            width: 12px;
+                                            height: 12px;
+                                            colorize: rgba(255, 255, 255, 0.45);
+                                            transform-rotation: category.collapsed ? -90deg : 0deg;
+                                            y: 2px;
+                                        }
+                                        Text { text: category.name; color: rgba(255, 255, 255, 0.45); font-size: 12px; font-weight: 700; }
+                                    }
+                                    
+                                    TouchArea {
+                                        width: 100%;
+                                        height: 100%;
+                                        clicked => { root.categories[idx].collapsed = !root.categories[idx].collapsed; }
+                                        mouse-cursor: pointer;
+                                    }
+                                }
+                                
+                                if !category.collapsed : VerticalLayout {
+                                    spacing: 4px;
+                                    for room in category.rooms : RoomItem {
+                                        room: room;
+                                        active-room: root.active-room;
+                                        active-voice-room: root.active-voice-room;
+                                        voice-participants: root.voice-participants;
+                                        
+                                        clicked => {
+                                            if room.r_type == "text" { root.active-room = room.name; }
+                                            else { root.active-voice-room = (root.active-voice-room == room.name) ? "" : room.name; }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -156,10 +242,10 @@ export component LeftPanel inherits Rectangle {
             }
         }
         
-        // Rooms Sidebar
-        if !root.sidebar-collapsed : Rectangle {
-            width: 250px;
-            background: #000000; // sidebar container
+        // BOTTOM SECTION: User Bar (Extends all the way left)
+        Rectangle {
+            background: #000000;
+            border-top-left-radius: 32px;
             
             Rectangle {
                 x: parent.width - 1px;
@@ -168,131 +254,148 @@ export component LeftPanel inherits Rectangle {
                 background: rgba(255, 255, 255, 0.18);
             }
             
-            // sidebar container
-            
             VerticalLayout {
-                alignment: space-between;
-                
-                // Rooms list
-                Flickable {
-                    height: 100%;
-                    width: 100%;
-                    viewport-height: rooms-layout.preferred-height;
-                    rooms-layout := VerticalLayout {
-                        padding: 16px;
+                if root.active-voice-room != "" : Rectangle {
+                    opacity: root.sidebar-collapsed ? 0.0 : 1.0;
+                    animate opacity { duration: 200ms; }
+                    background: transparent;
+                    height: voice-layout.preferred-height;
+                    voice-layout := VerticalLayout {
+                        padding-left: 20px;
+                        padding-right: 16px;
+                        padding-top: 16px;
                         spacing: 12px;
-                        alignment: start;
                         
-                        // Header
                         HorizontalLayout {
                             alignment: space-between;
                             VerticalLayout {
-                                Text { text: "echelon"; color: #FFFFFF; font-size: 16px; font-weight: 700; }
-                                Text { text: "matrix.org"; color: #40529F; font-size: 11px; }
-                            }
-                            Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: rgba(255, 255, 255, 0.7); y: 4px; }
-                        }
-                        
-                        Rectangle { height: 12px; }
-                        
-                        for category[idx] in root.categories : VerticalLayout {
-                            spacing: 8px;
-                            padding-bottom: 8px;
-                            
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: start;
-                                Image {
-                                    source: @image-url("../../static/dropdown.svg");
-                                    width: 12px;
-                                    height: 12px;
-                                    colorize: rgba(255, 255, 255, 0.45);
-                                    transform-rotation: category.collapsed ? -90deg : 0deg;
-                                    y: 2px;
-                                }
-                                Text { text: category.name; color: rgba(255, 255, 255, 0.45); font-size: 12px; font-weight: 700; }
-                                
-                                TouchArea {
-                                    clicked => { root.categories[idx].collapsed = !root.categories[idx].collapsed; }
-                                    mouse-cursor: pointer;
-                                }
-                            }
-                            
-                            if !category.collapsed : VerticalLayout {
                                 spacing: 4px;
-                                for room in category.rooms : RoomItem {
-                                    room: room;
-                                    active-room: root.active-room;
-                                    active-voice-room: root.active-voice-room;
-                                    voice-participants: root.voice-participants;
-                                    
-                                    clicked => {
-                                        if room.r_type == "text" { root.active-room = room.name; }
-                                        else { root.active-voice-room = (root.active-voice-room == room.name) ? "" : room.name; }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // User bar
-                Rectangle {
-                    background: #000000;
-                    
-                    VerticalLayout {
-                        if root.active-voice-room != "" : Rectangle {
-                            background: transparent;
-                            VerticalLayout {
-                                padding: 12px;
-                                spacing: 8px;
                                 HorizontalLayout {
-                                    alignment: space-between;
-                                    HorizontalLayout {
-                                        spacing: 8px;
-                                        Text { text: "connected"; color: #38BDF8; font-size: 12px; font-weight: 700; }
+                                    spacing: 8px;
+                                    alignment: start;
+                                    Rectangle {
+                                        width: 12px;
+                                        height: 14px;
+                                        background: transparent;
+                                        Rectangle { width: 3px; height: 6px; border-radius: 1.5px; background: #59B5D1; x: 0px; y: 8px; }
+                                        Rectangle { width: 3px; height: 10px; border-radius: 1.5px; background: #59B5D1; x: 4.5px; y: 4px; }
+                                        Rectangle { width: 3px; height: 14px; border-radius: 1.5px; background: #59B5D1; x: 9px; y: 0px; }
                                     }
+                                    Text { text: "connected"; color: #59B5D1; font-size: 14px; font-weight: 500; font-family: "JetBrains Mono"; }
                                 }
-                                HorizontalLayout {
-                                    alignment: space-between;
-                                    Text { text: root.active-voice-room; color: #FFFFFF; font-size: 14px; }
-                                    HorizontalLayout {
-                                        spacing: 8px;
-                                        Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: #FFFFFF; }
-                                    }
-                                }
-                                Rectangle { height: 1px; background: rgba(89, 181, 209, 0.4); }
+                                Text { text: root.active-voice-room; color: #59B5D1; font-size: 20px; font-weight: 500; font-family: "JetBrains Mono"; }
                             }
-                        }
-                        
-                        HorizontalLayout {
-                            padding: 16px;
-                            alignment: space-between;
-                            
-                            HorizontalLayout {
-                                spacing: 12px;
-                                // Placeholder for persistent pfp which would be positioned absolutely in svelte, here just inline
-                                Rectangle { width: 36px; height: 36px; border-radius: 18px; background: #d9dde4; }
-                                VerticalLayout {
-                                    alignment: center;
-                                    Text { text: "Clumsy ☆"; color: #FFFFFF; font-size: 14px; font-weight: 700; }
-                                    Text { text: "matrix.org"; color: #40529F; font-size: 11px; }
-                                }
-                            }
-                            
                             HorizontalLayout {
                                 spacing: 8px;
                                 alignment: center;
                                 Rectangle {
-                                    width: 30px; height: 30px; border-radius: 8px;
+                                    width: 36px; height: 36px; border-radius: 18px; background: transparent;
+                                    Image { source: @image-url("../../static/screenshare.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
+                                    TouchArea { mouse-cursor: pointer; }
+                                }
+                                Rectangle {
+                                    width: 36px; height: 36px; border-radius: 18px; background: transparent;
+                                    Image { source: @image-url("../../static/video.svg"); height: 20px; colorize: rgba(255, 255, 255, 0.75); }
+                                    TouchArea { mouse-cursor: pointer; }
+                                }
+                            }
+                        }
+                        
+                        Rectangle { height: 1px; background: #1C2341; } // Separator line
+                    }
+                }
+                
+                Rectangle {
+                    height: 76px; // 16 top + 44 pfp + 16 bottom
+                    
+                    // PFP (Always stays on the left edge inside the User Bar rectangle)
+                    Rectangle {
+                        x: 13px; // (70px spaces bar width - 44px) / 2 -> centers exactly under the spaces bar!
+                        y: 16px;
+                        width: 44px;
+                        height: 44px;
+                        border-radius: 22px;
+                        background: #d9dde4;
+                        
+                        Rectangle {
+                            width: 12px; height: 12px; border-radius: 6px;
+                            background: #00A63E;
+                            border-width: 2px; border-color: #000000; // matches user bar background
+                            x: parent.width - 11px; y: 1px;
+                        }
+                        
+                        // Click to expand if collapsed & hover stack
+                        if root.sidebar-collapsed : Rectangle {
+                            width: 70px;
+                            height: 180px;
+                            x: -13px;
+                            y: -136px;
+                            background: transparent;
+                            pfp-ta := TouchArea {
+                                clicked => { root.sidebar-collapsed = false; }
+                                mouse-cursor: pointer;
+                            }
+                            
+                            Rectangle {
+                                width: 34px; height: 1px; background: rgba(255, 255, 255, 0.18);
+                                y: 86px; x: 18px;
+                                opacity: pfp-ta.has-hover ? 1.0 : 0.0;
+                                animate opacity { duration: 200ms; }
+                            }
+                            
+                            // Mute toggle
+                            Rectangle {
+                                width: 34px; height: 34px; border-radius: 8px; background: root.muted ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
+                                y: 44px; x: 18px;
+                                opacity: pfp-ta.has-hover ? 1.0 : 0.0;
+                                animate opacity { duration: 200ms; }
+                                Image { source: root.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
+                                TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
+                            }
+                            
+                            // Deafen toggle
+                            Rectangle {
+                                width: 34px; height: 34px; border-radius: 8px; background: root.deafened ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
+                                y: 2px; x: 18px;
+                                opacity: pfp-ta.has-hover ? 1.0 : 0.0;
+                                animate opacity { duration: 200ms; }
+                                Image { source: root.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
+                                TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
+                            }
+                        }
+                    }
+                    
+                    HorizontalLayout {
+                        x: 70px;
+                        width: parent.width - 70px;
+                        height: parent.height;
+                        opacity: root.sidebar-collapsed ? 0.0 : 1.0;
+                        animate opacity { duration: 200ms; }
+                        alignment: space-between;
+                        padding-left: 16px; // 16px from the Rooms Sidebar edge
+                        padding-right: 16px;
+                        
+                        VerticalLayout {
+                            alignment: center;
+                            Text { text: "Clumsy ☆"; color: #FFFFFF; font-size: 15px; font-weight: 700; font-family: "JetBrains Mono"; }
+                            Text { text: "matrix.org"; color: #40529F; font-size: 13px; font-family: "JetBrains Mono"; }
+                        }
+                        
+                        VerticalLayout {
+                            alignment: center;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: center;
+                                Rectangle {
+                                    width: 36px; height: 36px; border-radius: 18px;
                                     background: root.muted ? rgba(237, 66, 69, 0.24) : transparent;
-                                    Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: #FFFFFF; } // Use proper mute icon in real
+                                    Image { source: root.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
                                     TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
                                 }
                                 Rectangle {
-                                    width: 30px; height: 30px; border-radius: 8px;
+                                    width: 36px; height: 36px; border-radius: 18px;
                                     background: root.deafened ? rgba(237, 66, 69, 0.24) : transparent;
-                                    Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: #FFFFFF; transform-rotation: 180deg; }
+                                    Image { source: root.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
                                     TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
                                 }
                             }

@@ -1,6 +1,6 @@
 import "../../static/JetBrainsMono-Regular.ttf";
 import { LeftPanel } from "./left-panel.slint";
-import { ChatMain } from "./chat-main.slint";
+import { ChatMain, Message } from "./chat-main.slint";
 import { ParticipantsPanel } from "./participants-panel.slint";
 
 export component ChatPage inherits Rectangle {
@@ -9,6 +9,8 @@ export component ChatPage inherits Rectangle {
     in-out property <bool> sidebar-collapsed: false;
     in-out property <bool> participants-visible: true;
     in-out property <string> active-room: "general";
+    in-out property <[Message]> messages;
+    callback send-message(string);
     
     HorizontalLayout {
         LeftPanel {
@@ -20,6 +22,8 @@ export component ChatPage inherits Rectangle {
         ChatMain {
             participants-visible <=> root.participants-visible;
             active-room <=> root.active-room;
+            messages <=> root.messages;
+            send-message(msg) => { root.send-message(msg); }
         }
         if root.participants-visible : ParticipantsPanel {
             width: 250px;

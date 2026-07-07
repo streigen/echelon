@@ -1,7 +1,7 @@
 import "../../static/JetBrainsMono-Regular.ttf";
 import { CustomInput } from "../components/input-field.slint";
 
-struct Message {
+export struct Message {
     user: string,
     time: string,
     text: string,
@@ -15,12 +15,11 @@ export component ChatMain inherits Rectangle {
     in-out property <string> active-room: "general";
     in-out property <bool> participants-visible: true;
     
-    in-out property <[Message]> messages: [
-        { user: "Clumsy ☆", time: "12:02 pm", text: "hello world", repliedTo: "", image: false },
-        { user: "flaxeneel2", time: "12:03 pm", text: "hello clumsy", repliedTo: "Clumsy ☆: hello world", image: false },
-        { user: "Clumsy ☆", time: "12:03 pm", text: "look, cool img:", repliedTo: "", image: true },
-        { user: "Clumsy ☆", time: "12:05 pm", text: "very nice image", repliedTo: "flaxeneel2: hello clumsy", image: false },
-    ];
+    callback send-message(string);
+    
+    in-out property <[Message]> messages;
+    
+    dummy-focus := FocusScope {}
     
     VerticalLayout {
         // Header
@@ -30,7 +29,8 @@ export component ChatMain inherits Rectangle {
             
             Rectangle {
                 y: parent.height - 1px;
-                width: parent.width;
+                x: 16px;
+                width: parent.width - 32px;
                 height: 1px;
                 background: rgba(255, 255, 255, 0.18);
             }
@@ -53,20 +53,14 @@ export component ChatMain inherits Rectangle {
                 }
                 
                 HorizontalLayout {
-                    spacing: 12px;
+                    spacing: 16px;
                     alignment: center;
                     
-                    Image { source: @image-url("../../static/dropdown.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
-                    Image { source: @image-url("../../static/dropdown.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
-                    Image { source: @image-url("../../static/dropdown.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
-                    
-                    if !root.participants-visible : Rectangle {
-                        width: 48px;
-                        height: 48px;
-                        border-radius: 24px;
-                        background: #000000;
-                        Image { source: @image-url("../../static/dropdown.svg"); width: 20px; height: 20px; colorize: #FFFFFF; y: 14px; x: 14px;}
-                        TouchArea { clicked => { root.participants-visible = true; } mouse-cursor: pointer; }
+                    Image { source: @image-url("../../static/pin.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
+                    Rectangle {
+                        width: 24px; height: 24px; y: 20px;
+                        Image { source: @image-url("../../static/members.svg"); width: 24px; height: 24px; colorize: root.participants-visible ? #38BDF8 : rgba(255, 255, 255, 0.55); }
+                        TouchArea { clicked => { root.participants-visible = !root.participants-visible; } mouse-cursor: pointer; }
                     }
                 }
             }
@@ -78,14 +72,28 @@ export component ChatMain inherits Rectangle {
                 height: 100%;
                 width: 100%;
                 viewport-height: msg-layout.preferred-height;
+                
+                TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    clicked => { dummy-focus.focus(); }
+                }
+                
                 msg-layout := VerticalLayout {
                     padding: 24px;
                     spacing: 24px;
                     alignment: start;
                     
                     for msg in root.messages : Rectangle {
-                        background: transparent;
+                        background: msg-ta.has-hover ? rgba(255, 255, 255, 0.04) : transparent;
                         border-radius: 8px;
+                        animate background { duration: 150ms; }
+                        
+                        msg-ta := TouchArea {
+                            width: 100%; height: 100%;
+                            mouse-cursor: default;
+                            clicked => { dummy-focus.focus(); }
+                        }
                         
                         HorizontalLayout {
                             padding: 12px;
@@ -107,7 +115,7 @@ export component ChatMain inherits Rectangle {
                                 if msg.repliedTo != "" : HorizontalLayout {
                                     spacing: 8px;
                                     alignment: start;
-                                    Image { source: @image-url("../../static/dropdown.svg"); width: 14px; height: 14px; colorize: rgba(255, 255, 255, 0.55); transform-rotation: 90deg; }
+                                    Image { source: @image-url("../../static/reply.svg"); width: 14px; height: 14px; colorize: rgba(255, 255, 255, 0.55); transform-rotation: 180deg; }
                                     Text { text: msg.repliedTo; color: rgba(255, 255, 255, 0.55); font-size: 12px; }
                                 }
                                 
@@ -129,6 +137,18 @@ export component ChatMain inherits Rectangle {
                                 }
                             }
                         }
+                        
+                        // Floating reply button
+                        if msg-ta.has-hover : Rectangle {
+                            x: parent.width - 48px;
+                            y: 12px;
+                            width: 32px;
+                            height: 32px;
+                            border-radius: 8px;
+                            background: rgba(45, 53, 106, 0.95);
+                            Image { source: @image-url("../../static/reply.svg"); width: 16px; height: 16px; colorize: #FFFFFF; x: 8px; y: 8px; }
+                            TouchArea { mouse-cursor: pointer; }
+                        }
                     }
                 }
             }
@@ -136,12 +156,10 @@ export component ChatMain inherits Rectangle {
         
         // Composer area
         Rectangle {
-            height: 100px;
-            
             VerticalLayout {
                 padding-left: 16px;
                 padding-right: 16px;
-                padding-bottom: 16px;
+                padding-bottom: 14px;
                 
                 // Typing indicator
                 Rectangle {
@@ -159,16 +177,71 @@ export component ChatMain inherits Rectangle {
                     Rectangle {
                         width: 48px;
                         height: 48px;
+                        vertical-stretch: 0;
                         background: #000000;
                         border-radius: 24px;
                         Image { source: @image-url("../../static/attach.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.7); y: 12px; x: 12px;}
                         TouchArea { mouse-cursor: pointer; }
                     }
                     
-                    CustomInput {
-                        placeholder: "enter a message...";
-                        bg-color: #000000;
+                    Rectangle {
                         horizontal-stretch: 1;
+                        background: #000000;
+                        border-width: 2px;
+                        border-color: chat-edit.has-focus ? #38BDF8 : #1a2255;
+                        border-top-left-radius: 20px;
+                        border-bottom-right-radius: 20px;
+                        drop-shadow-color: chat-edit.has-focus ? #38BDF8.with-alpha(0.25) : transparent;
+                        drop-shadow-blur: chat-edit.has-focus ? 10px : 0px;
+                        animate border-color { duration: 200ms; easing: ease; }
+                        animate drop-shadow-color { duration: 200ms; easing: ease; }
+                        animate drop-shadow-blur { duration: 200ms; easing: ease; }
+                        height: min(250px, max(48px, chat-edit.preferred-height + 24px));
+                        clip: true;
+                        
+                        chat-flickable := Flickable {
+                            width: 100%;
+                            height: 100%;
+                            viewport-height: max(48px, chat-edit.preferred-height + 24px);
+                            
+                            chat-edit := TextInput {
+                                x: 18px;
+                                y: (parent.viewport-height - self.height) / 2;
+                                width: parent.width - 36px;
+                                height: self.preferred-height;
+                                wrap: word-wrap;
+                                single-line: false;
+                                color: #FFFFFF;
+                                font-size: 16px;
+                                font-family: "JetBrains Mono";
+                                vertical-alignment: center;
+                                
+                                edited => {
+                                    chat-flickable.viewport-y = min(0px, chat-flickable.height - chat-flickable.viewport-height);
+                                }
+                                
+                                key-pressed(event) => {
+                                    if (event.text == "\n" && !event.modifiers.shift) {
+                                        if (self.text != "") {
+                                            root.send-message(self.text);
+                                            self.text = "";
+                                        }
+                                        return accept;
+                                    }
+                                    return reject;
+                                }
+                            }
+                            
+                            if chat-edit.text == "" : Text {
+                                text: "enter a message...";
+                                color: chat-edit.has-focus ? rgba(255, 255, 255, 0.3) : rgba(255, 255, 255, 0.55);
+                                font-size: 16px;
+                                font-family: "JetBrains Mono";
+                                x: 18px;
+                                y: (parent.viewport-height - self.preferred-height) / 2;
+                                animate color { duration: 200ms; easing: ease; }
+                            }
+                        }
                     }
                     
                     Rectangle {
@@ -176,8 +249,17 @@ export component ChatMain inherits Rectangle {
                         height: 48px;
                         background: #2D1B8E;
                         border-radius: 24px;
+                        vertical-stretch: 0;
                         Image { source: @image-url("../../static/send.svg"); width: 20px; height: 20px; colorize: #FFFFFF; y: 14px; x: 14px;}
-                        TouchArea { mouse-cursor: pointer; }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                if (chat-edit.text != "") {
+                                    root.send-message(chat-edit.text);
+                                    chat-edit.text = "";
+                                }
+                            }
+                        }
                     }
                 }
             }

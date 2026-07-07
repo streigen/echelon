@@ -1,10 +1,11 @@
 
-
+ 
 import "../static/JetBrainsMono-Regular.ttf";
 import { CustomInput } from "./components/input-field.slint";
 import { CustomButton } from "./components/button.slint";
 import { OAuthIcon } from "./components/oauth-icon.slint";
 import { ChatPage } from "./chat/chat-page.slint";
+import { Message } from "./chat/chat-main.slint";
 
 export component AppWindow inherits Window {
     title: "echelon";
@@ -24,6 +25,14 @@ export component AppWindow inherits Window {
     callback oauth_action(string, string);
     callback open_chat();
     callback forgot_password();
+    callback send_message(string);
+
+    in-out property <[Message]> messages: [
+        { user: "Clumsy ☆", time: "12:02 pm", text: "hello world", repliedTo: "", image: false },
+        { user: "flaxeneel2", time: "12:03 pm", text: "hello clumsy", repliedTo: "Clumsy ☆: hello world", image: false },
+        { user: "Clumsy ☆", time: "12:03 pm", text: "look, cool img:", repliedTo: "", image: true },
+        { user: "Clumsy ☆", time: "12:05 pm", text: "very nice image", repliedTo: "flaxeneel2: hello clumsy", image: false },
+    ];
 
     in-out property <int> active-page: 0;
 
@@ -162,5 +171,8 @@ export component AppWindow inherits Window {
         }
     }
 
-    if active-page == 1 : ChatPage {}
+    if active-page == 1 : ChatPage {
+        messages <=> root.messages;
+        send-message(msg) => { root.send_message(msg); }
+    }
 }
