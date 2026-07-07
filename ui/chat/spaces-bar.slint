@@ -1,0 +1,111 @@
+import { RoomItem, RoomData } from "../components/room-item.slint";
+
+export component SpacesBar inherits Rectangle {
+    in-out property <bool> sidebar-collapsed: false;
+    in property <int> active-space: 0;
+    callback space-clicked(int);
+    
+    property <bool> animating: false;
+    Timer {
+        running: root.animating;
+        interval: 250ms;
+        triggered => { root.animating = false; }
+    }
+
+    width: 70px;
+    background: #000000;
+    
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        height: parent.height;
+        background: rgba(255, 255, 255, 0.18);
+    }
+    
+    VerticalLayout {
+        alignment: space-between;
+        
+        // Top section
+        VerticalLayout {
+            alignment: start;
+            spacing: 16px;
+            padding-top: 16px;
+            
+            // DM Icon
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 16px;
+                    background: #0C103B;
+                    Image {
+                        source: @image-url("../../static/dm.svg");
+                        width: 24px;
+                        height: 24px;
+                        colorize: #FFFFFF;
+                    }
+                }
+            }
+            
+            Rectangle { height: 1px; background: rgba(255, 255, 255, 0.18); width: 48px; x: (parent.width - 48px) / 2; }
+            
+            // Spaces list
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 16px;
+                    background: root.active-space == 0 ? #29356A : #0C103B;
+                    Text { text: "ec"; color: root.active-space == 0 ? #59B5D1 : rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
+                    TouchArea { clicked => { root.space-clicked(0); } mouse-cursor: pointer; }
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 16px;
+                    background: root.active-space == 1 ? #29356A : #0C103B;
+                    Text { text: "sp"; color: root.active-space == 1 ? #59B5D1 : rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
+                    TouchArea { clicked => { root.space-clicked(1); } mouse-cursor: pointer; }
+                }
+            }
+        }
+        
+        // Bottom section: Collapse button always visible
+        VerticalLayout {
+            alignment: end;
+            padding-bottom: 8px;
+            
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 8px;
+                    background: transparent;
+                    Image {
+                        source: @image-url("../../static/dropdown.svg");
+                        width: 16px;
+                        height: 16px;
+                        colorize: #59B5D1;
+                        transform-rotation: root.sidebar-collapsed ? -90deg : 90deg; // point left if expanded, right if collapsed
+                        animate transform-rotation { duration: 250ms; easing: ease-in-out; }
+                    }
+                    TouchArea {
+                        clicked => {
+                            if (!root.animating) {
+                                root.sidebar-collapsed = !root.sidebar-collapsed;
+                                root.animating = true;
+                            }
+                        }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+        }
+    }
+}

@@ -9,6 +9,7 @@ struct ParticipantGroup {
 export component ParticipantsPanel inherits Rectangle {
     width: 250px;
     background: #000000;
+    clip: true; // Prepare for possible animation
     
     in-out property <[ParticipantGroup]> groups: [
         { title: "OWNERS", collapsed: false, users: ["flaxeneel2"] },
@@ -16,14 +17,23 @@ export component ParticipantsPanel inherits Rectangle {
         { title: "MEMBERS", collapsed: false, users: ["clumsy ☆"] }
     ];
     
-    Rectangle {
-        x: 0px;
-        width: 1px;
-        height: parent.height;
-        background: rgba(255, 255, 255, 0.18);
-    }
-    
-    VerticalLayout {
+    HorizontalLayout {
+        x: 0;
+        y: 0;
+        width: 250px; // Fixed internal layout width
+        height: 100%;
+        
+        Rectangle {
+            background: transparent;
+            
+            Rectangle {
+                x: 0px;
+                width: 1px;
+                height: parent.height;
+                background: rgba(255, 255, 255, 0.18);
+            }
+            
+            VerticalLayout {
         // Header
         Rectangle {
             height: 64px;
@@ -104,8 +114,10 @@ export component ParticipantsPanel inherits Rectangle {
                             }
                         }
                     }
+                    }
                 }
             }
+        }
         }
     }
 }

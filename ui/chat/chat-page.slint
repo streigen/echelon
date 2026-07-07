@@ -17,7 +17,7 @@ export component ChatPage inherits Rectangle {
             sidebar-collapsed <=> root.sidebar-collapsed;
             active-room <=> root.active-room;
             width: root.sidebar-collapsed ? 70px : 320px;
-            animate width { duration: 420ms; easing: ease; }
+            animate width { duration: 250ms; easing: ease-in-out; }
         }
         ChatMain {
             participants-visible <=> root.participants-visible;

@@ -1,0 +1,125 @@
+import { RoomItem, RoomData } from "../components/room-item.slint";
+
+export struct CategoryData {
+    name: string,
+    rooms: [RoomData],
+    collapsed: bool,
+}
+
+export component RoomsSidebar inherits Rectangle {
+    in-out property <bool> sidebar-collapsed: false;
+    in-out property <string> active-room: "general";
+    in-out property <string> active-voice-room: "";
+    in-out property <[string]> voice-participants: [];
+    in-out property <[CategoryData]> categories: [];
+    callback room-clicked(string, string); // name, r_type
+
+    clip: true;
+    background: #000000;
+    
+    // CPU Optimization: Fix internal layout width to 250px to prevent layout reflows during the width animation.
+    // The outer Rectangle will just clip the static layout as it animates to 0 width!
+    HorizontalLayout {
+        x: 0;
+        y: 0;
+        width: 250px;
+        height: 100%;
+        
+        Rectangle {
+            background: transparent;
+            
+            Rectangle {
+                x: parent.width - 1px;
+                width: 1px;
+                height: parent.height;
+                background: rgba(255, 255, 255, 0.18);
+            }
+            
+            VerticalLayout {
+                alignment: start; // Fixes the gap issue (prevents space-between pushing flickable down)
+                
+                // Header
+                Rectangle {
+                    height: 64px;
+                    
+                    Rectangle {
+                        y: parent.height - 1px;
+                        x: 16px;
+                        width: parent.width - 32px;
+                        height: 1px;
+                        background: rgba(255, 255, 255, 0.18);
+                    }
+                    
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        alignment: space-between;
+                        VerticalLayout {
+                            alignment: center;
+                            Text { text: "echelon"; color: #FFFFFF; font-size: 16px; font-weight: 700; }
+                            Text { text: "matrix.org"; color: #40529F; font-size: 11px; }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: rgba(255, 255, 255, 0.7); }
+                        }
+                    }
+                }
+                
+                // Rooms list
+                Flickable {
+                    vertical-stretch: 1; // Stretches to fill remaining space
+                    width: 100%;
+                    viewport-height: rooms-layout.preferred-height;
+                    rooms-layout := VerticalLayout {
+                        padding: 16px;
+                        spacing: 12px;
+                        alignment: start;
+                        
+                        for category[idx] in root.categories : VerticalLayout {
+                            spacing: 8px;
+                            padding-bottom: 8px;
+                            
+                            Rectangle {
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    Image {
+                                        source: @image-url("../../static/dropdown.svg");
+                                        width: 12px;
+                                        height: 12px;
+                                        colorize: rgba(255, 255, 255, 0.45);
+                                        transform-rotation: category.collapsed ? -90deg : 0deg;
+                                        y: 2px;
+                                    }
+                                    Text { text: category.name; color: rgba(255, 255, 255, 0.45); font-size: 12px; font-weight: 700; }
+                                }
+                                
+                                TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    clicked => { root.categories[idx].collapsed = !root.categories[idx].collapsed; }
+                                    mouse-cursor: pointer;
+                                }
+                            }
+                            
+                            if !category.collapsed : VerticalLayout {
+                                spacing: 4px;
+                                for room in category.rooms : RoomItem {
+                                    room: room;
+                                    active-room: root.active-room;
+                                    active-voice-room: root.active-voice-room;
+                                    voice-participants: root.voice-participants;
+                                    
+                                    clicked => {
+                                        root.room-clicked(room.name, room.r_type);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

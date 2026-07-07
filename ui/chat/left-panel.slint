@@ -1,28 +1,18 @@
-import "../../static/JetBrainsMono-Regular.ttf";
-
-struct VoiceParticipant {
-    name: string,
-    pfp: string,
-}
-
-import { RoomItem, RoomData } from "../components/room-item.slint";
-
-struct CategoryData {
-    name: string,
-    rooms: [RoomData],
-    collapsed: bool,
-}
+import { SpacesBar } from "./spaces-bar.slint";
+import { RoomsSidebar, CategoryData } from "./rooms-sidebar.slint";
+import { UserBar } from "./user-bar.slint";
 
 export component LeftPanel inherits Rectangle {
     in-out property <bool> sidebar-collapsed: false;
     in-out property <string> active-room: "general";
+    property <string> active-room-space0: "general";
+    property <string> active-room-space1: "mission-control";
     in-out property <string> active-voice-room: "";
     in-out property <bool> muted: false;
     in-out property <bool> deafened: false;
-    in-out property <bool> profile-stack-visible: false;
     in-out property <int> active-space: 0;
     
-    in-out property <[CategoryData]> categories: [
+    property <[CategoryData]> space-0: [
         { name: "ROOMS", collapsed: false, rooms: [
             { name: "announcements", r_type: "text", encrypted: true },
             { name: "general", r_type: "text", encrypted: true },
@@ -38,6 +28,19 @@ export component LeftPanel inherits Rectangle {
         ]},
     ];
     
+    property <[CategoryData]> space-1: [
+        { name: "SECRET BASE", collapsed: false, rooms: [
+            { name: "mission-control", r_type: "text", encrypted: true },
+            { name: "intel", r_type: "text", encrypted: true },
+        ]},
+        { name: "HANG OUT", collapsed: false, rooms: [
+            { name: "gaming", r_type: "voice", encrypted: false },
+            { name: "chill zone", r_type: "voice", encrypted: false },
+        ]},
+    ];
+
+    in-out property <[CategoryData]> categories: root.active-space == 0 ? root.space-0 : root.space-1;
+    
     in-out property <[string]> voice-participants: ["Clumsy ☆", "Human", "flaxeneel2"];
     
     background: #000000;
@@ -45,387 +48,41 @@ export component LeftPanel inherits Rectangle {
     VerticalLayout {
         // TOP SECTION: Spaces Bar + Rooms Sidebar
         HorizontalLayout {
-            // Spaces Bar
-            Rectangle {
-                width: 70px;
-                background: #000000;
-                
-                Rectangle {
-                    x: parent.width - 1px;
-                    width: 1px;
-                    height: parent.height;
-                    background: rgba(255, 255, 255, 0.18);
-                }
-                
-                VerticalLayout {
-                    alignment: space-between;
-                    
-                    // Top section
-                    VerticalLayout {
-                        alignment: start;
-                        spacing: 16px;
-                        padding-top: 16px;
-                        
-                        // DM Icon
-                        HorizontalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 48px;
-                                height: 48px;
-                                border-radius: 16px;
-                                background: #0C103B;
-                                Image {
-                                    source: @image-url("../../static/dm.svg");
-                                    width: 24px;
-                                    height: 24px;
-                                    colorize: #FFFFFF;
-                                }
-                            }
-                        }
-                        
-                        Rectangle { height: 1px; background: rgba(255, 255, 255, 0.18); width: 48px; x: (parent.width - 48px) / 2; }
-                        
-                        // Spaces list
-                        HorizontalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 48px;
-                                height: 48px;
-                                border-radius: 16px;
-                                background: root.active-space == 0 ? #29356A : #0C103B;
-                                Text { text: "ec"; color: root.active-space == 0 ? #59B5D1 : rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
-                                TouchArea { clicked => { root.active-space = 0; } mouse-cursor: pointer; }
-                            }
-                        }
-                        HorizontalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 48px;
-                                height: 48px;
-                                border-radius: 16px;
-                                background: root.active-space == 1 ? #29356A : #0C103B;
-                                Text { text: "sp"; color: root.active-space == 1 ? #59B5D1 : rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
-                                TouchArea { clicked => { root.active-space = 1; } mouse-cursor: pointer; }
-                            }
-                        }
-                    }
-                    
-                    // Bottom section: Collapse button always visible
-                    VerticalLayout {
-                        alignment: end;
-                        padding-bottom: 8px;
-                        
-                        HorizontalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 32px;
-                                height: 32px;
-                                border-radius: 8px;
-                                background: transparent;
-                                Image {
-                                    source: @image-url("../../static/dropdown.svg");
-                                    width: 16px;
-                                    height: 16px;
-                                    colorize: #59B5D1;
-                                    transform-rotation: root.sidebar-collapsed ? -90deg : 90deg; // point left if expanded, right if collapsed
-                                    animate transform-rotation { duration: 200ms; easing: ease-in-out; }
-                                }
-                                TouchArea {
-                                    clicked => { root.sidebar-collapsed = !root.sidebar-collapsed; }
-                                    mouse-cursor: pointer;
-                                }
-                            }
-                        }
-                    }
+            SpacesBar {
+                sidebar-collapsed <=> root.sidebar-collapsed;
+                active-space: root.active-space;
+                space-clicked(idx) => {
+                    root.active-space = idx;
+                    root.active-room = idx == 0 ? root.active-room-space0 : root.active-room-space1;
                 }
             }
-            
-            // Rooms Sidebar
-            Rectangle {
-                width: root.sidebar-collapsed ? 0px : 250px;
-                animate width { duration: 200ms; easing: ease-in-out; }
-                clip: true;
-                background: #000000;
-                
-                Rectangle {
-                    x: parent.width - 1px;
-                    width: 1px;
-                    height: parent.height;
-                    background: rgba(255, 255, 255, 0.18);
-                }
-                
-                VerticalLayout {
-                    alignment: start; // Fixes the gap issue (prevents space-between pushing flickable down)
-                    
-                    // Header
-                    Rectangle {
-                        height: 64px;
-                        
-                        Rectangle {
-                            y: parent.height - 1px;
-                            x: 16px;
-                            width: parent.width - 32px;
-                            height: 1px;
-                            background: rgba(255, 255, 255, 0.18);
+            RoomsSidebar {
+                sidebar-collapsed <=> root.sidebar-collapsed;
+                active-room <=> root.active-room;
+                active-voice-room <=> root.active-voice-room;
+                voice-participants <=> root.voice-participants;
+                categories <=> root.categories;
+                room-clicked(name, r_type) => {
+                    if r_type == "text" {
+                        if root.active-space == 0 {
+                            root.active-room-space0 = name;
+                        } else {
+                            root.active-room-space1 = name;
                         }
-                        
-                        HorizontalLayout {
-                            padding-left: 16px;
-                            padding-right: 16px;
-                            alignment: space-between;
-                            VerticalLayout {
-                                alignment: center;
-                                Text { text: "echelon"; color: #FFFFFF; font-size: 16px; font-weight: 700; }
-                                Text { text: "matrix.org"; color: #40529F; font-size: 11px; }
-                            }
-                            VerticalLayout {
-                                alignment: center;
-                                Image { source: @image-url("../../static/dropdown.svg"); width: 16px; height: 16px; colorize: rgba(255, 255, 255, 0.7); }
-                            }
-                        }
-                    }
-                    
-                    // Rooms list
-                    Flickable {
-                        vertical-stretch: 1; // Stretches to fill remaining space
-                        width: 100%;
-                        viewport-height: rooms-layout.preferred-height;
-                        rooms-layout := VerticalLayout {
-                            padding: 16px;
-                            spacing: 12px;
-                            alignment: start;
-                            
-                            for category[idx] in root.categories : VerticalLayout {
-                                spacing: 8px;
-                                padding-bottom: 8px;
-                                
-                                Rectangle {
-                                    HorizontalLayout {
-                                        spacing: 8px;
-                                        alignment: start;
-                                        Image {
-                                            source: @image-url("../../static/dropdown.svg");
-                                            width: 12px;
-                                            height: 12px;
-                                            colorize: rgba(255, 255, 255, 0.45);
-                                            transform-rotation: category.collapsed ? -90deg : 0deg;
-                                            y: 2px;
-                                        }
-                                        Text { text: category.name; color: rgba(255, 255, 255, 0.45); font-size: 12px; font-weight: 700; }
-                                    }
-                                    
-                                    TouchArea {
-                                        width: 100%;
-                                        height: 100%;
-                                        clicked => { root.categories[idx].collapsed = !root.categories[idx].collapsed; }
-                                        mouse-cursor: pointer;
-                                    }
-                                }
-                                
-                                if !category.collapsed : VerticalLayout {
-                                    spacing: 4px;
-                                    for room in category.rooms : RoomItem {
-                                        room: room;
-                                        active-room: root.active-room;
-                                        active-voice-room: root.active-voice-room;
-                                        voice-participants: root.voice-participants;
-                                        
-                                        clicked => {
-                                            if room.r_type == "text" { root.active-room = room.name; }
-                                            else { root.active-voice-room = (root.active-voice-room == room.name) ? "" : room.name; }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        root.active-room = name;
+                    } else {
+                        root.active-voice-room = (root.active-voice-room == name) ? "" : name;
                     }
                 }
             }
         }
         
         // BOTTOM SECTION: User Bar (Extends all the way left)
-        Rectangle {
-            background: #000000;
-            border-top-left-radius: 32px;
-            
-            Rectangle {
-                x: parent.width - 1px;
-                width: 1px;
-                height: parent.height;
-                background: rgba(255, 255, 255, 0.18);
-            }
-            
-            VerticalLayout {
-                voice-container := Rectangle {
-                    visible: self.height > 0px;
-                    height: root.active-voice-room != "" && !root.sidebar-collapsed ? voice-layout.preferred-height : 0px;
-                    animate height { duration: 250ms; easing: ease-in-out; }
-                    background: transparent;
-                    clip: true;
-                    
-                    voice-layout := VerticalLayout {
-                        padding-left: 20px;
-                        padding-right: 16px;
-                        padding-top: 16px;
-                        spacing: 12px;
-                        opacity: root.active-voice-room != "" && !root.sidebar-collapsed ? 1.0 : 0.0;
-                        animate opacity { duration: 200ms; }
-                        
-                        HorizontalLayout {
-                            alignment: space-between;
-                            VerticalLayout {
-                                spacing: 4px;
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    alignment: start;
-                                    Rectangle {
-                                        width: 12px;
-                                        height: 14px;
-                                        background: transparent;
-                                        Rectangle { width: 3px; height: 6px; border-radius: 1.5px; background: #59B5D1; x: 0px; y: 8px; }
-                                        Rectangle { width: 3px; height: 10px; border-radius: 1.5px; background: #59B5D1; x: 4.5px; y: 4px; }
-                                        Rectangle { width: 3px; height: 14px; border-radius: 1.5px; background: #59B5D1; x: 9px; y: 0px; }
-                                    }
-                                    Text { text: "connected"; color: #59B5D1; font-size: 14px; font-weight: 500; font-family: "JetBrains Mono"; }
-                                }
-                                Text { text: root.active-voice-room; color: #59B5D1; font-size: 20px; font-weight: 500; font-family: "JetBrains Mono"; }
-                            }
-                            VerticalLayout {
-                                alignment: center;
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    alignment: center;
-                                    Rectangle {
-                                        width: 36px; height: 36px; border-radius: 18px;
-                                        background: transparent;
-                                        Image {
-                                            source: @image-url("../../static/screenshare.svg");
-                                            width: 20px;
-                                            height: 20px;
-                                            colorize: ss-ta.has-hover ? #59B5D1 : #FFFFFF;
-                                            animate colorize { duration: 150ms; }
-                                        }
-                                        ss-ta := TouchArea { mouse-cursor: pointer; }
-                                    }
-                                    Rectangle {
-                                        width: 36px; height: 36px; border-radius: 18px;
-                                        background: transparent;
-                                        Image {
-                                            source: @image-url("../../static/video.svg");
-                                            width: 27.5px;
-                                            height: 20px;
-                                            image-fit: contain;
-                                            colorize: vid-ta.has-hover ? #59B5D1 : #FFFFFF;
-                                            animate colorize { duration: 150ms; }
-                                        }
-                                        vid-ta := TouchArea { mouse-cursor: pointer; }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        Rectangle { height: 1px; background: #1C2341; } // Separator line
-                    }
-                }
-                
-                Rectangle {
-                    height: 76px; // 16 top + 44 pfp + 16 bottom
-                    
-                    // PFP (Always stays on the left edge inside the User Bar rectangle)
-                    Rectangle {
-                        x: 13px; // (70px spaces bar width - 44px) / 2 -> centers exactly under the spaces bar!
-                        y: 16px;
-                        width: 44px;
-                        height: 44px;
-                        border-radius: 22px;
-                        background: #d9dde4;
-                        
-                        Rectangle {
-                            width: 12px; height: 12px; border-radius: 6px;
-                            background: #00A63E;
-                            border-width: 2px; border-color: #000000; // matches user bar background
-                            x: parent.width - 11px; y: 1px;
-                        }
-                        
-                        // Click to expand if collapsed & hover stack
-                        if root.sidebar-collapsed : Rectangle {
-                            width: 70px;
-                            height: 204px + voice-container.height;
-                            x: -13px;
-                            y: -160px - voice-container.height;
-                            background: transparent;
-                            pfp-ta := TouchArea {
-                                clicked => { root.sidebar-collapsed = false; }
-                                mouse-cursor: pointer;
-                            }
-                            
-                            Rectangle {
-                                width: 34px; height: 1px; background: rgba(255, 255, 255, 0.18);
-                                y: 92px; x: 18px;
-                                opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
-                                animate opacity { duration: 200ms; }
-                            }
-                            
-                            // Mute toggle
-                            Rectangle {
-                                width: 34px; height: 34px; border-radius: 17px; background: root.muted ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
-                                y: 50px; x: 18px;
-                                opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
-                                animate opacity { duration: 200ms; }
-                                Image { source: root.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
-                                mute-ta := TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
-                            }
-                            
-                            // Deafen toggle
-                            Rectangle {
-                                width: 34px; height: 34px; border-radius: 17px; background: root.deafened ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
-                                y: 8px; x: 18px;
-                                opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
-                                animate opacity { duration: 200ms; }
-                                Image { source: root.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
-                                deafen-ta := TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
-                            }
-                        }
-                    }
-                    
-                    HorizontalLayout {
-                        x: 70px;
-                        width: parent.width - 70px;
-                        height: parent.height;
-                        opacity: root.sidebar-collapsed ? 0.0 : 1.0;
-                        animate opacity { duration: 200ms; }
-                        alignment: space-between;
-                        padding-left: 16px; // 16px from the Rooms Sidebar edge
-                        padding-right: 16px;
-                        
-                        VerticalLayout {
-                            alignment: center;
-                            Text { text: "Clumsy ☆"; color: #FFFFFF; font-size: 15px; font-weight: 700; font-family: "JetBrains Mono"; }
-                            Text { text: "matrix.org"; color: #40529F; font-size: 13px; font-family: "JetBrains Mono"; }
-                        }
-                        
-                        VerticalLayout {
-                            alignment: center;
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: center;
-                                Rectangle {
-                                    width: 36px; height: 36px; border-radius: 18px;
-                                    background: root.muted ? rgba(237, 66, 69, 0.24) : transparent;
-                                    Image { source: root.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
-                                    TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
-                                }
-                                Rectangle {
-                                    width: 36px; height: 36px; border-radius: 18px;
-                                    background: root.deafened ? rgba(237, 66, 69, 0.24) : transparent;
-                                    Image { source: root.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
-                                    TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        UserBar {
+            sidebar-collapsed <=> root.sidebar-collapsed;
+            active-voice-room <=> root.active-voice-room;
+            muted <=> root.muted;
+            deafened <=> root.deafened;
         }
     }
 }

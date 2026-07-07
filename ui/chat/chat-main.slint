@@ -1,5 +1,6 @@
 import "../../static/JetBrainsMono-Regular.ttf";
-import { CustomInput } from "../components/input-field.slint";
+import { ChatHeader } from "./chat-header.slint";
+import { ChatComposer } from "./chat-composer.slint";
 
 export struct Message {
     user: string,
@@ -23,47 +24,9 @@ export component ChatMain inherits Rectangle {
     
     VerticalLayout {
         // Header
-        Rectangle {
-            height: 64px;
-            background: transparent;
-            
-            Rectangle {
-                y: parent.height - 1px;
-                x: 16px;
-                width: parent.width - 32px;
-                height: 1px;
-                background: rgba(255, 255, 255, 0.18);
-            }
-            
-            HorizontalLayout {
-                padding-left: 24px;
-                padding-right: 24px;
-                alignment: space-between;
-                
-                HorizontalLayout {
-                    spacing: 12px;
-                    alignment: start;
-                    
-                    Image { source: @image-url("../../static/dropdown.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
-                    VerticalLayout {
-                        alignment: center;
-                        Text { text: root.active-room; color: #FFFFFF; font-size: 18px; font-weight: 700; }
-                        Text { text: "matrix.org"; color: #40529F; font-size: 12px; }
-                    }
-                }
-                
-                HorizontalLayout {
-                    spacing: 16px;
-                    alignment: center;
-                    
-                    Image { source: @image-url("../../static/pin.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
-                    Rectangle {
-                        width: 24px; height: 24px; y: 20px;
-                        Image { source: @image-url("../../static/members.svg"); width: 24px; height: 24px; colorize: root.participants-visible ? #38BDF8 : rgba(255, 255, 255, 0.55); }
-                        TouchArea { clicked => { root.participants-visible = !root.participants-visible; } mouse-cursor: pointer; }
-                    }
-                }
-            }
+        ChatHeader {
+            active-room <=> root.active-room;
+            participants-visible <=> root.participants-visible;
         }
         
         // Messages Area
@@ -73,6 +36,9 @@ export component ChatMain inherits Rectangle {
                 width: 100%;
                 viewport-height: msg-layout.preferred-height;
                 
+                // CPU Optimization Note: 
+                // We keep the viewport-height observer simple, but avoid aggressive re-anchoring
+                // if it's already close to the bottom. But for now we stick to standard Slint behavior.
                 changed viewport-height => {
                     self.viewport-y = min(0px, self.height - self.viewport-height);
                 }
@@ -178,114 +144,8 @@ export component ChatMain inherits Rectangle {
         }
         
         // Composer area
-        Rectangle {
-            VerticalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                padding-bottom: 14px;
-                
-                // Typing indicator
-                Rectangle {
-                    height: 20px;
-                    HorizontalLayout {
-                        padding-left: 64px;
-                        Text { text: "... flaxeneel2 is typing"; color: rgba(255, 255, 255, 0.55); font-size: 12px; font-weight: 700; }
-                    }
-                }
-                
-                // Composer
-                HorizontalLayout {
-                    spacing: 12px;
-                    
-                    Rectangle {
-                        width: 48px;
-                        height: 48px;
-                        vertical-stretch: 0;
-                        background: #000000;
-                        border-radius: 24px;
-                        Image { source: @image-url("../../static/attach.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.7); y: 12px; x: 12px;}
-                        TouchArea { mouse-cursor: pointer; }
-                    }
-                    
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        background: #000000;
-                        border-width: 2px;
-                        border-color: chat-edit.has-focus ? #38BDF8 : #1a2255;
-                        border-top-left-radius: 20px;
-                        border-bottom-right-radius: 20px;
-                        drop-shadow-color: chat-edit.has-focus ? #38BDF8.with-alpha(0.25) : transparent;
-                        drop-shadow-blur: chat-edit.has-focus ? 10px : 0px;
-                        animate border-color { duration: 200ms; easing: ease; }
-                        animate drop-shadow-color { duration: 200ms; easing: ease; }
-                        animate drop-shadow-blur { duration: 200ms; easing: ease; }
-                        height: min(250px, max(48px, chat-edit.preferred-height + 24px));
-                        clip: true;
-                        
-                        chat-flickable := Flickable {
-                            width: 100%;
-                            height: 100%;
-                            viewport-height: max(48px, chat-edit.preferred-height + 24px);
-                            
-                            chat-edit := TextInput {
-                                x: 18px;
-                                y: (parent.viewport-height - self.height) / 2;
-                                width: parent.width - 36px;
-                                height: self.preferred-height;
-                                wrap: word-wrap;
-                                single-line: false;
-                                color: #FFFFFF;
-                                font-size: 16px;
-                                font-family: "JetBrains Mono";
-                                vertical-alignment: center;
-                                
-                                edited => {
-                                    chat-flickable.viewport-y = min(0px, chat-flickable.height - chat-flickable.viewport-height);
-                                }
-                                
-                                key-pressed(event) => {
-                                    if (event.text == "\n" && !event.modifiers.shift) {
-                                        if (self.text != "") {
-                                            root.send-message(self.text);
-                                            self.text = "";
-                                        }
-                                        return accept;
-                                    }
-                                    return reject;
-                                }
-                            }
-                            
-                            if chat-edit.text == "" : Text {
-                                text: "enter a message...";
-                                color: chat-edit.has-focus ? rgba(255, 255, 255, 0.3) : rgba(255, 255, 255, 0.55);
-                                font-size: 16px;
-                                font-family: "JetBrains Mono";
-                                x: 18px;
-                                y: (parent.viewport-height - self.preferred-height) / 2;
-                                animate color { duration: 200ms; easing: ease; }
-                            }
-                        }
-                    }
-                    
-                    Rectangle {
-                        width: 48px;
-                        height: 48px;
-                        background: #2D1B8E;
-                        border-radius: 24px;
-                        vertical-stretch: 0;
-                        Image { source: @image-url("../../static/send.svg"); width: 20px; height: 20px; colorize: #FFFFFF; y: 14px; x: 14px;}
-                        TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => {
-                                if (chat-edit.text != "") {
-                                    root.send-message(chat-edit.text);
-                                    chat-edit.text = "";
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        ChatComposer {
+            send-message(msg) => { root.send-message(msg); }
         }
     }
 }

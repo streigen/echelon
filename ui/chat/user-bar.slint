@@ -1,0 +1,201 @@
+export component UserBar inherits Rectangle {
+    in-out property <bool> sidebar-collapsed: false;
+    in-out property <string> active-voice-room: "";
+    in-out property <bool> muted: false;
+    in-out property <bool> deafened: false;
+    in-out property <string> username: "Clumsy ☆";
+    
+    background: #000000;
+    border-top-left-radius: 32px;
+    
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        height: parent.height;
+        background: rgba(255, 255, 255, 0.18);
+    }
+    
+    VerticalLayout {
+        voice-container := Rectangle {
+            visible: self.height > 0px;
+            height: root.active-voice-room != "" && !root.sidebar-collapsed ? voice-layout.preferred-height : 0px;
+            animate height { duration: 250ms; easing: ease-in-out; }
+            background: transparent;
+            clip: true;
+            
+            voice-layout := VerticalLayout {
+                padding-left: 20px;
+                padding-right: 16px;
+                padding-top: 16px;
+                spacing: 12px;
+                opacity: root.active-voice-room != "" && !root.sidebar-collapsed ? 1.0 : 0.0;
+                animate opacity { duration: 200ms; }
+                
+                HorizontalLayout {
+                    alignment: space-between;
+                    VerticalLayout {
+                        spacing: 4px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            Rectangle {
+                                width: 12px;
+                                height: 14px;
+                                background: transparent;
+                                Rectangle { width: 3px; height: 6px; border-radius: 1.5px; background: #59B5D1; x: 0px; y: 8px; }
+                                Rectangle { width: 3px; height: 10px; border-radius: 1.5px; background: #59B5D1; x: 4.5px; y: 4px; }
+                                Rectangle { width: 3px; height: 14px; border-radius: 1.5px; background: #59B5D1; x: 9px; y: 0px; }
+                            }
+                            Text { text: "connected"; color: #59B5D1; font-size: 14px; font-weight: 500; font-family: "JetBrains Mono"; }
+                        }
+                        Text { text: root.active-voice-room; color: #59B5D1; font-size: 20px; font-weight: 500; font-family: "JetBrains Mono"; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: center;
+                            Rectangle {
+                                width: 36px; height: 36px; border-radius: 18px;
+                                background: transparent;
+                                Image {
+                                    source: @image-url("../../static/screenshare.svg");
+                                    width: 20px;
+                                    height: 20px;
+                                    colorize: ss-ta.has-hover ? #59B5D1 : #FFFFFF;
+                                    animate colorize { duration: 150ms; }
+                                }
+                                ss-ta := TouchArea { mouse-cursor: pointer; }
+                            }
+                            Rectangle {
+                                width: 36px; height: 36px; border-radius: 18px;
+                                background: transparent;
+                                Image {
+                                    source: @image-url("../../static/video.svg");
+                                    width: 27.5px;
+                                    height: 20px;
+                                    image-fit: contain;
+                                    colorize: vid-ta.has-hover ? #59B5D1 : #FFFFFF;
+                                    animate colorize { duration: 150ms; }
+                                }
+                                vid-ta := TouchArea { mouse-cursor: pointer; }
+                            }
+                        }
+                    }
+                }
+                
+                Rectangle { height: 1px; background: #1C2341; } // Separator line
+            }
+        }
+        
+        Rectangle {
+            height: 76px; // 16 top + 44 pfp + 16 bottom
+            
+            // PFP (Always stays on the left edge inside the User Bar rectangle)
+            Rectangle {
+                x: 13px; // (70px spaces bar width - 44px) / 2 -> centers exactly under the spaces bar!
+                y: 16px;
+                width: 44px;
+                height: 44px;
+                border-radius: 22px;
+                background: #d9dde4;
+                
+                Rectangle {
+                    width: 12px; height: 12px; border-radius: 6px;
+                    background: #00A63E;
+                    border-width: 2px; border-color: #000000; // matches user bar background
+                    x: parent.width - 11px; y: 1px;
+                }
+                
+                // Click to expand if collapsed & hover stack
+                if root.sidebar-collapsed : Rectangle {
+                    width: 70px;
+                    height: 204px + voice-container.height;
+                    x: -13px;
+                    y: -160px - voice-container.height;
+                    background: transparent;
+                    property <bool> animating: false;
+                    Timer {
+                        running: pfp-ta.animating;
+                        interval: 250ms;
+                        triggered => { pfp-ta.animating = false; }
+                    }
+                    pfp-ta := TouchArea {
+                        property <bool> animating: false;
+                        clicked => {
+                            if (!self.animating) {
+                                root.sidebar-collapsed = false;
+                                self.animating = true;
+                            }
+                        }
+                        mouse-cursor: pointer;
+                    }
+                    
+                    Rectangle {
+                        width: 34px; height: 1px; background: rgba(255, 255, 255, 0.18);
+                        y: 92px; x: 18px;
+                        opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
+                        animate opacity { duration: 200ms; }
+                    }
+                    
+                    // Mute toggle
+                    Rectangle {
+                        width: 34px; height: 34px; border-radius: 17px; background: root.muted ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
+                        y: 50px; x: 18px;
+                        opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
+                        animate opacity { duration: 200ms; }
+                        Image { source: root.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
+                        mute-ta := TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
+                    }
+                    
+                    // Deafen toggle
+                    Rectangle {
+                        width: 34px; height: 34px; border-radius: 17px; background: root.deafened ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
+                        y: 8px; x: 18px;
+                        opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
+                        animate opacity { duration: 200ms; }
+                        Image { source: root.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
+                        deafen-ta := TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
+                    }
+                }
+            }
+            
+            HorizontalLayout {
+                x: 70px;
+                width: parent.width - 70px;
+                height: parent.height;
+                opacity: root.sidebar-collapsed ? 0.0 : 1.0;
+                animate opacity { duration: 200ms; }
+                alignment: space-between;
+                padding-left: 16px; // 16px from the Rooms Sidebar edge
+                padding-right: 16px;
+                
+                VerticalLayout {
+                    alignment: center;
+                    Text { text: root.username; color: #FFFFFF; font-size: 15px; font-weight: 700; font-family: "JetBrains Mono"; }
+                    Text { text: "matrix.org"; color: #40529F; font-size: 13px; font-family: "JetBrains Mono"; }
+                }
+                
+                VerticalLayout {
+                    alignment: center;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: center;
+                        Rectangle {
+                            width: 36px; height: 36px; border-radius: 18px;
+                            background: root.muted ? rgba(237, 66, 69, 0.24) : transparent;
+                            Image { source: root.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
+                            TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
+                        }
+                        Rectangle {
+                            width: 36px; height: 36px; border-radius: 18px;
+                            background: root.deafened ? rgba(237, 66, 69, 0.24) : transparent;
+                            Image { source: root.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
+                            TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
