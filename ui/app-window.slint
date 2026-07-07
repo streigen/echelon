@@ -1,5 +1,3 @@
-
- 
 import "../static/JetBrainsMono-Regular.ttf";
 import { CustomInput } from "./components/input-field.slint";
 import { CustomButton } from "./components/button.slint";
@@ -26,10 +24,11 @@ export component AppWindow inherits Window {
     callback open_chat();
     callback forgot_password();
     callback send_message(string);
+    callback room_switched(string);
+    callback on-matrix-message(string, string, string, string);
+    in-out property <string> result: "";
 
     in-out property <string> active-room: "general";
-
-    callback room_switched(string);
     in-out property <[Message]> messages;
     
     changed active-room => {
@@ -43,7 +42,7 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             alignment: center;
             VerticalLayout {
-                width: 320px; // roughly 26vw
+                width: 320px;
                 alignment: center;
                 spacing: 12px;
 

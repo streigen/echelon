@@ -1,46 +1,101 @@
-// Prevent console window in addition to Slint window in Windows release builds when, e.g., starting the app via file manager. Ignored on other platforms.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::error::Error;
-use slint::Model;
+use std::future::Future;
+use std::sync::Arc;
+
+mod account;
+mod app_state;
+mod client;
+mod commands;
+mod events;
+mod keyring_client;
+mod rooms;
+mod secret;
+mod spaces;
+mod store;
+mod stronghold_backend;
+mod sync_manager;
+
+use app_state::{app_data_dir, AppState};
+use client::ClientHandler;
+use keyring_client::KeyringClient;
+use secret::SecretService;
+use store::EchelonStore;
+
+pub use client::ClientState;
 
 slint::include_modules!();
 
+const APP_ID: &str = "net.flaxeneel2.echelon";
+
+fn spawn_ui_command<F, Fut>(handle: &tokio::runtime::Handle, _ui: slint::Weak<AppWindow>, f: F)
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = slint::SharedString> + Send + 'static,
+{
+    handle.spawn(async move {
+        let start = std::time::Instant::now();
+        let msg = f().await;
+        println!("Backend Result: {} ({}ms)", msg, start.elapsed().as_millis());
+    });
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
+
+    keyring_init();
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    let data_dir = app_data_dir(APP_ID);
+
+    let mut stronghold_dir = data_dir.clone();
+    stronghold_dir.push("stronghold");
+
+    let secret_service = SecretService::new(
+        KeyringClient::new(APP_ID.to_string()),
+        stronghold_dir.clone(),
+    );
+
+    let echelon_store = EchelonStore::new(
+        KeyringClient::new(APP_ID.to_string()),
+        "store-key".to_string(),
+        stronghold_dir,
+    );
+
+    let app_state = Arc::new(AppState {
+        secret_service,
+        echelon_store,
+        data_dir,
+    });
+
     let ui = AppWindow::new()?;
+    let ui_handle = ui.as_weak();
 
+    // Setup client state 
+    let client = rt.block_on(ClientHandler::new(app_state.clone(), ui_handle.clone()))?;
+    let client_state: ClientState = Arc::new(tokio::sync::RwLock::new(Some(client)));
+    let rt_handle = rt.handle().clone();
+
+    // UI Auth hooks (mapping to backend)
     ui.on_login({
-        let ui_handle = ui.as_weak();
+        let state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui = ui_handle.clone();
         move |username, password, homeserver| {
-            let ui = ui_handle.unwrap();
-            println!("Login request: username={}, password={}, homeserver={}", username, password, homeserver);
-            ui.set_loading(true);
-            // Simulate a login process
-            // ui.set_loading(false);
+            let (state, ui) = (state.clone(), ui.clone());
+            let (username, password, homeserver) = (username.to_string(), password.to_string(), homeserver.to_string());
+            spawn_ui_command(&handle, ui, move || async move {
+                commands::auth::login(username, password, homeserver, state)
+                    .await.map_or_else(|e| e.into(), |s| s.into())
+            });
         }
     });
 
-    ui.on_oauth_action({
-        let _ui_handle = ui.as_weak();
-        move |action, provider| {
-            println!("OAuth request: action={}, provider={}", action, provider);
-        }
-    });
-
-    ui.on_open_chat({
-        let _ui_handle = ui.as_weak();
-        move || {
-            println!("Open chat (dev)");
-        }
-    });
-
-    ui.on_forgot_password({
-        let _ui_handle = ui.as_weak();
-        move || {
-            println!("Forgot password");
-        }
-    });
-
+    // Mock Chat Database
     let mut initial_db = std::collections::HashMap::new();
     initial_db.insert("general".to_string(), vec![
         Message { user: "Clumsy ☆".into(), time: "12:02 pm".into(), text: "hello world".into(), repliedTo: "".into(), image: false },
@@ -70,7 +125,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_messages(std::rc::Rc::new(slint::VecModel::from(db.borrow().get("general").unwrap().clone())).into());
 
     ui.on_room_switched({
-        let ui_handle = ui.as_weak();
+        let ui_handle = ui_handle.clone();
         let db = db.clone();
         move |room_name| {
             if let Some(ui) = ui_handle.upgrade() {
@@ -81,7 +136,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     ui.on_send_message({
-        let ui_handle = ui.as_weak();
+        let ui_handle = ui_handle.clone();
         let db = db.clone();
         move |msg_text| {
             if let Some(ui) = ui_handle.upgrade() {
@@ -109,4 +164,38 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.run()?;
 
     Ok(())
+}
+
+fn keyring_init() {
+    #[cfg(target_os = "android")]
+    {
+        use android_native_keyring_store::Store as AndroidStore;
+        keyring_core::set_default_store(
+            AndroidStore::new().expect("Failed to initialize Android KeyStore")
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        use apple_native_keyring_store::Store as AppleStore;
+        keyring_core::set_default_store(
+            AppleStore::new().expect("Failed to initialize Apple Keychain store")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows_native_keyring_store::Store as WindowsStore;
+        keyring_core::set_default_store(
+            WindowsStore::new().expect("Failed to initialize Windows Credential Manager store")
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use zbus_secret_service_keyring_store::Store as SecretServiceStore;
+        keyring_core::set_default_store(
+            SecretServiceStore::new().expect("Failed to initialize Secret Service store")
+        );
+    }
 }
