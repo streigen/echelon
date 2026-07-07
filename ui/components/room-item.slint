@@ -17,7 +17,7 @@ export component RoomItem inherits VerticalLayout {
     property <bool> is-active: room.r_type == "text" ? room.name == root.active-room : root.active-voice-room == room.name;
     
     room-rect := Rectangle {
-        background: root.is-active ? (root.room.r_type == "voice" ? #1a2255 : #2D1B8E) : transparent;
+        background: root.is-active ? #2D1B8E : transparent;
         border-radius: 6px;
         
         HorizontalLayout {
@@ -35,7 +35,7 @@ export component RoomItem inherits VerticalLayout {
             }
             Text {
                 text: root.room.name;
-                color: root.is-active ? (root.room.r_type == "voice" ? #59B5D1 : #FFFFFF) : rgba(255, 255, 255, 0.55);
+                color: root.is-active ? #FFFFFF : rgba(255, 255, 255, 0.55);
                 font-size: 14px;
                 font-weight: root.is-active ? 700 : 400;
             }

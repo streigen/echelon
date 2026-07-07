@@ -113,7 +113,7 @@ export component LeftPanel inherits Rectangle {
                     // Bottom section: Collapse button always visible
                     VerticalLayout {
                         alignment: end;
-                        padding-bottom: 24px;
+                        padding-bottom: 8px;
                         
                         HorizontalLayout {
                             alignment: center;
@@ -128,6 +128,7 @@ export component LeftPanel inherits Rectangle {
                                     height: 16px;
                                     colorize: #59B5D1;
                                     transform-rotation: root.sidebar-collapsed ? -90deg : 90deg; // point left if expanded, right if collapsed
+                                    animate transform-rotation { duration: 200ms; easing: ease-in-out; }
                                 }
                                 TouchArea {
                                     clicked => { root.sidebar-collapsed = !root.sidebar-collapsed; }
@@ -255,16 +256,20 @@ export component LeftPanel inherits Rectangle {
             }
             
             VerticalLayout {
-                if root.active-voice-room != "" : Rectangle {
-                    opacity: root.sidebar-collapsed ? 0.0 : 1.0;
-                    animate opacity { duration: 200ms; }
+                voice-container := Rectangle {
+                    visible: self.height > 0px;
+                    height: root.active-voice-room != "" && !root.sidebar-collapsed ? voice-layout.preferred-height : 0px;
+                    animate height { duration: 250ms; easing: ease-in-out; }
                     background: transparent;
-                    height: voice-layout.preferred-height;
+                    clip: true;
+                    
                     voice-layout := VerticalLayout {
                         padding-left: 20px;
                         padding-right: 16px;
                         padding-top: 16px;
                         spacing: 12px;
+                        opacity: root.active-voice-room != "" && !root.sidebar-collapsed ? 1.0 : 0.0;
+                        animate opacity { duration: 200ms; }
                         
                         HorizontalLayout {
                             alignment: space-between;
@@ -285,18 +290,36 @@ export component LeftPanel inherits Rectangle {
                                 }
                                 Text { text: root.active-voice-room; color: #59B5D1; font-size: 20px; font-weight: 500; font-family: "JetBrains Mono"; }
                             }
-                            HorizontalLayout {
-                                spacing: 8px;
+                            VerticalLayout {
                                 alignment: center;
-                                Rectangle {
-                                    width: 36px; height: 36px; border-radius: 18px; background: transparent;
-                                    Image { source: @image-url("../../static/screenshare.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
-                                    TouchArea { mouse-cursor: pointer; }
-                                }
-                                Rectangle {
-                                    width: 36px; height: 36px; border-radius: 18px; background: transparent;
-                                    Image { source: @image-url("../../static/video.svg"); height: 20px; colorize: rgba(255, 255, 255, 0.75); }
-                                    TouchArea { mouse-cursor: pointer; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 36px; height: 36px; border-radius: 18px;
+                                        background: transparent;
+                                        Image {
+                                            source: @image-url("../../static/screenshare.svg");
+                                            width: 20px;
+                                            height: 20px;
+                                            colorize: ss-ta.has-hover ? #59B5D1 : #FFFFFF;
+                                            animate colorize { duration: 150ms; }
+                                        }
+                                        ss-ta := TouchArea { mouse-cursor: pointer; }
+                                    }
+                                    Rectangle {
+                                        width: 36px; height: 36px; border-radius: 18px;
+                                        background: transparent;
+                                        Image {
+                                            source: @image-url("../../static/video.svg");
+                                            width: 27.5px;
+                                            height: 20px;
+                                            image-fit: contain;
+                                            colorize: vid-ta.has-hover ? #59B5D1 : #FFFFFF;
+                                            animate colorize { duration: 150ms; }
+                                        }
+                                        vid-ta := TouchArea { mouse-cursor: pointer; }
+                                    }
                                 }
                             }
                         }
@@ -327,9 +350,9 @@ export component LeftPanel inherits Rectangle {
                         // Click to expand if collapsed & hover stack
                         if root.sidebar-collapsed : Rectangle {
                             width: 70px;
-                            height: 180px;
+                            height: 204px + voice-container.height;
                             x: -13px;
-                            y: -136px;
+                            y: -160px - voice-container.height;
                             background: transparent;
                             pfp-ta := TouchArea {
                                 clicked => { root.sidebar-collapsed = false; }
@@ -338,29 +361,29 @@ export component LeftPanel inherits Rectangle {
                             
                             Rectangle {
                                 width: 34px; height: 1px; background: rgba(255, 255, 255, 0.18);
-                                y: 86px; x: 18px;
-                                opacity: pfp-ta.has-hover ? 1.0 : 0.0;
+                                y: 92px; x: 18px;
+                                opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
                                 animate opacity { duration: 200ms; }
                             }
                             
                             // Mute toggle
                             Rectangle {
-                                width: 34px; height: 34px; border-radius: 8px; background: root.muted ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
-                                y: 44px; x: 18px;
-                                opacity: pfp-ta.has-hover ? 1.0 : 0.0;
+                                width: 34px; height: 34px; border-radius: 17px; background: root.muted ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
+                                y: 50px; x: 18px;
+                                opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
                                 animate opacity { duration: 200ms; }
                                 Image { source: root.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
-                                TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
+                                mute-ta := TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
                             }
                             
                             // Deafen toggle
                             Rectangle {
-                                width: 34px; height: 34px; border-radius: 8px; background: root.deafened ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
-                                y: 2px; x: 18px;
-                                opacity: pfp-ta.has-hover ? 1.0 : 0.0;
+                                width: 34px; height: 34px; border-radius: 17px; background: root.deafened ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
+                                y: 8px; x: 18px;
+                                opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
                                 animate opacity { duration: 200ms; }
                                 Image { source: root.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
-                                TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
+                                deafen-ta := TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
                             }
                         }
                     }
