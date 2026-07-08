@@ -56,7 +56,7 @@ slint-build = "1.17.0"
 [profile.release]
 lto = false 
 
-[profile.release-final]
+[profile.release-compact]
 inherits = "release"
 codegen-units = 1
 lto = true
