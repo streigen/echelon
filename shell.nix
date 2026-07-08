@@ -1,7 +1,7 @@
 let
   rust_overlay_src = builtins.fetchTarball {
     url = "https://github.com/oxalica/rust-overlay/archive/master.tar.gz";
-    sha256 = "0qgrkgc695a7gja83dngxrcx4gdg9056gvg5325i5yyjxg0ni6c9";
+    sha256 = "1y94bw0zi92c3qr584ycy89pb7385wxbv9prxwrzs2z2gpw9yrcf";
   };
 
   common = import ./common.nix {
