@@ -54,6 +54,10 @@ zbus-secret-service-keyring-store = { version = "1.0.0", features = ["rt-async-i
 slint-build = "1.17.0"
 
 [profile.release]
+lto = false 
+
+[profile.release-final]
+inherits = "release"
 codegen-units = 1
 lto = true
 opt-level = "z"
@@ -62,4 +66,3 @@ strip = true
 
 [profile.dev.package.scrypt]
 opt-level = 3
-

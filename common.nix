@@ -69,6 +69,8 @@ let
     export JAVA_HOME="${pkgs.zulu.home}"
     export XDG_DATA_DIRS="$GSETTINGS_SCHEMAS_PATH"
 
+    export RUSTC_WRAPPER="sccache"
+
     # Exports the android build tools to path
     export PATH="$ANDROID_HOME/build-tools/${buildToolsVersion}:$PATH"
     export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}:$LD_LIBRARY_PATH"
@@ -89,6 +91,9 @@ in
       rustToolchain
       xdg-utils
       pkg-config
+      mold
+      clang
+      sccache
     ];
 
     buildInputs =
