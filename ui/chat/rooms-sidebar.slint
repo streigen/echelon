@@ -16,6 +16,7 @@ export component RoomsSidebar inherits Rectangle {
 
     clip: true;
     background: #000000;
+    cache-rendering-hint: true;
     
     // CPU Optimization: Fix internal layout width to 250px to prevent layout reflows during the width animation.
     // The outer Rectangle will just clip the static layout as it animates to 0 width!

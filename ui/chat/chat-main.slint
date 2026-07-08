@@ -12,6 +12,7 @@ export struct Message {
 
 export component ChatMain inherits Rectangle {
     background: #000000;
+    cache-rendering-hint: true;
     
     in-out property <string> active-room: "general";
     in-out property <bool> participants-visible: true;
