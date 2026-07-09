@@ -27,13 +27,6 @@ export component CustomInput {
         border-color: root.has-focus ? root.focus-color : #1a2255;
         border-top-left-radius: 20px;
         border-bottom-right-radius: 20px;
-
-        drop-shadow-color: root.has-focus ? root.focus-color.with-alpha(0.25) : transparent;
-        drop-shadow-blur: root.has-focus ? 10px : 0px;
-
-        animate border-color { duration: 200ms; easing: ease; }
-        animate drop-shadow-color { duration: 200ms; easing: ease; }
-        animate drop-shadow-blur { duration: 200ms; easing: ease; }
         
         text-input := TextInput {
             text <=> root.text;
@@ -55,7 +48,6 @@ export component CustomInput {
             font-family: "JetBrains Mono";
             vertical-alignment: center;
             x: 18px;
-            animate color { duration: 200ms; easing: ease; }
         }
 
         if (root.is-password) : Rectangle {

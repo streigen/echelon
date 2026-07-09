@@ -1,0 +1,34 @@
+// Global application state singleton.
+// All components read/write shared state here directly,
+// eliminating deep two-way binding chains that cause
+// "long callback/instantiation chain" warnings.
+
+export struct Message {
+    user: string,
+    time: string,
+    text: string,
+    repliedTo: string,
+    image: bool,
+}
+
+export global UiState {
+    // Chat state
+    in-out property <string> active-room: "general";
+    in-out property <[Message]> messages;
+
+    // Layout state
+    in-out property <bool> sidebar-collapsed: false;
+    in-out property <bool> participants-visible: true;
+
+    // Voice state
+    in-out property <string> active-voice-room: "";
+    in-out property <bool> muted: false;
+    in-out property <bool> deafened: false;
+
+    // Space state
+    in-out property <int> active-space: 0;
+
+    // Callbacks to Rust backend
+    callback room-switched(string);
+    callback send-message(string);
+}

@@ -1,32 +1,34 @@
 import "../../static/JetBrainsMono-Regular.ttf";
+import { UiState } from "../app-state.slint";
 import { LeftPanel } from "./left-panel.slint";
-import { ChatMain, Message } from "./chat-main.slint";
+import { ChatMain } from "./chat-main.slint";
 import { ParticipantsPanel } from "./participants-panel.slint";
 
 export component ChatPage inherits Rectangle {
     background: #000000;
     
-    in-out property <bool> sidebar-collapsed: false;
-    in-out property <bool> participants-visible: true;
-    in-out property <string> active-room: "general";
-    in-out property <[Message]> messages;
-    callback send-message(string);
+    // Background sidebar, stays static.
+    LeftPanel {
+        x: 0;
+        y: 0;
+        width: 320px;
+        height: parent.height;
+    }
     
-    HorizontalLayout {
-        LeftPanel {
-            sidebar-collapsed <=> root.sidebar-collapsed;
-            active-room <=> root.active-room;
-            width: root.sidebar-collapsed ? 70px : 320px;
-            animate width { duration: 250ms; easing: ease-in-out; }
-        }
-        ChatMain {
-            participants-visible <=> root.participants-visible;
-            active-room <=> root.active-room;
-            messages <=> root.messages;
-            send-message(msg) => { root.send-message(msg); }
-        }
-        if root.participants-visible : ParticipantsPanel {
-            width: 250px;
-        }
+    // Main chat area - instantly snaps to available width, animates X to slide over the sidebar.
+    ChatMain {
+        x: UiState.sidebar-collapsed ? 70px : 320px;
+        y: 0;
+        width: parent.width - (UiState.sidebar-collapsed ? 70px : 320px) - (UiState.participants-visible ? 250px : 0px);
+        height: parent.height;
+        
+        animate x { duration: 250ms; easing: ease-in-out; }
+    }
+    
+    if UiState.participants-visible : ParticipantsPanel {
+        x: parent.width - 250px;
+        y: 0;
+        width: 250px;
+        height: parent.height;
     }
 }

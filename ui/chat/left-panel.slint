@@ -1,16 +1,11 @@
+import { UiState } from "../app-state.slint";
 import { SpacesBar } from "./spaces-bar.slint";
 import { RoomsSidebar, CategoryData } from "./rooms-sidebar.slint";
 import { UserBar } from "./user-bar.slint";
 
 export component LeftPanel inherits Rectangle {
-    in-out property <bool> sidebar-collapsed: false;
-    in-out property <string> active-room: "general";
     property <string> active-room-space0: "general";
     property <string> active-room-space1: "mission-control";
-    in-out property <string> active-voice-room: "";
-    in-out property <bool> muted: false;
-    in-out property <bool> deafened: false;
-    in-out property <int> active-space: 0;
     
     property <[CategoryData]> space-0: [
         { name: "ROOMS", collapsed: false, rooms: [
@@ -39,7 +34,7 @@ export component LeftPanel inherits Rectangle {
         ]},
     ];
 
-    in-out property <[CategoryData]> categories: root.active-space == 0 ? root.space-0 : root.space-1;
+    in-out property <[CategoryData]> categories: UiState.active-space == 0 ? root.space-0 : root.space-1;
     
     in-out property <[string]> voice-participants: ["Clumsy ☆", "Human", "flaxeneel2"];
     
@@ -49,40 +44,32 @@ export component LeftPanel inherits Rectangle {
         // TOP SECTION: Spaces Bar + Rooms Sidebar
         HorizontalLayout {
             SpacesBar {
-                sidebar-collapsed <=> root.sidebar-collapsed;
-                active-space: root.active-space;
                 space-clicked(idx) => {
-                    root.active-space = idx;
-                    root.active-room = idx == 0 ? root.active-room-space0 : root.active-room-space1;
+                    UiState.active-space = idx;
+                    UiState.active-room = idx == 0 ? root.active-room-space0 : root.active-room-space1;
+                    UiState.room-switched(UiState.active-room);
                 }
             }
             RoomsSidebar {
-                sidebar-collapsed <=> root.sidebar-collapsed;
-                active-room <=> root.active-room;
-                active-voice-room <=> root.active-voice-room;
-                voice-participants <=> root.voice-participants;
+                voice-participants: root.voice-participants;
                 categories <=> root.categories;
                 room-clicked(name, r_type) => {
                     if r_type == "text" {
-                        if root.active-space == 0 {
+                        if UiState.active-space == 0 {
                             root.active-room-space0 = name;
                         } else {
                             root.active-room-space1 = name;
                         }
-                        root.active-room = name;
+                        UiState.active-room = name;
+                        UiState.room-switched(name);
                     } else {
-                        root.active-voice-room = (root.active-voice-room == name) ? "" : name;
+                        UiState.active-voice-room = (UiState.active-voice-room == name) ? "" : name;
                     }
                 }
             }
         }
         
         // BOTTOM SECTION: User Bar (Extends all the way left)
-        UserBar {
-            sidebar-collapsed <=> root.sidebar-collapsed;
-            active-voice-room <=> root.active-voice-room;
-            muted <=> root.muted;
-            deafened <=> root.deafened;
-        }
+        UserBar {}
     }
 }

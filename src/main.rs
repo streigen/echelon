@@ -122,25 +122,33 @@ fn main() -> Result<(), Box<dyn Error>> {
     ]);
 
     let db = std::rc::Rc::new(std::cell::RefCell::new(initial_db));
-    ui.set_messages(std::rc::Rc::new(slint::VecModel::from(db.borrow().get("general").unwrap().clone())).into());
 
-    ui.on_room_switched({
+    // Set initial messages via AppState global
+    ui.global::<UiState>().set_messages(
+        std::rc::Rc::new(slint::VecModel::from(db.borrow().get("general").unwrap().clone())).into()
+    );
+
+    // Room switched callback — via AppState global
+    ui.global::<UiState>().on_room_switched({
         let ui_handle = ui_handle.clone();
         let db = db.clone();
-        move |room_name| {
+        move |room_name: slint::SharedString| {
             if let Some(ui) = ui_handle.upgrade() {
                 let msgs = db.borrow().get(room_name.as_str()).cloned().unwrap_or_default();
-                ui.set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
+                ui.global::<UiState>().set_messages(
+                    std::rc::Rc::new(slint::VecModel::from(msgs)).into()
+                );
             }
         }
     });
 
-    ui.on_send_message({
+    // Send message callback — via AppState global
+    ui.global::<UiState>().on_send_message({
         let ui_handle = ui_handle.clone();
         let db = db.clone();
         move |msg_text| {
             if let Some(ui) = ui_handle.upgrade() {
-                let current_room = ui.get_active_room().to_string();
+                let current_room = ui.global::<UiState>().get_active_room().to_string();
                 let new_msg = Message {
                     user: slint::SharedString::from("Clumsy ☆"),
                     time: slint::SharedString::from("just now"),
@@ -156,7 +164,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 
                 let msgs = db.borrow().get(&current_room).cloned().unwrap_or_default();
-                ui.set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
+                ui.global::<UiState>().set_messages(
+                    std::rc::Rc::new(slint::VecModel::from(msgs)).into()
+                );
             }
         }
     });

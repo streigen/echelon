@@ -10,8 +10,6 @@ export component ParticipantsPanel inherits Rectangle {
     width: 250px;
     background: #000000;
     clip: true; // Prepare for possible animation
-    cache-rendering-hint: true;
-    
     in-out property <[ParticipantGroup]> groups: [
         { title: "OWNERS", collapsed: false, users: ["flaxeneel2"] },
         { title: "MODERATORS", collapsed: false, users: ["helloflaxee:)", "jkhala"] },

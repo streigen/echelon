@@ -1,7 +1,6 @@
+import { UiState } from "../app-state.slint";
+
 export component ChatHeader inherits Rectangle {
-    in-out property <string> active-room: "general";
-    in-out property <bool> participants-visible: true;
-    
     height: 64px;
     background: transparent;
     
@@ -25,7 +24,7 @@ export component ChatHeader inherits Rectangle {
             Image { source: @image-url("../../static/dropdown.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
             VerticalLayout {
                 alignment: center;
-                Text { text: root.active-room; color: #FFFFFF; font-size: 18px; font-weight: 700; }
+                Text { text: UiState.active-room; color: #FFFFFF; font-size: 18px; font-weight: 700; }
                 Text { text: "matrix.org"; color: #40529F; font-size: 12px; }
             }
         }
@@ -37,8 +36,8 @@ export component ChatHeader inherits Rectangle {
             Image { source: @image-url("../../static/pin.svg"); width: 24px; height: 24px; colorize: rgba(255, 255, 255, 0.55); y: 20px;}
             Rectangle {
                 width: 24px; height: 24px; y: 20px;
-                Image { source: @image-url("../../static/members.svg"); width: 24px; height: 24px; colorize: root.participants-visible ? #38BDF8 : rgba(255, 255, 255, 0.55); }
-                TouchArea { clicked => { root.participants-visible = !root.participants-visible; } mouse-cursor: pointer; }
+                Image { source: @image-url("../../static/members.svg"); width: 24px; height: 24px; colorize: UiState.participants-visible ? #38BDF8 : rgba(255, 255, 255, 0.55); }
+                TouchArea { clicked => { UiState.participants-visible = !UiState.participants-visible; } mouse-cursor: pointer; }
             }
         }
     }

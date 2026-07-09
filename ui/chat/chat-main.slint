@@ -1,61 +1,31 @@
 import "../../static/JetBrainsMono-Regular.ttf";
+import { UiState, Message } from "../app-state.slint";
+import { ListView } from "std-widgets.slint";
 import { ChatHeader } from "./chat-header.slint";
 import { ChatComposer } from "./chat-composer.slint";
 
-export struct Message {
-    user: string,
-    time: string,
-    text: string,
-    repliedTo: string,
-    image: bool,
-}
-
 export component ChatMain inherits Rectangle {
     background: #000000;
-    cache-rendering-hint: true;
-    
-    in-out property <string> active-room: "general";
-    in-out property <bool> participants-visible: true;
-    
-    callback send-message(string);
-    
-    in-out property <[Message]> messages;
     
     dummy-focus := FocusScope {}
     
     VerticalLayout {
         // Header
-        ChatHeader {
-            active-room <=> root.active-room;
-            participants-visible <=> root.participants-visible;
-        }
+        ChatHeader {}
         
         // Messages Area
         Rectangle {
-            msg-flickable := Flickable {
+            msg-listview := ListView {
                 height: 100%;
                 width: 100%;
-                viewport-height: msg-layout.preferred-height;
                 
-                // CPU Optimization Note: 
-                // We keep the viewport-height observer simple, but avoid aggressive re-anchoring
-                // if it's already close to the bottom. But for now we stick to standard Slint behavior.
-                changed viewport-height => {
-                    self.viewport-y = min(0px, self.height - self.viewport-height);
-                }
-                
-                TouchArea {
-                    width: 100%;
-                    height: 100%;
-                    clicked => { dummy-focus.focus(); }
-                }
-                
-                msg-layout := VerticalLayout {
-                    padding: 24px;
-                    spacing: 24px;
-                    alignment: start;
+                for msg[idx] in UiState.messages : VerticalLayout {
+                    padding-bottom: 24px;
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    padding-top: idx == 0 ? 24px : 0px;
                     
-                    for msg in root.messages : Rectangle {
+                    Rectangle {
                         background: msg-ta.has-hover || reply-ta.has-hover ? rgba(255, 255, 255, 0.04) : transparent;
                         border-radius: 8px;
                         animate background { duration: 150ms; }
@@ -145,8 +115,6 @@ export component ChatMain inherits Rectangle {
         }
         
         // Composer area
-        ChatComposer {
-            send-message(msg) => { root.send-message(msg); }
-        }
+        ChatComposer {}
     }
 }

@@ -1,4 +1,6 @@
+import { UiState } from "../app-state.slint";
 import { RoomItem, RoomData } from "../components/room-item.slint";
+import { ListView } from "std-widgets.slint";
 
 export struct CategoryData {
     name: string,
@@ -7,16 +9,12 @@ export struct CategoryData {
 }
 
 export component RoomsSidebar inherits Rectangle {
-    in-out property <bool> sidebar-collapsed: false;
-    in-out property <string> active-room: "general";
-    in-out property <string> active-voice-room: "";
     in-out property <[string]> voice-participants: [];
     in-out property <[CategoryData]> categories: [];
     callback room-clicked(string, string); // name, r_type
 
     clip: true;
     background: #000000;
-    cache-rendering-hint: true;
     
     // CPU Optimization: Fix internal layout width to 250px to prevent layout reflows during the width animation.
     // The outer Rectangle will just clip the static layout as it animates to 0 width!
@@ -108,8 +106,6 @@ export component RoomsSidebar inherits Rectangle {
                                 spacing: 4px;
                                 for room in category.rooms : RoomItem {
                                     room: room;
-                                    active-room: root.active-room;
-                                    active-voice-room: root.active-voice-room;
                                     voice-participants: root.voice-participants;
                                     
                                     clicked => {

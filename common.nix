@@ -54,6 +54,7 @@ let
     wayland
     libxkbcommon
     libGL
+    vulkan-loader
 
     # X11 fallbacks (optional but highly recommended)
     libx11
@@ -73,7 +74,7 @@ let
 
     # Exports the android build tools to path
     export PATH="$ANDROID_HOME/build-tools/${buildToolsVersion}:$PATH"
-    export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}:$LD_LIBRARY_PATH"
+    export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${pkgs.lib.makeLibraryPath runtimeLibs}:$LD_LIBRARY_PATH"
   '';
 in
 {

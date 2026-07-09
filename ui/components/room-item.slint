@@ -1,4 +1,5 @@
 import "../../static/JetBrainsMono-Regular.ttf";
+import { UiState } from "../app-state.slint";
 
 export struct RoomData {
     name: string,
@@ -8,13 +9,11 @@ export struct RoomData {
 
 export component RoomItem inherits VerticalLayout {
     in property <RoomData> room;
-    in property <string> active-room;
-    in property <string> active-voice-room;
     in property <[string]> voice-participants;
     
     callback clicked();
     
-    property <bool> is-active: room.r_type == "text" ? room.name == root.active-room : root.active-voice-room == room.name;
+    property <bool> is-active: room.r_type == "text" ? room.name == UiState.active-room : UiState.active-voice-room == room.name;
     
     room-rect := Rectangle {
         background: root.is-active ? #2D1B8E : transparent;
@@ -47,7 +46,7 @@ export component RoomItem inherits VerticalLayout {
         }
     }
     
-    if root.room.r_type == "voice" && root.active-voice-room == root.room.name : VerticalLayout {
+    if root.room.r_type == "voice" && UiState.active-voice-room == root.room.name : VerticalLayout {
         padding-left: 38px;
         spacing: 6px;
         padding-top: 4px;

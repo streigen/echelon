@@ -1,13 +1,10 @@
+import { UiState } from "../app-state.slint";
+
 export component UserBar inherits Rectangle {
-    in-out property <bool> sidebar-collapsed: false;
-    in-out property <string> active-voice-room: "";
-    in-out property <bool> muted: false;
-    in-out property <bool> deafened: false;
     in-out property <string> username: "Clumsy ☆";
     
     background: #000000;
     border-top-left-radius: 32px;
-    cache-rendering-hint: true;
     
     Rectangle {
         x: parent.width - 1px;
@@ -19,7 +16,7 @@ export component UserBar inherits Rectangle {
     VerticalLayout {
         voice-container := Rectangle {
             visible: self.height > 0px;
-            height: root.active-voice-room != "" && !root.sidebar-collapsed ? voice-layout.preferred-height : 0px;
+            height: UiState.active-voice-room != "" && !UiState.sidebar-collapsed ? voice-layout.preferred-height : 0px;
             animate height { duration: 250ms; easing: ease-in-out; }
             background: transparent;
             clip: true;
@@ -29,7 +26,7 @@ export component UserBar inherits Rectangle {
                 padding-right: 16px;
                 padding-top: 16px;
                 spacing: 12px;
-                opacity: root.active-voice-room != "" && !root.sidebar-collapsed ? 1.0 : 0.0;
+                opacity: UiState.active-voice-room != "" && !UiState.sidebar-collapsed ? 1.0 : 0.0;
                 animate opacity { duration: 200ms; }
                 
                 HorizontalLayout {
@@ -49,7 +46,7 @@ export component UserBar inherits Rectangle {
                             }
                             Text { text: "connected"; color: #59B5D1; font-size: 14px; font-weight: 500; font-family: "JetBrains Mono"; }
                         }
-                        Text { text: root.active-voice-room; color: #59B5D1; font-size: 20px; font-weight: 500; font-family: "JetBrains Mono"; }
+                        Text { text: UiState.active-voice-room; color: #59B5D1; font-size: 20px; font-weight: 500; font-family: "JetBrains Mono"; }
                     }
                     VerticalLayout {
                         alignment: center;
@@ -109,7 +106,7 @@ export component UserBar inherits Rectangle {
                 }
                 
                 // Click to expand if collapsed & hover stack
-                if root.sidebar-collapsed : Rectangle {
+                if UiState.sidebar-collapsed : Rectangle {
                     width: 70px;
                     height: 204px + voice-container.height;
                     x: -13px;
@@ -125,7 +122,7 @@ export component UserBar inherits Rectangle {
                         property <bool> animating: false;
                         clicked => {
                             if (!self.animating) {
-                                root.sidebar-collapsed = false;
+                                UiState.sidebar-collapsed = false;
                                 self.animating = true;
                             }
                         }
@@ -141,22 +138,22 @@ export component UserBar inherits Rectangle {
                     
                     // Mute toggle
                     Rectangle {
-                        width: 34px; height: 34px; border-radius: 17px; background: root.muted ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
+                        width: 34px; height: 34px; border-radius: 17px; background: UiState.muted ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
                         y: 50px; x: 18px;
                         opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
                         animate opacity { duration: 200ms; }
-                        Image { source: root.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
-                        mute-ta := TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
+                        Image { source: UiState.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
+                        mute-ta := TouchArea { clicked => { UiState.muted = !UiState.muted; } mouse-cursor: pointer; }
                     }
                     
                     // Deafen toggle
                     Rectangle {
-                        width: 34px; height: 34px; border-radius: 17px; background: root.deafened ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
+                        width: 34px; height: 34px; border-radius: 17px; background: UiState.deafened ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
                         y: 8px; x: 18px;
                         opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
                         animate opacity { duration: 200ms; }
-                        Image { source: root.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
-                        deafen-ta := TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
+                        Image { source: UiState.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
+                        deafen-ta := TouchArea { clicked => { UiState.deafened = !UiState.deafened; } mouse-cursor: pointer; }
                     }
                 }
             }
@@ -165,7 +162,7 @@ export component UserBar inherits Rectangle {
                 x: 70px;
                 width: parent.width - 70px;
                 height: parent.height;
-                opacity: root.sidebar-collapsed ? 0.0 : 1.0;
+                opacity: UiState.sidebar-collapsed ? 0.0 : 1.0;
                 animate opacity { duration: 200ms; }
                 alignment: space-between;
                 padding-left: 16px; // 16px from the Rooms Sidebar edge
@@ -184,15 +181,15 @@ export component UserBar inherits Rectangle {
                         alignment: center;
                         Rectangle {
                             width: 36px; height: 36px; border-radius: 18px;
-                            background: root.muted ? rgba(237, 66, 69, 0.24) : transparent;
-                            Image { source: root.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
-                            TouchArea { clicked => { root.muted = !root.muted; } mouse-cursor: pointer; }
+                            background: UiState.muted ? rgba(237, 66, 69, 0.24) : transparent;
+                            Image { source: UiState.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
+                            TouchArea { clicked => { UiState.muted = !UiState.muted; } mouse-cursor: pointer; }
                         }
                         Rectangle {
                             width: 36px; height: 36px; border-radius: 18px;
-                            background: root.deafened ? rgba(237, 66, 69, 0.24) : transparent;
-                            Image { source: root.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
-                            TouchArea { clicked => { root.deafened = !root.deafened; } mouse-cursor: pointer; }
+                            background: UiState.deafened ? rgba(237, 66, 69, 0.24) : transparent;
+                            Image { source: UiState.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 20px; height: 20px; colorize: rgba(255, 255, 255, 0.75); }
+                            TouchArea { clicked => { UiState.deafened = !UiState.deafened; } mouse-cursor: pointer; }
                         }
                     }
                 }

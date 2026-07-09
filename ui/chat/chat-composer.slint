@@ -1,8 +1,7 @@
 import "../../static/JetBrainsMono-Regular.ttf";
+import { UiState } from "../app-state.slint";
 
 export component ChatComposer inherits Rectangle {
-    callback send-message(string);
-    
     VerticalLayout {
         padding-left: 16px;
         padding-right: 16px;
@@ -38,11 +37,7 @@ export component ChatComposer inherits Rectangle {
                 border-color: chat-edit.has-focus ? #38BDF8 : #1a2255;
                 border-top-left-radius: 20px;
                 border-bottom-right-radius: 20px;
-                drop-shadow-color: chat-edit.has-focus ? #38BDF8.with-alpha(0.25) : transparent;
-                drop-shadow-blur: chat-edit.has-focus ? 10px : 0px;
-                animate border-color { duration: 200ms; easing: ease; }
-                animate drop-shadow-color { duration: 200ms; easing: ease; }
-                animate drop-shadow-blur { duration: 200ms; easing: ease; }
+
                 height: min(250px, max(48px, chat-edit.preferred-height + 24px));
                 clip: true;
                 
@@ -70,7 +65,7 @@ export component ChatComposer inherits Rectangle {
                         key-pressed(event) => {
                             if (event.text == "\n" && !event.modifiers.shift) {
                                 if (self.text != "") {
-                                    root.send-message(self.text);
+                                    UiState.send-message(self.text);
                                     self.text = "";
                                 }
                                 return accept;
@@ -86,7 +81,6 @@ export component ChatComposer inherits Rectangle {
                         font-family: "JetBrains Mono";
                         x: 18px;
                         y: (parent.viewport-height - self.preferred-height) / 2;
-                        animate color { duration: 200ms; easing: ease; }
                     }
                 }
             }
@@ -102,7 +96,7 @@ export component ChatComposer inherits Rectangle {
                     mouse-cursor: pointer;
                     clicked => {
                         if (chat-edit.text != "") {
-                            root.send-message(chat-edit.text);
+                            UiState.send-message(chat-edit.text);
                             chat-edit.text = "";
                         }
                     }
