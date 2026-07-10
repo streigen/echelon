@@ -34,11 +34,16 @@ export component LeftPanel inherits Rectangle {
         ]},
     ];
 
-    in-out property <[CategoryData]> categories: UiState.active-space == 0 ? root.space-0 : root.space-1;
+    property <[CategoryData]> categories;
+    
+    init => {
+        root.categories = root.space-0;
+    }
     
     in-out property <[string]> voice-participants: ["Clumsy ☆", "Human", "flaxeneel2"];
     
     background: #000000;
+    clip: true;
     
     VerticalLayout {
         // TOP SECTION: Spaces Bar + Rooms Sidebar
@@ -46,13 +51,23 @@ export component LeftPanel inherits Rectangle {
             SpacesBar {
                 space-clicked(idx) => {
                     UiState.active-space = idx;
+                    root.categories = idx == 0 ? root.space-0 : root.space-1;
                     UiState.active-room = idx == 0 ? root.active-room-space0 : root.active-room-space1;
                     UiState.room-switched(UiState.active-room);
                 }
             }
             RoomsSidebar {
                 voice-participants: root.voice-participants;
-                categories <=> root.categories;
+                categories: root.categories;
+                toggle-category(idx) => {
+                    if (UiState.active-space == 0) {
+                        root.space-0[idx].collapsed = !root.space-0[idx].collapsed;
+                        root.categories = root.space-0;
+                    } else {
+                        root.space-1[idx].collapsed = !root.space-1[idx].collapsed;
+                        root.categories = root.space-1;
+                    }
+                }
                 room-clicked(name, r_type) => {
                     if r_type == "text" {
                         if UiState.active-space == 0 {

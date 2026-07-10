@@ -14,39 +14,15 @@ export component MessageRow inherits VerticalLayout {
     row-focus := FocusScope {}
 
     row-rect := Rectangle {
-        property <float> hover-opacity: 0.0;
-        property <bool> raw-hovering: msg-ta.has-hover || reply-ta.has-hover;
-        property <bool> is-hovering: false;
+        property <bool> is-hovering: msg-ta.has-hover || reply-ta.has-hover;
 
         background: transparent;
         border-radius: 8px;
 
-        // 150ms hover-intent gate — cancels if mouse leaves before firing
-        Timer {
-            interval: 150ms;
-            running: row-rect.raw-hovering && !row-rect.is-hovering;
-            triggered => { row-rect.is-hovering = row-rect.raw-hovering; }
-        }
-
-        // 30fps fade — drives hover-opacity, resets is-hovering on fade-out
-        Timer {
-            interval: 33ms;
-            running: (row-rect.is-hovering && row-rect.hover-opacity < 1.0)
-                  || (!row-rect.raw-hovering && row-rect.hover-opacity > 0.0);
-            triggered => {
-                if (!row-rect.raw-hovering) {
-                    row-rect.is-hovering = false;
-                    row-rect.hover-opacity = max(row-rect.hover-opacity - 0.4, 0.0);
-                } else {
-                    row-rect.hover-opacity = min(row-rect.hover-opacity + 0.4, 1.0);
-                }
-            }
-        }
-
         Rectangle {
             background: rgba(255, 255, 255, 0.04);
             border-radius: 8px;
-            opacity: row-rect.hover-opacity;
+            opacity: row-rect.is-hovering ? 1.0 : 0.0;
             width: 100%; height: 100%;
         }
 
@@ -102,9 +78,9 @@ export component MessageRow inherits VerticalLayout {
             }
         }
 
-        // Floating reply button — shares row-rect.hover-opacity
+        // Floating reply button — shares row-rect.is-hovering
         reply-btn := Rectangle {
-            opacity: row-rect.hover-opacity;
+            opacity: row-rect.is-hovering ? 1.0 : 0.0;
             x: parent.width - 48px;
             y: (parent.height - self.height) / 2;
             width: 32px;

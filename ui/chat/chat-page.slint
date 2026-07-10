@@ -7,28 +7,20 @@ import { ParticipantsPanel } from "./participants-panel.slint";
 export component ChatPage inherits Rectangle {
     background: #000000;
     
-    // Background sidebar, stays static.
-    LeftPanel {
-        x: 0;
-        y: 0;
-        width: 320px;
-        height: parent.height;
-    }
-    
-    // Main chat area - instantly snaps to available width, animates X to slide over the sidebar.
-    ChatMain {
-        x: UiState.sidebar-collapsed ? 70px : 320px;
-        y: 0;
-        width: parent.width - (UiState.sidebar-collapsed ? 70px : 320px) - (UiState.participants-visible ? 250px : 0px);
-        height: parent.height;
+    HorizontalLayout {
+        // Background sidebar, animates width natively.
+        LeftPanel {
+            width: UiState.sidebar-collapsed ? 70px : 320px;
+            animate width { duration: 100ms; easing: ease-in-out; }
+        }
         
-        animate x { duration: 100ms; easing: ease-in-out; }
-    }
-    
-    if UiState.participants-visible : ParticipantsPanel {
-        x: parent.width - 250px;
-        y: 0;
-        width: 250px;
-        height: parent.height;
+        // Main chat area - natively stretches to fill remaining space.
+        ChatMain {
+            horizontal-stretch: 1;
+        }
+        
+        if UiState.participants-visible : ParticipantsPanel {
+            width: 250px;
+        }
     }
 }

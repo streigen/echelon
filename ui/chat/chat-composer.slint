@@ -44,33 +44,39 @@ export component ChatComposer inherits Rectangle {
                 chat-flickable := Flickable {
                     width: 100%;
                     height: 100%;
-                    viewport-height: max(48px, chat-edit.preferred-height + 24px);
+                    viewport-height: max(48px, compose-layout.preferred-height);
                     
-                    chat-edit := TextInput {
-                        x: 18px;
-                        y: (parent.viewport-height - self.height) / 2;
-                        width: parent.width - 36px;
-                        height: self.preferred-height;
-                        wrap: word-wrap;
-                        single-line: false;
-                        color: #FFFFFF;
-                        font-size: 16px;
-                        font-family: "JetBrains Mono";
-                        vertical-alignment: center;
+                    compose-layout := VerticalLayout {
+                        width: chat-flickable.width;
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        padding-top: 12px;
+                        padding-bottom: 12px;
+                        alignment: center;
                         
-                        edited => {
-                            chat-flickable.viewport-y = min(0px, chat-flickable.height - chat-flickable.viewport-height);
-                        }
-                        
-                        key-pressed(event) => {
-                            if (event.text == "\n" && !event.modifiers.shift) {
-                                if (self.text != "") {
-                                    UiState.send-message(self.text);
-                                    self.text = "";
-                                }
-                                return accept;
+                        chat-edit := TextInput {
+                            height: self.preferred-height;
+                            wrap: word-wrap;
+                            single-line: false;
+                            color: #FFFFFF;
+                            font-size: 16px;
+                            font-family: "JetBrains Mono";
+                            vertical-alignment: center;
+                            
+                            edited => {
+                                chat-flickable.viewport-y = min(0px, chat-flickable.height - chat-flickable.viewport-height);
                             }
-                            return reject;
+                            
+                            key-pressed(event) => {
+                                if (event.text == "\n" && !event.modifiers.shift) {
+                                    if (self.text != "") {
+                                        UiState.send-message(self.text);
+                                        self.text = "";
+                                    }
+                                    return accept;
+                                }
+                                return reject;
+                            }
                         }
                     }
                     
@@ -80,7 +86,7 @@ export component ChatComposer inherits Rectangle {
                         font-size: 16px;
                         font-family: "JetBrains Mono";
                         x: 18px;
-                        y: (parent.viewport-height - self.preferred-height) / 2;
+                        y: 12px;
                     }
                 }
             }

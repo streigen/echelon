@@ -10,7 +10,8 @@ export struct CategoryData {
 
 export component RoomsSidebar inherits Rectangle {
     in-out property <[string]> voice-participants: [];
-    in-out property <[CategoryData]> categories: [];
+    in property <[CategoryData]> categories: [];
+    callback toggle-category(int);
     callback room-clicked(string, string); // name, r_type
 
     clip: true;
@@ -97,7 +98,7 @@ export component RoomsSidebar inherits Rectangle {
                                 TouchArea {
                                     width: 100%;
                                     height: 100%;
-                                    clicked => { root.categories[idx].collapsed = !root.categories[idx].collapsed; }
+                                    clicked => { root.toggle-category(idx); }
                                     mouse-cursor: pointer;
                                 }
                             }

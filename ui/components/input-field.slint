@@ -17,6 +17,7 @@ export component CustomInput {
     in property <color> icon-color: #38BDF8;
     
     callback accepted();
+    callback edited(string);
 
     min-width: 100px;
     height: 48px;
@@ -29,7 +30,11 @@ export component CustomInput {
         border-bottom-right-radius: 20px;
         
         text-input := TextInput {
-            text <=> root.text;
+            text: root.text;
+            edited => { 
+                root.text = self.text; 
+                root.edited(self.text);
+            }
             color: root.text-color;
             font-size: 16px;
             font-family: "JetBrains Mono";
