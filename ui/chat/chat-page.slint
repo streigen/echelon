@@ -22,7 +22,7 @@ export component ChatPage inherits Rectangle {
         width: parent.width - (UiState.sidebar-collapsed ? 70px : 320px) - (UiState.participants-visible ? 250px : 0px);
         height: parent.height;
         
-        animate x { duration: 250ms; easing: ease-in-out; }
+        animate x { duration: 100ms; easing: ease-in-out; }
     }
     
     if UiState.participants-visible : ParticipantsPanel {

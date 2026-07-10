@@ -24,23 +24,56 @@ export component ChatMain inherits Rectangle {
                     padding-left: 24px;
                     padding-right: 24px;
                     padding-top: idx == 0 ? 24px : 0px;
-                    
-                    Rectangle {
-                        background: msg-ta.has-hover || reply-ta.has-hover ? rgba(255, 255, 255, 0.04) : transparent;
+
+                    row-rect := Rectangle {
+                        property <float> hover-opacity: 0.0;
+                        property <bool> raw-hovering: msg-ta.has-hover || reply-ta.has-hover;
+                        property <bool> is-hovering: false;
+
+                        background: transparent;
                         border-radius: 8px;
-                        animate background { duration: 150ms; }
-                        
+
+                        // 150ms hover-intent gate — auto-cancels if mouse leaves before firing,
+                        // preventing GPU spikes from mouse passing through the list
+                        Timer {
+                            interval: 150ms;
+                            running: row-rect.raw-hovering && !row-rect.is-hovering;
+                            triggered => { row-rect.is-hovering = row-rect.raw-hovering; }
+                        }
+
+                        // 30fps fade — also resets is-hovering once fully faded so delay fires again next entry
+                        Timer {
+                            interval: 33ms;
+                            running: (row-rect.is-hovering && row-rect.hover-opacity < 1.0)
+                                  || (!row-rect.raw-hovering && row-rect.hover-opacity > 0.0);
+                            triggered => {
+                                if (!row-rect.raw-hovering) {
+                                    row-rect.is-hovering = false;
+                                    row-rect.hover-opacity = max(row-rect.hover-opacity - 0.4, 0.0);
+                                } else {
+                                    row-rect.hover-opacity = min(row-rect.hover-opacity + 0.4, 1.0);
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            background: rgba(255, 255, 255, 0.04);
+                            border-radius: 8px;
+                            opacity: row-rect.hover-opacity;
+                            width: 100%; height: 100%;
+                        }
+
                         msg-ta := TouchArea {
                             width: 100%; height: 100%;
                             mouse-cursor: default;
                             clicked => { dummy-focus.focus(); }
                         }
-                        
+
                         HorizontalLayout {
                             padding: 12px;
                             spacing: 16px;
                             alignment: start;
-                            
+
                             // Avatar
                             Rectangle {
                                 width: 44px;
@@ -48,11 +81,11 @@ export component ChatMain inherits Rectangle {
                                 border-radius: 22px;
                                 background: #d9dde4;
                             }
-                            
+
                             VerticalLayout {
                                 spacing: 4px;
                                 alignment: start;
-                                
+
                                 if msg.repliedTo != "" : HorizontalLayout {
                                     spacing: 8px;
                                     alignment: start;
@@ -62,16 +95,16 @@ export component ChatMain inherits Rectangle {
                                     }
                                     Text { text: msg.repliedTo; color: rgba(255, 255, 255, 0.55); font-size: 12px; vertical-alignment: center; }
                                 }
-                                
+
                                 HorizontalLayout {
                                     spacing: 12px;
                                     alignment: start;
                                     Text { text: msg.user; color: #FFFFFF; font-weight: 700; font-size: 15px; }
                                     Text { text: msg.time; color: #40529F; font-size: 13px; }
                                 }
-                                
+
                                 Text { text: msg.text; color: rgba(255, 255, 255, 0.85); font-size: 15px; wrap: word-wrap; }
-                                
+
                                 if msg.image : Rectangle {
                                     width: 200px;
                                     height: 120px;
@@ -81,18 +114,24 @@ export component ChatMain inherits Rectangle {
                                 }
                             }
                         }
-                        
-                        // Floating reply button
+
+                        // Floating reply button — shares row-rect.hover-opacity, no separate animate
                         reply-btn := Rectangle {
-                            visible: msg-ta.has-hover || reply-ta.has-hover;
+                            opacity: row-rect.hover-opacity;
                             x: parent.width - 48px;
                             y: (parent.height - self.height) / 2;
                             width: 32px;
                             height: 32px;
                             border-radius: 16px;
-                            background: reply-ta.has-hover ? #2D1B8E : transparent;
-                            animate background { duration: 150ms; }
-                            
+                            background: transparent;
+
+                            Rectangle {
+                                background: #2D1B8E;
+                                border-radius: 16px;
+                                opacity: reply-ta.has-hover ? 1.0 : 0.0;
+                                width: 100%; height: 100%;
+                            }
+
                             Image {
                                 source: @image-url("../../static/reply.svg");
                                 width: 16px;
@@ -100,9 +139,8 @@ export component ChatMain inherits Rectangle {
                                 colorize: reply-ta.has-hover ? #FFFFFF : rgba(255, 255, 255, 0.55);
                                 x: 8px;
                                 y: 8px;
-                                animate colorize { duration: 150ms; }
                             }
-                            
+
                             reply-ta := TouchArea {
                                 width: 100%;
                                 height: 100%;

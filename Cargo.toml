@@ -12,7 +12,7 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-slint = { version = "1.17.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-skia-vulkan", "accessibility"] }
+slint = { version = "1.17.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-skia-opengl", "accessibility"] }
 keyring-core = "1.0.0"
 serde = { version = "1", features = ["derive"] }
 matrix-sdk = { version = "0.18.0", features = ["anyhow", "e2e-encryption", "markdown", "bundled-sqlite", "local-server"] }
@@ -54,7 +54,8 @@ zbus-secret-service-keyring-store = { version = "1.0.0", features = ["rt-async-i
 slint-build = "1.17.0"
 
 [profile.release]
-lto = false 
+lto = false
+debug = true
 
 [profile.release-compact]
 inherits = "release"

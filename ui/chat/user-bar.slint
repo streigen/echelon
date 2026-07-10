@@ -17,7 +17,7 @@ export component UserBar inherits Rectangle {
         voice-container := Rectangle {
             visible: self.height > 0px;
             height: UiState.active-voice-room != "" && !UiState.sidebar-collapsed ? voice-layout.preferred-height : 0px;
-            animate height { duration: 250ms; easing: ease-in-out; }
+            animate height { duration: 100ms; easing: ease-in-out; }
             background: transparent;
             clip: true;
             
@@ -27,7 +27,7 @@ export component UserBar inherits Rectangle {
                 padding-top: 16px;
                 spacing: 12px;
                 opacity: UiState.active-voice-room != "" && !UiState.sidebar-collapsed ? 1.0 : 0.0;
-                animate opacity { duration: 200ms; }
+                animate opacity { duration: 90ms; }
                 
                 HorizontalLayout {
                     alignment: space-between;
@@ -61,7 +61,6 @@ export component UserBar inherits Rectangle {
                                     width: 20px;
                                     height: 20px;
                                     colorize: ss-ta.has-hover ? #59B5D1 : #FFFFFF;
-                                    animate colorize { duration: 150ms; }
                                 }
                                 ss-ta := TouchArea { mouse-cursor: pointer; }
                             }
@@ -74,7 +73,6 @@ export component UserBar inherits Rectangle {
                                     height: 20px;
                                     image-fit: contain;
                                     colorize: vid-ta.has-hover ? #59B5D1 : #FFFFFF;
-                                    animate colorize { duration: 150ms; }
                                 }
                                 vid-ta := TouchArea { mouse-cursor: pointer; }
                             }
@@ -133,7 +131,7 @@ export component UserBar inherits Rectangle {
                         width: 34px; height: 1px; background: rgba(255, 255, 255, 0.18);
                         y: 92px; x: 18px;
                         opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
-                        animate opacity { duration: 200ms; }
+                        animate opacity { duration: 90ms; }
                     }
                     
                     // Mute toggle
@@ -141,7 +139,7 @@ export component UserBar inherits Rectangle {
                         width: 34px; height: 34px; border-radius: 17px; background: UiState.muted ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
                         y: 50px; x: 18px;
                         opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
-                        animate opacity { duration: 200ms; }
+                        animate opacity { duration: 90ms; }
                         Image { source: UiState.muted ? @image-url("../../static/muted.svg") : @image-url("../../static/unmuted.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
                         mute-ta := TouchArea { clicked => { UiState.muted = !UiState.muted; } mouse-cursor: pointer; }
                     }
@@ -151,7 +149,7 @@ export component UserBar inherits Rectangle {
                         width: 34px; height: 34px; border-radius: 17px; background: UiState.deafened ? rgba(237, 66, 69, 0.24) : rgba(45, 53, 106, 0.95);
                         y: 8px; x: 18px;
                         opacity: pfp-ta.has-hover || mute-ta.has-hover || deafen-ta.has-hover ? 1.0 : 0.0;
-                        animate opacity { duration: 200ms; }
+                        animate opacity { duration: 90ms; }
                         Image { source: UiState.deafened ? @image-url("../../static/deafened.svg") : @image-url("../../static/undeafened.svg"); width: 18px; height: 18px; colorize: #FFFFFF; }
                         deafen-ta := TouchArea { clicked => { UiState.deafened = !UiState.deafened; } mouse-cursor: pointer; }
                     }
@@ -163,7 +161,7 @@ export component UserBar inherits Rectangle {
                 width: parent.width - 70px;
                 height: parent.height;
                 opacity: UiState.sidebar-collapsed ? 0.0 : 1.0;
-                animate opacity { duration: 200ms; }
+                animate opacity { duration: 90ms; }
                 alignment: space-between;
                 padding-left: 16px; // 16px from the Rooms Sidebar edge
                 padding-right: 16px;

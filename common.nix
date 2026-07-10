@@ -96,6 +96,7 @@ in
       clang
       sccache
       upx
+      perf
     ];
 
     buildInputs =

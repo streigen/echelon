@@ -92,7 +92,7 @@ export component SpacesBar inherits Rectangle {
                         height: 16px;
                         colorize: #59B5D1;
                         transform-rotation: UiState.sidebar-collapsed ? -90deg : 90deg; // point left if expanded, right if collapsed
-                        animate transform-rotation { duration: 250ms; easing: ease-in-out; }
+                        animate transform-rotation { duration: 100ms; easing: ease-in-out; }
                     }
                     TouchArea {
                         clicked => {
