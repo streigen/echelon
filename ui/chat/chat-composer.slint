@@ -2,6 +2,8 @@ import "../../static/JetBrainsMono-Regular.ttf";
 import { UiState } from "../app-state.slint";
 
 export component ChatComposer inherits Rectangle {
+    callback message-sent();
+
     VerticalLayout {
         padding-left: 16px;
         padding-right: 16px;
@@ -72,6 +74,7 @@ export component ChatComposer inherits Rectangle {
                                     if (self.text != "") {
                                         UiState.send-message(self.text);
                                         self.text = "";
+                                        root.message-sent();
                                     }
                                     return accept;
                                 }

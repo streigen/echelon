@@ -127,7 +127,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.global::<UiState>().set_messages(
         std::rc::Rc::new(slint::VecModel::from(db.borrow().get("general").unwrap().clone())).into()
     );
-    ui.global::<UiState>().set_scroll_to_bottom_trigger(ui.global::<UiState>().get_scroll_to_bottom_trigger() + 1);
 
     // Room switched callback — via AppState global
     ui.global::<UiState>().on_room_switched({
@@ -139,7 +138,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ui.global::<UiState>().set_messages(
                     std::rc::Rc::new(slint::VecModel::from(msgs)).into()
                 );
-                ui.global::<UiState>().set_scroll_to_bottom_trigger(ui.global::<UiState>().get_scroll_to_bottom_trigger() + 1);
             }
         }
     });
@@ -169,7 +167,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ui.global::<UiState>().set_messages(
                     std::rc::Rc::new(slint::VecModel::from(msgs)).into()
                 );
-                ui.global::<UiState>().set_scroll_to_bottom_trigger(ui.global::<UiState>().get_scroll_to_bottom_trigger() + 1);
             }
         }
     });

@@ -28,9 +28,6 @@ export global UiState {
     // Space state
     in-out property <int> active-space: 0;
 
-    // Scroll trigger
-    in-out property <int> scroll-to-bottom-trigger: 0;
-
     // Callbacks to Rust backend
     callback room-switched(string);
     callback send-message(string);

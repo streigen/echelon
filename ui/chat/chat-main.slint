@@ -8,11 +8,20 @@ import { MessageRow } from "./message-row.slint";
 export component ChatMain inherits Rectangle {
     background: #000000;
 
+    auto-scroll-timer := Timer {
+        interval: 50ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            scroll-view.viewport-y = -100000px;
+        }
+    }
+
     VerticalLayout {
         ChatHeader {}
 
         Rectangle {
-            ScrollView {
+            scroll-view := ScrollView {
                 height: 100%;
                 width: 100%;
                 viewport-width: self.width;
@@ -27,6 +36,10 @@ export component ChatMain inherits Rectangle {
             }
         }
 
-        ChatComposer {}
+        ChatComposer {
+            message-sent => {
+                auto-scroll-timer.running = true;
+            }
+        }
     }
 }
