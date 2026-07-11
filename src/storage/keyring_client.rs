@@ -2,7 +2,7 @@ use anyhow::Result;
 use iota_stronghold::KeyProvider;
 use keyring_core::{Entry, Error as KeyringError};
 use tracing::error;
-use crate::secret::SecretService;
+use crate::storage::secret::SecretService;
 
 /// Abstracts OS-keyring access for both [crate::secret::SecretService] and
 /// [crate::store::EchelonStore].

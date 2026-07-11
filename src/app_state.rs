@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use crate::secret::SecretService;
-use crate::store::EchelonStore;
+use crate::storage::secret::SecretService;
+use crate::storage::store::EchelonStore;
 
 pub struct AppState {
     pub secret_service: SecretService,

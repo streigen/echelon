@@ -5,14 +5,15 @@ use tokio::sync::RwLock;
 use url::Url;
 
 use crate::app_state::AppState;
-use crate::sync_manager::SyncManager;
 use crate::AppWindow;
+use sync_manager::SyncManager;
 
 mod account_reset;
 mod factory;
 mod oauth;
 mod password_auth;
 mod registration;
+pub mod sync_manager;
 
 pub type ClientState = Arc<RwLock<Option<ClientHandler>>>;
 

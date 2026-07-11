@@ -7,8 +7,8 @@ use ruma::serde::Raw;
 use url::Url;
 
 use crate::events::client_events::ClientEvents;
-use crate::secret::Session;
-use crate::sync_manager::SyncManager;
+use crate::storage::secret::Session;
+use crate::client::sync_manager::SyncManager;
 
 use super::ClientHandler;
 

@@ -1,5 +1,5 @@
-use crate::keyring_client::KeyringClient;
-use crate::stronghold_backend::{commit_store, open_store};
+use crate::storage::keyring_client::KeyringClient;
+use crate::storage::stronghold_backend::{commit_store, open_store};
 use anyhow::Result;
 use blake3;
 use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};

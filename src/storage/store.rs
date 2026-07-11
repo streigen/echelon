@@ -4,8 +4,8 @@ use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::keyring_client::KeyringClient;
-use crate::stronghold_backend::{commit_store, open_store};
+use crate::storage::keyring_client::KeyringClient;
+use crate::storage::stronghold_backend::{commit_store, open_store};
 
 /// The list of known accounts persisted on-device.
 #[derive(Serialize, Deserialize, Default)]

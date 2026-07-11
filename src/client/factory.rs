@@ -3,7 +3,7 @@ use matrix_sdk::Client;
 use std::path::Path;
 use url::Url;
 
-use crate::secret::SecretService;
+use crate::storage::secret::SecretService;
 
 use super::ClientHandler;
 

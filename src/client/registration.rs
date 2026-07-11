@@ -2,7 +2,7 @@ use matrix_sdk::ruma::api::client::account::register::v3::Request as Registratio
 use ruma::api::client::uiaa::{AuthData, RegistrationToken};
 use tracing::{debug, error};
 
-use crate::sync_manager::SyncManager;
+use crate::client::sync_manager::SyncManager;
 
 use super::ClientHandler;
 

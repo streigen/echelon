@@ -9,19 +9,15 @@ mod app_state;
 mod client;
 mod commands;
 mod events;
-mod keyring_client;
 mod rooms;
-mod secret;
 mod spaces;
-mod store;
-mod stronghold_backend;
-mod sync_manager;
+mod storage;
 
 use app_state::{app_data_dir, AppState};
 use client::ClientHandler;
-use keyring_client::KeyringClient;
-use secret::SecretService;
-use store::EchelonStore;
+use storage::keyring_client::KeyringClient;
+use storage::secret::SecretService;
+use storage::store::EchelonStore;
 
 pub use client::ClientState;
 
