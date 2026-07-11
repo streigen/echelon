@@ -1,6 +1,6 @@
 import "../../static/JetBrainsMono-Regular.ttf";
 import { UiState } from "../app-state.slint";
-import { ListView } from "std-widgets.slint";
+import { ScrollView } from "std-widgets.slint";
 import { ChatHeader } from "./chat-header.slint";
 import { ChatComposer } from "./chat-composer.slint";
 import { MessageRow } from "./message-row.slint";
@@ -12,13 +12,17 @@ export component ChatMain inherits Rectangle {
         ChatHeader {}
 
         Rectangle {
-            ListView {
+            ScrollView {
                 height: 100%;
                 width: 100%;
+                viewport-width: self.width;
 
-                for msg[idx] in UiState.messages : MessageRow {
-                    msg: msg;
-                    is-first: idx == 0;
+                VerticalLayout {
+                    alignment: start;
+                    for msg[idx] in UiState.messages : MessageRow {
+                        msg: msg;
+                        is-first: idx == 0;
+                    }
                 }
             }
         }
