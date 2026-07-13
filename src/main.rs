@@ -23,7 +23,7 @@ pub use client::ClientState;
 
 slint::include_modules!();
 
-const APP_ID: &str = "net.flaxeneel2.echelon";
+const APP_ID: &str = "com.streigen.echelon";
 
 fn spawn_ui_command<F, Fut>(handle: &tokio::runtime::Handle, _ui: slint::Weak<AppWindow>, f: F)
 where
