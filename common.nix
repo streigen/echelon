@@ -6,18 +6,7 @@
 
 let
   # Switch to false to use cargo-apk2 instead
-  useCargoNdk = false;
-
-  cargo-apk2 = pkgs.rustPlatform.buildRustPackage rec {
-    pname = "cargo-apk2";
-    version = "1.3.11";
-    src = pkgs.fetchCrate {
-      inherit pname version;
-      hash = "sha256-qXuMCrunwHXjYd8L/KIS8v6zgK8/FqtfA+D5hE0XF5A=";
-    };
-    cargoHash = "sha256-iVy/Gr2xTxsnOTDPb0L60Njt3xQYgXGyxT6A894j6WA=";
-    meta.mainProgram = "cargo-apk2";
-  };
+  useCargoNdk = true;
 
   pkgs = import nixpkgs {
     inherit system;
@@ -36,7 +25,7 @@ let
 
   androidComposition = pkgs.androidenv.composeAndroidPackages {
     includeNDK = true;
-    platformVersions = [ platformVersion "35" ];
+    platformVersions = [ platformVersion ];
     abiVersions = [
       "x86_64"
       "arm64-v8a"
@@ -81,7 +70,6 @@ let
   shellHook = ''
     # Android and Java Paths
     export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
-    export ANDROID_SDK_ROOT="$ANDROID_HOME"
     export NDK_HOME="$ANDROID_HOME/ndk-bundle"
     export ANDROID_NDK_HOME="$NDK_HOME"
     export ANDROID_PLATFORM="android-${platformVersion}"
