@@ -5,8 +5,6 @@
 }:
 
 let
-  # Switch to false to use cargo-apk2 instead
-  useCargoNdk = true;
 
   pkgs = import nixpkgs {
     inherit system;
@@ -109,7 +107,7 @@ in
   shell = pkgs.mkShell {
     nativeBuildInputs = with pkgs; [
       rustToolchain
-      (if useCargoNdk then cargo-ndk else cargo-apk2)
+      cargo-ndk
       xdg-utils
       pkg-config
       mold
