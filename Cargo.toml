@@ -1,5 +1,5 @@
 [package]
-name = "Echelon"
+name = "echelon"
 version = "0.1.0"
 authors = [
   "Siddhant Misra <me@flaxeneel2.net>",
@@ -9,10 +9,13 @@ authors = [
 
 edition = "2024"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-slint = { version = "1.17.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-skia-opengl", "accessibility"] }
+slint = { version = "1.17.0", default-features = false, features = ["std", "compat-1-2", "renderer-skia-opengl", "accessibility"] }
 keyring-core = "1.0.0"
 serde = { version = "1", features = ["derive"] }
 matrix-sdk = { version = "0.18.0", features = ["anyhow", "e2e-encryption", "markdown", "bundled-sqlite", "local-server"] }
@@ -31,10 +34,13 @@ url = "2"
 open = "5"
 
 
-
+# Desktop specific. install backend-winit for non ios/android builds
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+slint = { version = "1.17.0", features = ["backend-winit"] }
 
 # Android-specific secure storage.
 [target.'cfg(target_os = "android")'.dependencies]
+slint = { version = "1.17.0", features = ["backend-android-activity-06"] }
 android-native-keyring-store = { version = "1.0.0" }
 
 # Apple-specific secure storage.
