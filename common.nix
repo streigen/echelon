@@ -108,6 +108,7 @@ in
     nativeBuildInputs = with pkgs; [
       rustToolchain
       cargo-ndk
+      gradle
       xdg-utils
       pkg-config
       mold
