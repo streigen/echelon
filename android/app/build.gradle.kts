@@ -15,9 +15,32 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        create("debugKey") {
+            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true
+        }
+        release {
+            isDebuggable = false
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debugKey")
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
         }
     }
 
@@ -28,5 +51,4 @@ android {
 }
 
 dependencies {
-    implementation("androidx.games:games-activity:4.4.2")
 }

@@ -9,8 +9,9 @@
         android:hardwareAccelerated="true">
 
         <activity
-            android:name="com.google.androidgamesdk.GameActivity"
+            android:name="android.app.NativeActivity"
             android:exported="true"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
             android:configChanges="orientation|screenLayout|screenSize|keyboardHidden"
             android:windowSoftInputMode="adjustResize">
             <meta-data

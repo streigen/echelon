@@ -68,6 +68,7 @@ debug = true
 inherits = "release"
 codegen-units = 1
 lto = true
+debug = false
 opt-level = "z"
 panic = "abort"
 strip = true

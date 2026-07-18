@@ -23,6 +23,7 @@ let
 
   androidComposition = pkgs.androidenv.composeAndroidPackages {
     includeNDK = true;
+    includeEmulator = true;
     platformVersions = [ platformVersion ];
     abiVersions = [
       "x86_64"
@@ -68,6 +69,9 @@ let
   shellHook = ''
     # Android and Java Paths
     export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
+    export ANDROID_SDK_HOME="$HOME/.android"
+    export ANDROID_AVD_HOME="$HOME/.android/avd"
+    mkdir -p "$ANDROID_AVD_HOME"
     export NDK_HOME="$ANDROID_HOME/ndk-bundle"
     export ANDROID_NDK_HOME="$NDK_HOME"
     export ANDROID_PLATFORM="android-${platformVersion}"
@@ -90,7 +94,7 @@ let
     export CXX_x86_64_linux_android="clang++ --target=x86_64-linux-android${minSdkVersion} --sysroot=$NDK_SYSROOT"
 
     # Exports the android build tools to path
-    export PATH="$ANDROID_HOME/build-tools/${buildToolsVersion}:$PATH"
+    export PATH="$ANDROID_HOME/build-tools/${buildToolsVersion}:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
     export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${pkgs.lib.makeLibraryPath runtimeLibs}:$LD_LIBRARY_PATH"
   '';
 in
