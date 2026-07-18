@@ -36,6 +36,26 @@ let
 
   androidSdk = androidComposition.androidsdk;
 
+  # aapt2 from the Android SDK is a dynamically linked glibc ELF and can't run on
+  # NixOS without nix-ld. Patch it so it works on any NixOS machine.
+  aapt2Patched = pkgs.stdenv.mkDerivation {
+    name = "aapt2-patched";
+    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+    buildInputs = [
+      pkgs.zlib
+      pkgs.stdenv.cc.cc.lib
+    ];
+    phases = [
+      "installPhase"
+      "fixupPhase"
+    ];
+    installPhase = ''
+      mkdir -p $out/bin
+      cp ${androidSdk}/libexec/android-sdk/build-tools/${buildToolsVersion}/aapt2 $out/bin/aapt2
+      chmod +x $out/bin/aapt2
+    '';
+  };
+
   rustToolchain = pkgs.rust-bin.stable."1.96.1".default.override {
     extensions = [
       "rust-src"
@@ -96,6 +116,10 @@ let
     # Exports the android build tools to path
     export PATH="$ANDROID_HOME/build-tools/${buildToolsVersion}:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
     export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${pkgs.lib.makeLibraryPath runtimeLibs}:$LD_LIBRARY_PATH"
+
+    # Override aapt2 with the NixOS-patched version (the SDK's aapt2 is a glibc ELF
+    # that can't run without nix-ld).
+    export GRADLE_OPTS="''${GRADLE_OPTS:-} -Dandroid.aapt2FromMavenOverride=${aapt2Patched}/bin/aapt2"
   '';
 in
 {
