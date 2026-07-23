@@ -75,7 +75,7 @@ Run the following command:
 ./scripts/android-build.sh [--release|--release-compact] # (Default is debug)
 ```
 
-If you are on nix, this is also available as `build_android_apk`
+If you are on nix, this is also available as `android_build`
 
 #### Running the emulators
 
