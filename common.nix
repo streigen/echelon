@@ -19,7 +19,7 @@ let
 
   platformVersion = "36";
   buildToolsVersion = "36.0.0";
-  minSdkVersion = "23";
+  minSdkVersion = "26";
 
   androidComposition = pkgs.androidenv.composeAndroidPackages {
     includeNDK = true;
