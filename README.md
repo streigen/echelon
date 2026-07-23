@@ -56,8 +56,43 @@ cargo build
 
 ### Development and Building for Android
 
-> [!CAUTION] 
-> This branch currently does not have the android build set up properly. We will update the README with new instructions once it is set up.
+Currently, the app supports from android sdk version 26-36 (so, android 8 (oreo) to android 16 (baklava)).
+
+To ensure the functioning of the app, all builds of echelon must be tested on both versions.
+
+#### Building for android
+
+To build for android, we use Cargo NDK. Run the following commands:
+
+```sh
+cargo ndk -t arm64-v8a -t x86_64 \
+          -o android/app/src/main/jniLibs \
+          build --profile release-compact --lib
+
+# cd into the android gradle project and build it
+cd android
+gradle assembleRelease
+```
+
+#### Running the emulators
+
+The nix shell comes with both emulators ready. To run them, you can run `android_{latest,minimum}` based on what you need.
+
+#### Installing the app 
+
+To install the app in the emulator/on your device, you need to first build the app and then run:
+
+```sh
+adb install -r android/app/build/outputs/apk/release/app-x86_64-release.apk
+```
+
+#### Debugging
+
+To debug the app, you can use logcat to view the logs.
+
+```sh
+adb logcat -s 'RustStdoutStderr:* AndroidRuntime:E DEBUG:* *:F'
+```
 
 ## Slint
 
