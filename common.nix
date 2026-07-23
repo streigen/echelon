@@ -19,12 +19,15 @@ let
 
   platformVersion = "36";
   buildToolsVersion = "36.0.0";
-  minSdkVersion = "28";
+  minSdkVersion = "23";
 
   androidComposition = pkgs.androidenv.composeAndroidPackages {
     includeNDK = true;
     includeEmulator = true;
-    platformVersions = [ platformVersion ];
+    platformVersions = [
+      platformVersion
+      minSdkVersion
+    ];
     abiVersions = [
       "x86_64"
       "arm64-v8a"
@@ -87,6 +90,11 @@ let
   ];
 
   shellHook = ''
+
+    # no more "IT WORKS ON MY PC!!!!" i hope, lol
+    unset NIX_LD_LIBRARY_PATH
+    unset NIX_LD
+
     # Android and Java Paths
     export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
     export ANDROID_SDK_HOME="$HOME/.android"
