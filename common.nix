@@ -39,12 +39,16 @@ let
 
   androidSdk = androidComposition.androidsdk;
 
-  android_latest = pkgs.writeShellScriptBin "android_latest" ''
+  android_latest = pkgs.writeShellScriptBin "android_emulator_latest" ''
     exec "$ANDROID_HOME/emulator/emulator" -avd android_latest -no-boot-anim "$@"
   '';
 
-  android_minimum = pkgs.writeShellScriptBin "android_minimum" ''
+  android_minimum = pkgs.writeShellScriptBin "android_emulator_minimum" ''
     exec "$ANDROID_HOME/emulator/emulator" -avd android_minimum -no-boot-anim "$@"
+  '';
+
+  build_android_apk = pkgs.writeShellScriptBin "android_build" ''
+    exec bash ./scripts/android-build.sh "$@"
   '';
 
   # aapt2 from the Android SDK is a dynamically linked glibc ELF and can't run on
@@ -165,6 +169,7 @@ in
       upx
       android_latest
       android_minimum
+      build_android_apk
     ];
 
     buildInputs =
