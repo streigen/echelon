@@ -39,6 +39,14 @@ let
 
   androidSdk = androidComposition.androidsdk;
 
+  android_latest = pkgs.writeShellScriptBin "android_latest" ''
+    exec "$ANDROID_HOME/emulator/emulator" -avd android_latest -no-boot-anim "$@"
+  '';
+
+  android_minimum = pkgs.writeShellScriptBin "android_minimum" ''
+    exec "$ANDROID_HOME/emulator/emulator" -avd android_minimum -no-boot-anim "$@"
+  '';
+
   # aapt2 from the Android SDK is a dynamically linked glibc ELF and can't run on
   # NixOS without nix-ld. Patch it so it works on any NixOS machine.
   aapt2Patched = pkgs.stdenv.mkDerivation {
@@ -128,6 +136,10 @@ let
     # Override aapt2 with the NixOS-patched version (the SDK's aapt2 is a glibc ELF
     # that can't run without nix-ld).
     export GRADLE_OPTS="''${GRADLE_OPTS:-} -Dandroid.aapt2FromMavenOverride=${aapt2Patched}/bin/aapt2"
+
+    # Create AVDs if they don't exist
+    avdmanager list avd | grep -q "Name: android_latest" || yes "" | avdmanager create avd --force -n android_latest -k "system-images;android-${platformVersion};default;x86_64" -p "$ANDROID_AVD_HOME/android_latest.avd"
+    avdmanager list avd | grep -q "Name: android_minimum" || yes "" | avdmanager create avd --force -n android_minimum -k "system-images;android-${minSdkVersion};default;x86_64" -p "$ANDROID_AVD_HOME/android_minimum.avd"
   '';
 in
 {
@@ -151,7 +163,8 @@ in
       clang
       sccache
       upx
-      perf
+      android_latest
+      android_minimum
     ];
 
     buildInputs =
