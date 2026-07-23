@@ -56,6 +56,11 @@ cargo build
 
 ### Development and Building for Android
 
+
+> [!NOTE]
+> Yes it is slightly long right now but more helper scripts would be added for it later on.
+
+
 Currently, the app supports from android sdk version 26-36 (so, android 8 (oreo) to android 16 (baklava)).
 
 To ensure the functioning of the app, all builds of echelon must be tested on both versions.
