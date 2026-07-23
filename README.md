@@ -17,7 +17,7 @@ The best way to contribute to us is by letting us know about any features you'd 
 ### Pre requisites
 
 - Rust
-- Android studio with android SDK 35. (if you plan on building for android)
+- Android studio with android SDK 36 and SDK 26. (if you plan on building for android)
 - Xcode (if you plan on building for macOS/iOS)
 
 If you are on NixOS, you can use the provided `shell.nix` to get a development environment with all the necessary dependencies.
@@ -67,21 +67,19 @@ To ensure the functioning of the app, all builds of echelon must be tested on bo
 
 #### Building for android
 
-To build for android, we use Cargo NDK. Run the following commands:
+To build for android, we use Cargo NDK.
+
+Run the following command:
 
 ```sh
-cargo ndk -t arm64-v8a -t x86_64 \
-          -o android/app/src/main/jniLibs \
-          build --profile release-compact --lib
-
-# cd into the android gradle project and build it
-cd android
-gradle assembleRelease
+./scripts/android-build.sh [--release|--release-compact] # (Default is debug)
 ```
+
+If you are on nix, this is also available as `build_android_apk`
 
 #### Running the emulators
 
-The nix shell comes with both emulators ready. To run them, you can run `android_{latest,minimum}` based on what you need.
+The nix shell comes with both emulators ready. To run them, you can run `android_emulator_{latest,minimum}` based on what you need.
 
 #### Installing the app 
 
