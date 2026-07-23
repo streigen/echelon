@@ -6,7 +6,7 @@ A cross-platform matrix client focus-built for the gaming community.
 > The main git is on https://git.flaxeneel2.net/streigen/echelon . Github is just a push mirror
 
 > [!NOTE]
-> This branch contains the slint rewrite of the application. More details [here](#Slint)
+> This branch contains the slint rewrite of the application. More details [here](#slint)
 
 ## Contributing
 
@@ -56,11 +56,6 @@ cargo build
 
 ### Development and Building for Android
 
-
-> [!NOTE]
-> Yes it is slightly long right now but more helper scripts would be added for it later on.
-
-
 Currently, the app supports from android sdk version 26-36 (so, android 8 (oreo) to android 16 (baklava)).
 
 To ensure the functioning of the app, all builds of echelon must be tested on both versions.
@@ -82,6 +77,10 @@ If you are on nix, this is also available as `android_build`
 The nix shell comes with both emulators ready. To run them, you can run `android_emulator_{latest,minimum}` based on what you need.
 
 #### Installing the app 
+
+> [!NOTE]
+> Your APK path might be different based on build type and arch, though you will find your final built APK under
+> `android/app/build/outputs/apk` folder.
 
 To install the app in the emulator/on your device, you need to first build the app and then run:
 
