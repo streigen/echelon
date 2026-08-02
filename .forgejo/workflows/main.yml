@@ -6,6 +6,7 @@ on:
 
 jobs:
   build:
+    runs-on: hetz
     steps:
       - name: setup ssh
         run: |
