@@ -1,0 +1,19 @@
+name: 'build-test'
+
+on:
+ - pull_request
+ - push
+
+jobs:
+  build:
+    steps:
+      - name: setup ssh
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
+          chmod 400 ~/.ssh/config
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
