@@ -21,7 +21,7 @@ jobs:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
       - name: Build Windows
-        run: cargo build --target x86_64-pc-windows-gnu --release
+        run: cargo xwin build --target x86_64-pc-windows-msvc --release
   build-linux:
     runs-on: hetz
     container:
