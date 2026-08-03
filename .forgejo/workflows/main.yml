@@ -5,8 +5,10 @@ on:
  - push
 
 jobs:
-  build:
+  build-windows:
     runs-on: hetz
+    container:
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-windows:latest
     steps:
       - name: setup ssh
         run: |
@@ -18,3 +20,40 @@ jobs:
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+      - name: Build Windows
+        run: cargo build --target x86_64-pc-windows-gnu --release
+  build-linux:
+    runs-on: hetz
+    container:
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-linux:latest
+    steps:
+      - name: setup ssh
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
+          chmod 400 ~/.ssh/config
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+      - name: Build linux
+        run: cargo build --release
+  build-android:
+    runs-on: hetz
+    container:
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-android:latest
+    steps:
+      - name: setup ssh
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
+          chmod 400 ~/.ssh/config
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+      - name: Build linux
+        run: bash scripts/android-build.sh --release
+
