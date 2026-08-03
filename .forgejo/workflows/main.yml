@@ -25,10 +25,10 @@ jobs:
         env:
           RUSTFLAGS: "-C link-arg=/FORCE:MULTIPLE -C link-arg=/ignore:4006 -C link-arg=/NODEFAULTLIB:libucrt.lib -C link-arg=/NODEFAULTLIB:libvcruntime.lib -C link-arg=/NODEFAULTLIB:libcmt.lib -C link-arg=ucrt.lib -C link-arg=vcruntime.lib"
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: windows-x86_64
-          path: target/debug/echelon.exe
+          path: target/x86_64-pc-windows-msvc/debug/echelon.exe
   build-linux:
     runs-on: hetz
     container:
@@ -47,7 +47,7 @@ jobs:
       - name: Build Linux
         run: cargo build
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: linux-x86_64
           path: target/debug/echelon
@@ -79,7 +79,7 @@ jobs:
         env:
           CARGO_PROFILE_DEV_DEBUG: 1
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: android-arm64-x86_64
           path: |
