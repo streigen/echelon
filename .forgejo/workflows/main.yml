@@ -22,6 +22,8 @@ jobs:
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
       - name: Build Windows
         run: cargo xwin build --target x86_64-pc-windows-msvc --release
+        env:
+          RUSTFLAGS: "-C link-arg=/FORCE:MULTIPLE -C link-arg=/ignore:4006 -C link-arg=/NODEFAULTLIB:libucrt.lib -C link-arg=/NODEFAULTLIB:libvcruntime.lib -C link-arg=/NODEFAULTLIB:libcmt.lib -C link-arg=ucrt.lib -C link-arg=vcruntime.lib"
   build-linux:
     runs-on: hetz
     container:
