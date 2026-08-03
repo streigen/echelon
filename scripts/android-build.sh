@@ -26,4 +26,4 @@ cargo ndk -t arm64-v8a -t x86_64 -o android/app/src/main/jniLibs build $CARGO_FL
 
 echo "Running Gradle $GRADLE_TASK..."
 cd android
-gradle $GRADLE_TASK
+./gradlew $GRADLE_TASK
