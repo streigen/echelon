@@ -24,6 +24,11 @@ jobs:
         run: cargo xwin build --target x86_64-pc-windows-msvc
         env:
           RUSTFLAGS: "-C link-arg=/FORCE:MULTIPLE -C link-arg=/ignore:4006 -C link-arg=/NODEFAULTLIB:libucrt.lib -C link-arg=/NODEFAULTLIB:libvcruntime.lib -C link-arg=/NODEFAULTLIB:libcmt.lib -C link-arg=ucrt.lib -C link-arg=vcruntime.lib"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: target/debug/echelon.exe
   build-linux:
     runs-on: hetz
     container:
@@ -41,6 +46,12 @@ jobs:
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
       - name: Build Linux
         run: cargo build
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: target/debug/echelon
+
   build-android:
     runs-on: hetz
     container:
@@ -65,4 +76,13 @@ jobs:
           chmod 400 ~/.android/debug.keystore
       - name: Build Android
         run: bash scripts/android-build.sh
+        env:
+          CARGO_PROFILE_DEV_DEBUG: 1
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-arm64-x86_64
+          path: |
+            android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+            android/app/build/outputs/apk/debug/app-x86_64-debug.apk
 
