@@ -21,7 +21,7 @@ jobs:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
       - name: Build Windows
-        run: cargo xwin build --target x86_64-pc-windows-msvc --release
+        run: cargo xwin build --target x86_64-pc-windows-msvc
         env:
           RUSTFLAGS: "-C link-arg=/FORCE:MULTIPLE -C link-arg=/ignore:4006 -C link-arg=/NODEFAULTLIB:libucrt.lib -C link-arg=/NODEFAULTLIB:libvcruntime.lib -C link-arg=/NODEFAULTLIB:libcmt.lib -C link-arg=ucrt.lib -C link-arg=vcruntime.lib"
   build-linux:
@@ -39,8 +39,8 @@ jobs:
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
-      - name: Build linux
-        run: cargo build --release
+      - name: Build Linux
+        run: cargo build
   build-android:
     runs-on: hetz
     container:
@@ -63,6 +63,6 @@ jobs:
           mkdir -p ~/.android
           echo "$KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
           chmod 400 ~/.android/debug.keystore
-      - name: Build linux
+      - name: Build Android
         run: bash scripts/android-build.sh
 
