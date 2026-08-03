@@ -19,7 +19,7 @@ done
 echo "cargo flags: $CARGO_FLAGS"
 echo "gradle task: $GRADLE_TASK"
 echo "Cleaning stale native libs..."
-rm -r android/app/src/main/jniLibs/*
+rm -rf android/app/src/main/jniLibs/*
 echo "Running Cargo NDK..."
 # $CARGO_FLAGS is intentionally unquoted so it expands to multiple arguments correctly
 cargo ndk -t arm64-v8a -t x86_64 -o android/app/src/main/jniLibs build $CARGO_FLAGS --lib
