@@ -56,6 +56,13 @@ jobs:
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+      - name: Write android debug keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
+        run: |
+          mkdir -p ~/.android
+          echo "$KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
+          chmod 400 ~/.android/debug.keystore
       - name: Build linux
-        run: bash scripts/android-build.sh --release
+        run: bash scripts/android-build.sh
 

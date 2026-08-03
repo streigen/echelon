@@ -69,5 +69,8 @@ opt-level = "s"
 panic = "abort"
 strip = true
 
+[profile.dev]
+debug=1
+
 [profile.dev.package.scrypt]
 opt-level = 3
