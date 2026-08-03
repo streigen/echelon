@@ -28,6 +28,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: windows-x86_64
+          retention-days: 7
           path: target/x86_64-pc-windows-msvc/debug/echelon.exe
   build-linux:
     runs-on: hetz
@@ -50,6 +51,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: linux-x86_64
+          retention-days: 7
           path: target/debug/echelon
 
   build-android:
@@ -82,6 +84,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: android-arm64-x86_64
+          retention-days: 7
           path: |
             android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
             android/app/build/outputs/apk/debug/app-x86_64-debug.apk
