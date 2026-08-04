@@ -8,7 +8,7 @@ jobs:
   build-windows:
     runs-on: hetz
     container:
-      image: git.flaxeneel2.net/streigen/build-environments/build-environment-windows:latest
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-windows:142c69403e
     steps:
       - name: setup ssh
         run: |
@@ -33,7 +33,7 @@ jobs:
   build-linux:
     runs-on: hetz
     container:
-      image: git.flaxeneel2.net/streigen/build-environments/build-environment-linux:latest
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-linux:142c69403e
     steps:
       - name: setup ssh
         run: |
@@ -57,7 +57,7 @@ jobs:
   build-android:
     runs-on: hetz
     container:
-      image: git.flaxeneel2.net/streigen/build-environments/build-environment-android:latest
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-android:142c69403e
     steps:
       - name: setup ssh
         run: |
