@@ -25,7 +25,7 @@ jobs:
         env:
           RUSTFLAGS: "-C link-arg=/FORCE:MULTIPLE -C link-arg=/ignore:4006 -C link-arg=/NODEFAULTLIB:libucrt.lib -C link-arg=/NODEFAULTLIB:libvcruntime.lib -C link-arg=/NODEFAULTLIB:libcmt.lib -C link-arg=ucrt.lib -C link-arg=vcruntime.lib"
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: windows-x86_64
           retention-days: 7
@@ -48,7 +48,7 @@ jobs:
       - name: Build Linux
         run: cargo build
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: linux-x86_64
           retention-days: 7
@@ -81,7 +81,7 @@ jobs:
         env:
           CARGO_PROFILE_DEV_DEBUG: 1
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: android-arm64-x86_64
           retention-days: 7
