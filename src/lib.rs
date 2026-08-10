@@ -10,7 +10,6 @@ mod client;
 mod commands;
 mod events;
 mod rooms;
-mod spaces;
 mod storage;
 
 use app_state::{AppState, app_data_dir};
@@ -18,7 +17,6 @@ use client::ClientHandler;
 use storage::keyring_client::KeyringClient;
 use storage::secret::SecretService;
 use storage::store::EchelonStore;
-use tracing::error;
 
 pub use client::ClientState;
 

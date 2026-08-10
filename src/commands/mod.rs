@@ -5,7 +5,6 @@ use matrix_sdk::Client;
 pub mod account;
 pub mod auth;
 pub mod dm;
-pub mod rooms;
 pub mod spaces;
 
 #[deprecated(
