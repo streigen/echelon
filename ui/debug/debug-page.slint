@@ -1,0 +1,162 @@
+import "../../static/JetBrainsMono-Regular.ttf";
+import { CustomInput } from "../components/input-field.slint";
+import { CustomButton } from "../components/button.slint";
+import { DebugCommand } from "../app-state.slint";
+
+// Generic command console: pick any backend command from the registry, fill in its
+// positional args (up to 4, unused ones stay blank), and run it. No per-command UI —
+// adding a command in Rust (commands::debug::COMMANDS) is enough to make it show up here.
+export component DebugPage inherits Rectangle {
+    background: #000000;
+
+    in property <[DebugCommand]> commands: [];
+    in-out property <int> selected-index: 0;
+    property <DebugCommand> selected: root.commands[root.selected-index];
+
+    in-out property <string> arg0: "";
+    in-out property <string> arg1: "";
+    in-out property <string> arg2: "";
+    in-out property <string> arg3: "";
+
+    in property <bool> busy: false;
+    in property <string> output: "(no commands run yet)";
+
+    callback back();
+    callback run(string /* command */, string, string, string, string);
+
+    VerticalLayout {
+        padding: 20px;
+        spacing: 12px;
+
+        HorizontalLayout {
+            alignment: space-between;
+            Text {
+                text: "debug console";
+                color: #FFFFFF;
+                font-size: 24px;
+                font-weight: 700;
+            }
+            CustomButton {
+                text: "← back";
+                width: 100px;
+                clicked => { root.back(); }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 16px;
+
+            // Left: command picker
+            Rectangle {
+                width: 35%;
+                background: #0a0a0a;
+                border-width: 2px;
+                border-color: #1a2255;
+                border-radius: 8px;
+
+                Flickable {
+                    x: 8px;
+                    y: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height - 16px;
+
+                    VerticalLayout {
+                        spacing: 2px;
+                        for cmd[i] in root.commands: Rectangle {
+                            height: 32px;
+                            background: i == root.selected-index ? #1a2255 : transparent;
+                            border-radius: 6px;
+
+                            Text {
+                                text: cmd.name;
+                                color: i == root.selected-index ? #38BDF8 : rgba(255, 255, 255, 0.7);
+                                font-size: 14px;
+                                x: 10px;
+                                vertical-alignment: center;
+                            }
+
+                            TouchArea {
+                                clicked => { root.selected-index = i; }
+                                mouse-cursor: pointer;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Right: args + run + output
+            VerticalLayout {
+                width: 65%;
+                spacing: 10px;
+
+                Text {
+                    text: root.selected.name;
+                    color: #38BDF8;
+                    font-size: 18px;
+                    font-weight: 700;
+                }
+
+                if root.selected.arg-labels.length == 0 : Text {
+                    text: "(no arguments)";
+                    color: rgba(255, 255, 255, 0.45);
+                    font-size: 13px;
+                }
+
+                if root.selected.arg-labels.length > 0 : CustomInput {
+                    placeholder: root.selected.arg-labels[0];
+                    text: root.arg0;
+                    edited(val) => { root.arg0 = val; }
+                }
+                if root.selected.arg-labels.length > 1 : CustomInput {
+                    placeholder: root.selected.arg-labels[1];
+                    text: root.arg1;
+                    edited(val) => { root.arg1 = val; }
+                }
+                if root.selected.arg-labels.length > 2 : CustomInput {
+                    placeholder: root.selected.arg-labels[2];
+                    text: root.arg2;
+                    edited(val) => { root.arg2 = val; }
+                }
+                if root.selected.arg-labels.length > 3 : CustomInput {
+                    placeholder: root.selected.arg-labels[3];
+                    text: root.arg3;
+                    edited(val) => { root.arg3 = val; }
+                }
+
+                HorizontalLayout {
+                    alignment: start;
+                    CustomButton {
+                        text: root.busy ? "running..." : "run";
+                        enabled: !root.busy && root.commands.length > 0;
+                        width: 120px;
+                        clicked => {
+                            root.run(root.selected.name, root.arg0, root.arg1, root.arg2, root.arg3);
+                        }
+                    }
+                }
+
+                Rectangle {
+                    background: #0a0a0a;
+                    border-width: 2px;
+                    border-color: #1a2255;
+                    border-radius: 8px;
+                    vertical-stretch: 1;
+
+                    Flickable {
+                        x: 12px;
+                        y: 12px;
+                        width: parent.width - 24px;
+                        height: parent.height - 24px;
+
+                        Text {
+                            text: root.output;
+                            color: #FFFFFF;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

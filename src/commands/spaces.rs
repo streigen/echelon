@@ -45,7 +45,12 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
                         }
                         _ => &[],
                     };
-                    debug!("via: {:?}", via);
+                    let child_room = client.get_room(child_room_id);
+                    debug!(
+                        "via: {:?} | room name: {:?}",
+                        via,
+                        child_room.unwrap().name()
+                    );
                 }
             }
         }

@@ -268,6 +268,56 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    // Generic debug console: populate the command list from the registry, then wire a
+    // single callback that dispatches by name. Adding a command to
+    // `commands::debug::COMMANDS` is all that's needed to make it show up here.
+    let debug_commands: Vec<DebugCommand> = commands::debug::COMMANDS
+        .iter()
+        .map(|spec| DebugCommand {
+            name: spec.name.into(),
+            arg_labels: spec
+                .arg_labels
+                .iter()
+                .map(|l| slint::SharedString::from(*l))
+                .collect::<Vec<_>>()
+                .as_slice()
+                .into(),
+        })
+        .collect();
+    ui.set_debug_commands(std::rc::Rc::new(slint::VecModel::from(debug_commands)).into());
+
+    ui.on_debug_run_command({
+        let state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        move |command, arg0, arg1, arg2, arg3| {
+            let state = state.clone();
+            let command = command.to_string();
+            let args: Vec<String> = vec![
+                arg0.to_string(),
+                arg1.to_string(),
+                arg2.to_string(),
+                arg3.to_string(),
+            ];
+            let ui_handle = ui_handle.clone();
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_debug_busy(true);
+            }
+            handle.spawn(async move {
+                let result = commands::debug::dispatch(&command, &args, state).await;
+                let msg: slint::SharedString =
+                    result.map_or_else(|e| format!("Error: {e}").into(), |s| s.into());
+                let ui_handle = ui_handle.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(ui) = ui_handle.upgrade() {
+                        ui.set_debug_output(msg);
+                        ui.set_debug_busy(false);
+                    }
+                });
+            });
+        }
+    });
+
     ui.run()?;
 
     Ok(())

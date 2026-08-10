@@ -11,6 +11,14 @@ export struct Message {
     image: bool,
 }
 
+// Describes one backend command for the generic debug console: its name and the
+// (up to 4) positional argument labels it accepts. Populated from Rust at startup
+// from the single source-of-truth command registry (commands::debug::COMMANDS).
+export struct DebugCommand {
+    name: string,
+    arg-labels: [string],
+}
+
 export global UiState {
     // Chat state
     in-out property <string> active-room: "general";

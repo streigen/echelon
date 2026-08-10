@@ -3,7 +3,8 @@ import { CustomInput } from "./components/input-field.slint";
 import { CustomButton } from "./components/button.slint";
 import { OAuthIcon } from "./components/oauth-icon.slint";
 import { ChatPage } from "./chat/chat-page.slint";
-import { UiState, Message } from "./app-state.slint";
+import { DebugPage } from "./debug/debug-page.slint";
+import { UiState, Message, DebugCommand } from "./app-state.slint";
 export { UiState }
 
 export component AppWindow inherits Window {
@@ -26,6 +27,13 @@ export component AppWindow inherits Window {
     callback forgot_password();
     callback on-matrix-message(string, string, string, string);
     in-out property <string> result: "";
+
+    // Generic debug console (dev-only): command registry is populated from Rust
+    // (commands::debug::COMMANDS) so adding a backend command doesn't require any UI changes.
+    callback debug-run-command(string, string, string, string, string);
+    in-out property <[DebugCommand]> debug-commands: [];
+    in-out property <bool> debug-busy: false;
+    in-out property <string> debug-output: "(no commands run yet)";
 
     in-out property <int> active-page: 0;
 
@@ -165,9 +173,34 @@ export component AppWindow inherits Window {
                         mouse-cursor: pointer;
                     }
                 }
+
+                Rectangle {
+                    height: 24px;
+                    Text {
+                        text: "→ debug console (dev)";
+                        color: debug-ta.has-hover ? #38BDF8 : rgba(56, 189, 248, 0.45);
+                        font-size: 13px;
+                        letter-spacing: 0.39px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        animate color { duration: 90ms; easing: ease; }
+                    }
+                    debug-ta := TouchArea {
+                        clicked => { root.active-page = 2; }
+                        mouse-cursor: pointer;
+                    }
+                }
             }
         }
     }
 
     if active-page == 1 : ChatPage {}
+
+    if active-page == 2 : DebugPage {
+        commands: root.debug-commands;
+        busy: root.debug-busy;
+        output: root.debug-output;
+        back => { root.active-page = 0; }
+        run(cmd, a0, a1, a2, a3) => { root.debug-run-command(cmd, a0, a1, a2, a3); }
+    }
 }

@@ -4,6 +4,7 @@ use matrix_sdk::Client;
 
 pub mod account;
 pub mod auth;
+pub mod debug;
 pub mod dm;
 pub mod spaces;
 
