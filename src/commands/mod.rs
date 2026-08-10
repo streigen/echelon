@@ -1,5 +1,6 @@
 use crate::ClientState;
 use crate::client::ClientHandler;
+use matrix_sdk::Client;
 
 pub mod account;
 pub mod auth;
@@ -19,4 +20,16 @@ where
         return Err("No active client session".to_string());
     };
     Ok(f(client_handler))
+}
+
+pub(crate) async fn get_active_client(state: &ClientState) -> Result<Client, String> {
+    let state_r = state.read().await;
+
+    let Some(client_handler) = state_r.as_ref() else {
+        return Err("No active client session".to_string());
+    };
+
+    let client = client_handler.get_client().clone();
+
+    Ok(client)
 }
