@@ -22,7 +22,6 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
     let mut parent_to_children: HashMap<OwnedRoomId, Vec<OwnedRoomId>> = HashMap::new();
     let mut all_children: HashSet<OwnedRoomId> = HashSet::new();
 
-    //room_map.iter().filter(|room_id, r| r.is_space()); // figure this out later i cba rn
     // parent -> children map
     for (room_id, room) in &room_map {
         if !room.is_space() {
@@ -41,20 +40,77 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
                             &orig.content.via
                         }
                         SyncOrStrippedState::Stripped(stripped) => {
-                            &stripped.content.via.as_deref().unwrap_or_default()
+                            stripped.content.via.as_deref().unwrap_or_default()
                         }
                         _ => &[],
                     };
-                    let child_room = client.get_room(child_room_id);
-                    debug!(
-                        "via: {:?} | room name: {:?}",
-                        via,
-                        child_room.unwrap().name()
-                    );
+                    if !via.is_empty() && room_map.contains_key(child_room_id) {
+                        parent_to_children
+                            .entry(room_id.clone())
+                            .or_default()
+                            .push(child_room_id.clone());
+                        all_children.insert(child_room_id.clone());
+                    }
                 }
             }
         }
     }
-    Ok(Vec::new())
-    //Ok(result)
+
+    let mut roots = Vec::new();
+    for (room_id, room) in &room_map {
+        if room.is_space() && !all_children.contains(room_id) {
+            roots.push(room_id.clone());
+        }
+    }
+
+    let mut hierarchy = Vec::new();
+    let mut visited = HashSet::new();
+
+    for root_id in roots {
+        if let Some(node) = build_tree(&root_id, &room_map, &parent_to_children, &mut visited) {
+            hierarchy.push(node);
+        }
+    }
+
+    for k in hierarchy.clone() {
+        debug!(
+            "Space: {:?} has children {:?}",
+            k.room.name(),
+            k.children
+                .iter()
+                .map(|r| r.room.name().unwrap())
+                .collect::<Vec<String>>()
+        );
+    }
+
+    Ok(hierarchy)
+}
+
+fn build_tree(
+    current_id: &OwnedRoomId,
+    room_map: &HashMap<OwnedRoomId, Room>,
+    parent_to_children: &HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
+    visited: &mut HashSet<OwnedRoomId>,
+) -> Option<SpaceRoom> {
+    if visited.contains(current_id) {
+        return None;
+    }
+
+    visited.insert(current_id.clone());
+
+    let room = room_map.get(current_id)?.clone();
+    let mut children_nodes = Vec::new();
+
+    if let Some(children_ids) = parent_to_children.get(current_id) {
+        for child_id in children_ids {
+            if let Some(child_node) = build_tree(child_id, room_map, parent_to_children, visited) {
+                children_nodes.push(child_node);
+            }
+        }
+    }
+
+    Some(SpaceRoom {
+        room,
+        children: children_nodes,
+    })
 }
