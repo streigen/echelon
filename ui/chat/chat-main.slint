@@ -8,12 +8,32 @@ import { MessageRow } from "./message-row.slint";
 export component ChatMain inherits Rectangle {
     background: #000000;
 
+    // How close to the bottom (in px, roughly 5 message rows) counts as "still
+    // watching the latest messages" for auto-scroll purposes.
+    property <length> near-bottom-threshold: 220px;
+    // Kept up to date only by the user's own scrolling (see `changed viewport-y`
+    // below) — never touched by content growth — so it reflects where the user
+    // was looking right before a new message arrived.
+    property <bool> near-bottom: true;
+    property <int> message-count: UiState.messages.length;
+
+    function is-near-bottom() -> bool {
+        return scroll-view.viewport-height + scroll-view.viewport-y
+            <= scroll-view.visible-height + near-bottom-threshold;
+    }
+
     auto-scroll-timer := Timer {
         interval: 50ms;
         running: false;
         triggered => {
             self.running = false;
             scroll-view.viewport-y = -100000px;
+        }
+    }
+
+    changed message-count => {
+        if near-bottom {
+            auto-scroll-timer.running = true;
         }
     }
 
@@ -25,6 +45,10 @@ export component ChatMain inherits Rectangle {
                 height: 100%;
                 width: 100%;
                 viewport-width: self.width;
+
+                changed viewport-y => {
+                    near-bottom = is-near-bottom();
+                }
 
                 VerticalLayout {
                     alignment: start;

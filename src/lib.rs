@@ -286,7 +286,9 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Space tab clicked — swap in that space's cached channel list, no backend call.
+    // Space tab clicked — swap in that space's cached channel list, no backend call,
+    // then auto-open the space's first channel (first non-empty category's first room)
+    // by driving the same callback a click on it would fire.
     ui.global::<UiState>().on_space_clicked({
         let ui_handle = ui_handle.clone();
         move |idx| {
@@ -294,6 +296,15 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 let idx = idx.max(0) as usize;
                 ui.global::<UiState>().set_active_space_index(idx as i32);
                 apply_space_categories(&ui, idx);
+
+                let state = ui.global::<UiState>();
+                let first_room = state
+                    .get_categories()
+                    .iter()
+                    .find_map(|cat| cat.rooms.iter().next());
+                if let Some(room) = first_room {
+                    state.invoke_channel_clicked(room.id, room.name);
+                }
             }
         }
     });
