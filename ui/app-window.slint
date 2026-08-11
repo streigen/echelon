@@ -25,7 +25,7 @@ export component AppWindow inherits Window {
     callback oauth_action(string, string);
     callback open_chat();
     callback forgot_password();
-    callback on-matrix-message(string, string, string, string);
+    callback matrix-message(string, string, string, string, string);
     in-out property <string> result: "";
 
     // Generic debug console (dev-only): command registry is populated from Rust

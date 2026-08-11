@@ -330,7 +330,15 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     let Some(ui) = ui_handle.upgrade() else {
                         return;
                     };
-                    ui.global::<UiState>().set_messages_loading(false);
+                    let state = ui.global::<UiState>();
+                    // Guard against a stale response: if the user switched channels again
+                    // while this fetch was in flight, active-room-id no longer matches the
+                    // room this fetch was for — drop the result instead of clobbering
+                    // whatever's now loading/loaded for the newly opened channel.
+                    if state.get_active_room_id() != room_id_str.as_str() {
+                        return;
+                    }
+                    state.set_messages_loading(false);
                     match result {
                         Ok(paginated) => {
                             let msgs: Vec<Message> = paginated
@@ -338,7 +346,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                                 .iter()
                                 .map(stored_message_to_ui)
                                 .collect();
-                            ui.global::<UiState>().set_messages(
+                            state.set_messages(
                                 std::rc::Rc::new(slint::VecModel::from(msgs)).into(),
                             );
                         }
@@ -348,6 +356,32 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     }
                 });
             });
+        }
+    });
+
+    // Live message push from the sync loop (see events::ClientEvents::on_message).
+    // Only appends to UiState.messages when the event's room is the one currently open;
+    // messages for other rooms are dropped here (they'll show up via the paginated
+    // fetch next time that channel is opened).
+    ui.on_matrix_message({
+        let ui_handle = ui_handle.clone();
+        move |sender, room_id, body, _event_id, time| {
+            if let Some(ui) = ui_handle.upgrade() {
+                let state = ui.global::<UiState>();
+                if state.get_active_room_id() != room_id {
+                    return;
+                }
+                let new_msg = Message {
+                    user: sender,
+                    time,
+                    text: body,
+                    repliedTo: slint::SharedString::from(""),
+                    image: false,
+                };
+                let mut msgs: Vec<Message> = state.get_messages().iter().collect();
+                msgs.push(new_msg);
+                state.set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
+            }
         }
     });
 
