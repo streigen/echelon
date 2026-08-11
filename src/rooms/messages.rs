@@ -13,7 +13,7 @@ use tracing::warn;
 #[derive(Debug, Clone)]
 pub struct StoredMessage {
     pub event_id: OwnedEventId,
-    /// Interned per-room via [`MessageStore::intern_sender`] — repeated
+    /// Interned per-room via [`MessageStore::intern_sender`]. repeated
     /// senders share one allocation instead of each message carrying its
     /// own copy of the same user id.
     pub sender: Arc<str>,
@@ -29,14 +29,11 @@ pub struct StoredMessage {
 /// dedup/edit/redaction handling.
 #[derive(Default)]
 pub struct MessageStore {
-    /// Insertion-ordered messages, keyed by event id for O(1) lookup.
+    /// Insertion-ordered messages, keyed by event id.
     messages: Vec<StoredMessage>,
     index: HashMap<OwnedEventId, usize>,
 
-    /// Edits that arrived before we'd seen their target event yet
-    /// (common during backward pagination, where newer events —
-    /// including edits — are processed before the originals they
-    /// target).
+    /// Edits that arrived before their target event
     pending_edits: HashMap<OwnedEventId, String>, // event_id -> new_body
     /// Redactions that arrived before their target event.
     pending_redactions: HashSet<OwnedEventId>,
@@ -91,10 +88,8 @@ impl MessageStore {
             AnySyncMessageLikeEvent::RoomMessage(room_message) => {
                 self.apply_room_message(room_message)
             }
-            AnySyncMessageLikeEvent::RoomRedaction(redaction) => {
-                self.apply_redaction(redaction)
-            }
-            // TODO: reactions, stickers, polls, etc. — not rendered yet.
+            AnySyncMessageLikeEvent::RoomRedaction(redaction) => self.apply_redaction(redaction),
+            // TODO: deal with reactions and stickers and stuff later.
             _ => {}
         }
     }
@@ -115,7 +110,7 @@ impl MessageStore {
         }
 
         if self.index.contains_key(&original.event_id) {
-            // Already seen (pagination/sync overlap) — skip.
+            // Already seen (pagination/sync overlap)
             return;
         }
 
@@ -184,7 +179,8 @@ impl MessageStore {
             return existing.clone();
         }
         let interned: Arc<str> = Arc::from(sender.as_str());
-        self.sender_cache.insert(sender.to_owned(), interned.clone());
+        self.sender_cache
+            .insert(sender.to_owned(), interned.clone());
         interned
     }
 }

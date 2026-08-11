@@ -14,7 +14,7 @@ impl ClientHandler {
         new_homeserver: &String,
         sqlite_pwd: Option<String>,
     ) -> Result<Client> {
-        Ok(Client::builder()
+        let client = Client::builder()
             .homeserver_url(new_homeserver)
             .sqlite_store(
                 Path::join(
@@ -30,7 +30,15 @@ impl ClientHandler {
                 sqlite_pwd.as_deref(),
             )
             .build()
-            .await?)
+            .await?;
+
+        // Enable the local event cache so already-synced/persisted room timelines
+        // can be served without a `/messages` network round trip (see
+        // commands::messages::get_messages_from_room_paginated). Must happen
+        // before sync starts so live events get fed into the cache as they arrive.
+        client.event_cache().subscribe()?;
+
+        Ok(client)
     }
 
     /// Log in a user with OAuth2 authentication using their homeserver
@@ -40,6 +48,7 @@ impl ClientHandler {
     pub(super) async fn get_oauth_client(&self, new_homeserver: &String) -> Result<Client> {
         let homeserver_url: Url = Url::parse(new_homeserver)?;
         let client = Client::new(homeserver_url).await?;
+        client.event_cache().subscribe()?;
         Ok(client)
     }
 }
