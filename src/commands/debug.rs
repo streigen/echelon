@@ -60,6 +60,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "get_space_hierarchy",
         arg_labels: &[],
     },
+    CommandSpec {
+        name: "get_messages",
+        arg_labels: &["room_id", "from (optional pagination token)", "limit (default 50)"],
+    },
 ];
 
 /// Run a command by name against the given positional string args.
@@ -104,6 +108,26 @@ pub async fn dispatch(command: &str, args: &[String], state: ClientState) -> Res
                 .collect();
             format!("{} spaces\n{}", spaces.len(), entries.join("\n"))
         }),
+        "get_messages" => {
+            let room_id = ruma::RoomId::parse(arg(0))
+                .map_err(|e| format!("invalid room_id '{}': {e}", arg(0)))?;
+            let limit = opt(2).and_then(|v| v.parse().ok()).unwrap_or(50);
+            super::messages::get_messages_from_room_paginated(state, room_id, opt(1), limit)
+                .await
+                .map(|paginated| {
+                    let lines: Vec<String> = paginated
+                        .messages
+                        .iter()
+                        .map(|m| format!("[{}] {}: {}", m.origin_server_ts, m.sender, m.body))
+                        .collect();
+                    format!(
+                        "{} messages (next_token: {:?})\n{}",
+                        lines.len(),
+                        paginated.next_token,
+                        lines.join("\n")
+                    )
+                })
+        }
         other => Err(format!("unknown command '{other}'")),
     }
 }

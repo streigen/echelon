@@ -1,18 +1,14 @@
-import { UiState } from "../app-state.slint";
+import { UiState, CategoryData } from "../app-state.slint";
 import { RoomItem, RoomData } from "../components/room-item.slint";
 import { ListView } from "std-widgets.slint";
 
-export struct CategoryData {
-    name: string,
-    rooms: [RoomData],
-    collapsed: bool,
-}
+export { CategoryData }
 
 export component RoomsSidebar inherits Rectangle {
     in-out property <[string]> voice-participants: [];
     in property <[CategoryData]> categories: [];
     callback toggle-category(int);
-    callback room-clicked(string, string); // name, r_type
+    callback room-clicked(RoomData); // clicked room
 
     clip: true;
     background: #000000;
@@ -56,7 +52,7 @@ export component RoomsSidebar inherits Rectangle {
                         alignment: space-between;
                         VerticalLayout {
                             alignment: center;
-                            Text { text: "echelon"; color: #FFFFFF; font-size: 16px; font-weight: 700; }
+                            Text { text: UiState.active-space-name == "" ? "echelon" : UiState.active-space-name; color: #FFFFFF; font-size: 16px; font-weight: 700; }
                             Text { text: "matrix.org"; color: #40529F; font-size: 11px; }
                         }
                         VerticalLayout {
@@ -108,9 +104,9 @@ export component RoomsSidebar inherits Rectangle {
                                 for room in category.rooms : RoomItem {
                                     room: room;
                                     voice-participants: root.voice-participants;
-                                    
+
                                     clicked => {
-                                        root.room-clicked(room.name, room.r_type);
+                                        root.room-clicked(room);
                                     }
                                 }
                             }

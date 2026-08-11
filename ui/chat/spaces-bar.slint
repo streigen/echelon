@@ -49,27 +49,23 @@ export component SpacesBar inherits Rectangle {
             
             Rectangle { height: 1px; background: rgba(255, 255, 255, 0.18); width: 48px; x: (parent.width - 48px) / 2; }
             
-            // Spaces list
-            HorizontalLayout {
+            // Spaces list — populated from UiState.space-tabs (Rust: get_space_hierarchy).
+            for tab[idx] in UiState.space-tabs : HorizontalLayout {
                 alignment: center;
                 Rectangle {
                     width: 48px;
                     height: 48px;
                     border-radius: 16px;
-                    background: UiState.active-space == 0 ? #29356A : #0C103B;
-                    Text { text: "ec"; color: UiState.active-space == 0 ? #59B5D1 : rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
-                    TouchArea { clicked => { root.space-clicked(0); } mouse-cursor: pointer; }
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 48px;
-                    height: 48px;
-                    border-radius: 16px;
-                    background: UiState.active-space == 1 ? #29356A : #0C103B;
-                    Text { text: "sp"; color: UiState.active-space == 1 ? #59B5D1 : rgba(255, 255, 255, 0.55); font-weight: 700; horizontal-alignment: center; vertical-alignment: center; font-size: 16px; }
-                    TouchArea { clicked => { root.space-clicked(1); } mouse-cursor: pointer; }
+                    background: UiState.active-space-index == idx ? #29356A : #0C103B;
+                    Text {
+                        text: tab.abbrev;
+                        color: UiState.active-space-index == idx ? #59B5D1 : rgba(255, 255, 255, 0.55);
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 16px;
+                    }
+                    TouchArea { clicked => { root.space-clicked(idx); } mouse-cursor: pointer; }
                 }
             }
         }

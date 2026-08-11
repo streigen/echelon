@@ -11,6 +11,37 @@ export struct Message {
     image: bool,
 }
 
+// One channel/room, as shown in the sidebar. `id` is the Matrix room id
+// (used to fetch messages); `name` is the display name.
+export struct RoomData {
+    id: string,
+    name: string,
+    r-type: string, // "text" | "voice"
+    encrypted: bool,
+}
+
+export struct CategoryData {
+    name: string,
+    rooms: [RoomData],
+    collapsed: bool,
+}
+
+// Category list for one space tab (root space). Cached in
+// `UiState.space-channels` (index-aligned with `space-tabs`) so switching
+// tabs doesn't need a backend round trip. Subspaces are folded in here as
+// their own named categories rather than as separate tabs.
+export struct SpaceChannels {
+    categories: [CategoryData],
+}
+
+// One tab in the spaces bar. `id` is the Matrix room id of the space; `abbrev`
+// is a short (<=2 char) label precomputed in Rust for the tab's icon.
+export struct SpaceTab {
+    id: string,
+    name: string,
+    abbrev: string,
+}
+
 // Describes one backend command for the generic debug console: its name and the
 // (up to 4) positional argument labels it accepts. Populated from Rust at startup
 // from the single source-of-truth command registry (commands::debug::COMMANDS).
@@ -21,8 +52,10 @@ export struct DebugCommand {
 
 export global UiState {
     // Chat state
-    in-out property <string> active-room: "general";
+    in-out property <string> active-room: "";
+    in-out property <string> active-room-id: "";
     in-out property <[Message]> messages;
+    in-out property <bool> messages-loading: false;
 
     // Layout state
     in-out property <bool> sidebar-collapsed: false;
@@ -33,10 +66,15 @@ export global UiState {
     in-out property <bool> muted: false;
     in-out property <bool> deafened: false;
 
-    // Space state
-    in-out property <int> active-space: 0;
+    // Space state — populated from commands::spaces::get_space_hierarchy.
+    in-out property <[SpaceTab]> space-tabs: [];
+    in-out property <[SpaceChannels]> space-channels: []; // index-aligned with space-tabs
+    in-out property <int> active-space-index: -1;
+    in-out property <string> active-space-name: "";
+    in-out property <[CategoryData]> categories: [];
 
     // Callbacks to Rust backend
-    callback room-switched(string);
+    callback space-clicked(int);
+    callback channel-clicked(string, string); // room id, room name
     callback send-message(string);
 }

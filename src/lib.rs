@@ -14,6 +14,8 @@ mod storage;
 
 use app_state::{AppState, app_data_dir};
 use client::ClientHandler;
+use rooms::room_types::SpaceRoom;
+use slint::Model;
 use storage::keyring_client::KeyringClient;
 use storage::secret::SecretService;
 use storage::store::EchelonStore;
@@ -38,6 +40,136 @@ where
             start.elapsed().as_millis()
         );
     });
+}
+
+/// Wraps a `Vec<T>` into a `ModelRc<T>` backed by a fresh `VecModel`.
+fn to_model<T: Clone + 'static>(v: Vec<T>) -> slint::ModelRc<T> {
+    std::rc::Rc::new(slint::VecModel::from(v)).into()
+}
+
+fn room_data_of(room: &matrix_sdk::Room) -> RoomData {
+    let id = room.room_id().to_string();
+    let name = room.name().unwrap_or_else(|| id.clone());
+    RoomData {
+        id: id.into(),
+        name: name.into(),
+        r_type: "text".into(),
+        encrypted: room.encryption_state().is_encrypted(),
+    }
+}
+
+/// Converts a `get_space_hierarchy` tree into `(tab, categories)` pairs for the
+/// UI, one pair per *root* space only — subspaces are never their own tab.
+/// Within a tab, a root's direct channels become a "CHANNELS" category and
+/// each (possibly nested) subspace becomes its own named category, giving a
+/// folder-like grouping without needing more than one level of UI nesting.
+fn space_hierarchy_to_ui(roots: Vec<SpaceRoom>) -> Vec<(SpaceTab, Vec<CategoryData>)> {
+    roots.into_iter().map(space_root_to_ui).collect()
+}
+
+fn space_root_to_ui(node: SpaceRoom) -> (SpaceTab, Vec<CategoryData>) {
+    let room_id = node.room.room_id().to_string();
+    let name = node.room.name().unwrap_or_else(|| room_id.clone());
+    let abbrev: String = name.chars().take(2).collect::<String>().to_lowercase();
+
+    let mut categories = Vec::new();
+    let mut root_channels = Vec::new();
+    let mut subspaces = Vec::new();
+    for child in node.children {
+        if child.room.is_space() {
+            subspaces.push(child);
+        } else {
+            root_channels.push(room_data_of(&child.room));
+        }
+    }
+    if !root_channels.is_empty() {
+        categories.push(CategoryData {
+            name: "CHANNELS".into(),
+            collapsed: false,
+            rooms: to_model(root_channels),
+        });
+    }
+    for subspace in subspaces {
+        append_subspace_categories(subspace, &mut categories);
+    }
+
+    let tab = SpaceTab {
+        id: room_id.into(),
+        name: name.into(),
+        abbrev: abbrev.into(),
+    };
+    (tab, categories)
+}
+
+/// Recursively turns a subspace (and any subspaces nested inside it) into one
+/// `CategoryData` per space node, named after that space, holding its direct
+/// non-space children.
+fn append_subspace_categories(node: SpaceRoom, out: &mut Vec<CategoryData>) {
+    let room_id = node.room.room_id().to_string();
+    let name = node.room.name().unwrap_or_else(|| room_id.clone());
+
+    let mut channels = Vec::new();
+    let mut subspaces = Vec::new();
+    for child in node.children {
+        if child.room.is_space() {
+            subspaces.push(child);
+        } else {
+            channels.push(room_data_of(&child.room));
+        }
+    }
+
+    out.push(CategoryData {
+        name: name.into(),
+        collapsed: false,
+        rooms: to_model(channels),
+    });
+
+    for subspace in subspaces {
+        append_subspace_categories(subspace, out);
+    }
+}
+
+/// Copies `UiState.space-channels[idx].categories` into `UiState.categories`,
+/// and updates `UiState.active-space-name` from `UiState.space-tabs[idx]` so
+/// the sidebar header tracks whichever space is active.
+fn apply_space_categories(ui: &AppWindow, idx: usize) {
+    let state = ui.global::<UiState>();
+
+    let categories = state
+        .get_space_channels()
+        .row_data(idx)
+        .map(|sc| sc.categories.iter().collect::<Vec<_>>())
+        .unwrap_or_default();
+    state.set_categories(to_model(categories));
+
+    let space_name = state
+        .get_space_tabs()
+        .row_data(idx)
+        .map(|tab| tab.name)
+        .unwrap_or_default();
+    state.set_active_space_name(space_name);
+}
+
+/// Converts a fetched, edit/redaction-resolved message into the UI's display shape.
+fn stored_message_to_ui(m: &rooms::messages::StoredMessage) -> Message {
+    Message {
+        user: m.sender.as_ref().into(),
+        time: format_time_of_day(m.origin_server_ts).into(),
+        text: if m.redacted {
+            "[message deleted]".to_string()
+        } else {
+            m.body.clone()
+        }
+        .into(),
+        repliedTo: "".into(),
+        image: false,
+    }
+}
+
+/// Formats a millisecond Matrix timestamp as a local "HH:MM" time-of-day string.
+fn format_time_of_day(origin_server_ts_ms: u64) -> String {
+    let secs_of_day = (origin_server_ts_ms / 1000) % 86400;
+    format!("{:02}:{:02}", secs_of_day / 3600, (secs_of_day % 3600) / 60)
 }
 
 #[cfg(target_os = "android")]
@@ -109,161 +241,132 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Mock Chat Database
-    let mut initial_db = std::collections::HashMap::new();
-    initial_db.insert(
-        "general".to_string(),
-        vec![
-            Message {
-                user: "Clumsy ☆".into(),
-                time: "12:02 pm".into(),
-                text: "hello world".into(),
-                repliedTo: "".into(),
-                image: false,
-            },
-            Message {
-                user: "flaxeneel2".into(),
-                time: "12:03 pm".into(),
-                text: "hello clumsy".into(),
-                repliedTo: "Clumsy ☆: hello world".into(),
-                image: false,
-            },
-            Message {
-                user: "Clumsy ☆".into(),
-                time: "12:03 pm".into(),
-                text: "look, cool img:".into(),
-                repliedTo: "".into(),
-                image: true,
-            },
-            Message {
-                user: "Clumsy ☆".into(),
-                time: "12:05 pm".into(),
-                text: "very nice image".into(),
-                repliedTo: "flaxeneel2: hello clumsy".into(),
-                image: false,
-            },
-        ],
-    );
-    initial_db.insert(
-        "announcements".to_string(),
-        vec![
-            Message {
-                user: "System".into(),
-                time: "09:00 am".into(),
-                text: "Welcome to echelon beta v0.1.0".into(),
-                repliedTo: "".into(),
-                image: false,
-            },
-            Message {
-                user: "Clumsy ☆".into(),
-                time: "09:05 am".into(),
-                text: "Please report any bugs to the dev team!".into(),
-                repliedTo: "".into(),
-                image: false,
-            },
-        ],
-    );
-    initial_db.insert(
-        "mission-control".to_string(),
-        vec![
-            Message {
-                user: "Commander".into(),
-                time: "18:00 pm".into(),
-                text: "Operation Nightfall commences in T-minus 10 hours.".into(),
-                repliedTo: "".into(),
-                image: false,
-            },
-            Message {
-                user: "Clumsy ☆".into(),
-                time: "18:01 pm".into(),
-                text: "Roger that.".into(),
-                repliedTo: "Commander: Operation Nightfall commences in T-minus 10 hours.".into(),
-                image: false,
-            },
-        ],
-    );
-    initial_db.insert(
-        "intel".to_string(),
-        vec![Message {
-            user: "Agent X".into(),
-            time: "02:00 am".into(),
-            text: "Data secured.".into(),
-            repliedTo: "".into(),
-            image: false,
-        }],
-    );
-    initial_db.insert(
-        "very trustworthy".to_string(),
-        vec![Message {
-            user: "Clumsy ☆".into(),
-            time: "14:00 pm".into(),
-            text: "This room is highly classified.".into(),
-            repliedTo: "".into(),
-            image: false,
-        }],
-    );
-    initial_db.insert(
-        "very trustworthy x2".to_string(),
-        vec![Message {
-            user: "flaxeneel2".into(),
-            time: "15:00 pm".into(),
-            text: "Even more classified in here.".into(),
-            repliedTo: "".into(),
-            image: false,
-        }],
-    );
-
-    let db = std::rc::Rc::new(std::cell::RefCell::new(initial_db));
-
-    // Set initial messages via AppState global
-    ui.global::<UiState>().set_messages(
-        std::rc::Rc::new(slint::VecModel::from(
-            db.borrow().get("general").unwrap().clone(),
-        ))
-        .into(),
-    );
-
-    // Room switched callback — via AppState global
-    ui.global::<UiState>().on_room_switched({
+    // Populate the sidebar from the live space hierarchy, select the first space
+    // tab, and open its first channel (if any).
+    ui.on_open_chat({
+        let state = client_state.clone();
+        let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
-        let db = db.clone();
-        move |room_name: slint::SharedString| {
+        move || {
+            let state = state.clone();
+            let ui_handle = ui_handle.clone();
+            handle.spawn(async move {
+                let result = commands::spaces::get_space_hierarchy(state.clone()).await;
+                let ui_handle2 = ui_handle.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle2.upgrade() else {
+                        return;
+                    };
+                    match result {
+                        Ok(hierarchy) => {
+                            let flat = space_hierarchy_to_ui(hierarchy);
+
+                            let tabs: Vec<SpaceTab> =
+                                flat.iter().map(|(tab, _)| tab.clone()).collect();
+                            let channels: Vec<SpaceChannels> = flat
+                                .into_iter()
+                                .map(|(_, categories)| SpaceChannels {
+                                    categories: to_model(categories),
+                                })
+                                .collect();
+
+                            ui.global::<UiState>()
+                                .set_space_tabs(to_model(tabs));
+                            ui.global::<UiState>()
+                                .set_space_channels(to_model(channels));
+                            ui.global::<UiState>().set_active_space_index(0);
+                            apply_space_categories(&ui, 0);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to fetch space hierarchy: {e}");
+                        }
+                    }
+                });
+            });
+        }
+    });
+
+    // Space tab clicked — swap in that space's cached channel list, no backend call.
+    ui.global::<UiState>().on_space_clicked({
+        let ui_handle = ui_handle.clone();
+        move |idx| {
             if let Some(ui) = ui_handle.upgrade() {
-                let msgs = db
-                    .borrow()
-                    .get(room_name.as_str())
-                    .cloned()
-                    .unwrap_or_default();
-                ui.global::<UiState>()
-                    .set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
+                let idx = idx.max(0) as usize;
+                ui.global::<UiState>().set_active_space_index(idx as i32);
+                apply_space_categories(&ui, idx);
             }
         }
     });
 
-    // Send message callback — via AppState global
+    // Channel clicked — fetch its messages via commands::messages and show them.
+    ui.global::<UiState>().on_channel_clicked({
+        let state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        move |room_id, room_name| {
+            let state = state.clone();
+            let ui_handle = ui_handle.clone();
+            let room_id_str = room_id.to_string();
+
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.global::<UiState>().set_active_room(room_name);
+                ui.global::<UiState>().set_active_room_id(room_id);
+                ui.global::<UiState>().set_messages_loading(true);
+            }
+
+            handle.spawn(async move {
+                let result = match ruma::RoomId::parse(&room_id_str) {
+                    Ok(parsed) => {
+                        commands::messages::get_messages_from_room_paginated(
+                            state, parsed, None, 50,
+                        )
+                        .await
+                    }
+                    Err(e) => Err(format!("Invalid room id '{room_id_str}': {e}")),
+                };
+
+                let ui_handle = ui_handle.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    ui.global::<UiState>().set_messages_loading(false);
+                    match result {
+                        Ok(paginated) => {
+                            let msgs: Vec<Message> = paginated
+                                .messages
+                                .iter()
+                                .map(stored_message_to_ui)
+                                .collect();
+                            ui.global::<UiState>().set_messages(
+                                std::rc::Rc::new(slint::VecModel::from(msgs)).into(),
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to fetch messages: {e}");
+                        }
+                    }
+                });
+            });
+        }
+    });
+
+    // Send message callback — no backend send command yet, so this is UI-local only.
     ui.global::<UiState>().on_send_message({
         let ui_handle = ui_handle.clone();
-        let db = db.clone();
         move |msg_text| {
             if let Some(ui) = ui_handle.upgrade() {
-                let current_room = ui.global::<UiState>().get_active_room().to_string();
                 let new_msg = Message {
-                    user: slint::SharedString::from("Clumsy ☆"),
+                    user: slint::SharedString::from("me"),
                     time: slint::SharedString::from("just now"),
-                    text: slint::SharedString::from(msg_text),
+                    text: msg_text,
                     repliedTo: slint::SharedString::from(""),
                     image: false,
                 };
-
-                {
-                    let mut db_mut = db.borrow_mut();
-                    let room_msgs = db_mut.entry(current_room.clone()).or_insert_with(Vec::new);
-                    room_msgs.push(new_msg);
-                }
-
-                let msgs = db.borrow().get(&current_room).cloned().unwrap_or_default();
-                ui.global::<UiState>()
-                    .set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
+                let global = ui.global::<UiState>();
+                let mut msgs: Vec<Message> = global.get_messages().iter().collect();
+                msgs.push(new_msg);
+                global.set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
             }
         }
     });
