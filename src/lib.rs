@@ -181,6 +181,7 @@ fn android_main(app: slint::android::AndroidApp) {
         .build()
         .expect("Failed to build android tokio runtime");
     rt.block_on(async {
+        use tracing::error;
         if let Err(e) = run_app().await {
             error!("Echelon crashed with error: {:?}", e);
         }
@@ -270,8 +271,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                                 })
                                 .collect();
 
-                            ui.global::<UiState>()
-                                .set_space_tabs(to_model(tabs));
+                            ui.global::<UiState>().set_space_tabs(to_model(tabs));
                             ui.global::<UiState>()
                                 .set_space_channels(to_model(channels));
                             ui.global::<UiState>().set_active_space_index(0);
@@ -357,9 +357,8 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                                 .iter()
                                 .map(stored_message_to_ui)
                                 .collect();
-                            state.set_messages(
-                                std::rc::Rc::new(slint::VecModel::from(msgs)).into(),
-                            );
+                            state
+                                .set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
                         }
                         Err(e) => {
                             eprintln!("Failed to fetch messages: {e}");
