@@ -151,14 +151,16 @@ fn apply_space_categories(ui: &AppWindow, idx: usize) {
 }
 
 /// Converts a fetched, edit/redaction-resolved message into the UI's display shape.
-fn stored_message_to_ui(m: &rooms::messages::StoredMessage) -> Message {
+/// Takes `m` by value so the body string can move straight into `Message`
+/// instead of being cloned out of a borrowed `StoredMessage`.
+fn stored_message_to_ui(m: rooms::messages::StoredMessage) -> Message {
     Message {
         user: m.sender.as_ref().into(),
         time: format_time_of_day(m.origin_server_ts).into(),
         text: if m.redacted {
             "[message deleted]".to_string()
         } else {
-            m.body.clone()
+            m.body
         }
         .into(),
         repliedTo: "".into(),
@@ -166,10 +168,12 @@ fn stored_message_to_ui(m: &rooms::messages::StoredMessage) -> Message {
     }
 }
 
-/// Formats a millisecond Matrix timestamp as a local "HH:MM" time-of-day string.
+/// Formats a millisecond Matrix timestamp (always UTC per the Matrix spec) as
+/// a "HH:MM" time-of-day string in the system's local timezone.
 fn format_time_of_day(origin_server_ts_ms: u64) -> String {
-    let secs_of_day = (origin_server_ts_ms / 1000) % 86400;
-    format!("{:02}:{:02}", secs_of_day / 3600, (secs_of_day % 3600) / 60)
+    chrono::DateTime::from_timestamp_millis(origin_server_ts_ms as i64)
+        .map(|dt| dt.with_timezone(&chrono::Local).format("%H:%M").to_string())
+        .unwrap_or_else(|| "--:--".to_string())
 }
 
 #[cfg(target_os = "android")]
@@ -252,24 +256,26 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let state = state.clone();
             let ui_handle = ui_handle.clone();
             handle.spawn(async move {
-                let result = commands::spaces::get_space_hierarchy(state.clone()).await;
-                let ui_handle2 = ui_handle.clone();
+                let result = commands::spaces::get_space_hierarchy(state).await;
                 let _ = slint::invoke_from_event_loop(move || {
-                    let Some(ui) = ui_handle2.upgrade() else {
+                    let Some(ui) = ui_handle.upgrade() else {
                         return;
                     };
                     match result {
                         Ok(hierarchy) => {
                             let flat = space_hierarchy_to_ui(hierarchy);
 
-                            let tabs: Vec<SpaceTab> =
-                                flat.iter().map(|(tab, _)| tab.clone()).collect();
-                            let channels: Vec<SpaceChannels> = flat
+                            let (tabs, channels): (Vec<SpaceTab>, Vec<SpaceChannels>) = flat
                                 .into_iter()
-                                .map(|(_, categories)| SpaceChannels {
-                                    categories: to_model(categories),
+                                .map(|(tab, categories)| {
+                                    (
+                                        tab,
+                                        SpaceChannels {
+                                            categories: to_model(categories),
+                                        },
+                                    )
                                 })
-                                .collect();
+                                .unzip();
 
                             ui.global::<UiState>().set_space_tabs(to_model(tabs));
                             ui.global::<UiState>()
@@ -323,6 +329,8 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 ui.global::<UiState>().set_active_room(room_name);
                 ui.global::<UiState>().set_active_room_id(room_id);
                 ui.global::<UiState>().set_messages_loading(true);
+                ui.global::<UiState>().set_next_token("".into());
+                ui.global::<UiState>().set_loading_more(false);
             }
 
             handle.spawn(async move {
@@ -336,7 +344,6 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     Err(e) => Err(format!("Invalid room id '{room_id_str}': {e}")),
                 };
 
-                let ui_handle = ui_handle.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = ui_handle.upgrade() else {
                         return;
@@ -354,14 +361,88 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                         Ok(paginated) => {
                             let msgs: Vec<Message> = paginated
                                 .messages
-                                .iter()
+                                .into_iter()
                                 .map(stored_message_to_ui)
                                 .collect();
                             state
                                 .set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
+                            state.set_next_token(
+                                paginated.next_token.unwrap_or_default().into(),
+                            );
+                            state.set_loading_more(false);
                         }
                         Err(e) => {
                             eprintln!("Failed to fetch messages: {e}");
+                        }
+                    }
+                });
+            });
+        }
+    });
+
+    // User scrolled near the top of the currently open room — fetch the next
+    // (older) page using the token from the previous fetch and prepend it.
+    ui.global::<UiState>().on_load_older_messages({
+        let state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        move || {
+            let state = state.clone();
+            let ui_handle = ui_handle.clone();
+
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let ui_state = ui.global::<UiState>();
+            let room_id_str = ui_state.get_active_room_id().to_string();
+            let token = ui_state.get_next_token().to_string();
+            if token.is_empty() {
+                ui_state.set_loading_more(false);
+                return;
+            }
+
+            handle.spawn(async move {
+                let result = match ruma::RoomId::parse(&room_id_str) {
+                    Ok(parsed) => {
+                        commands::messages::get_messages_from_room_paginated(
+                            state,
+                            parsed,
+                            Some(token),
+                            50,
+                        )
+                        .await
+                    }
+                    Err(e) => Err(format!("Invalid room id '{room_id_str}': {e}")),
+                };
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    let state = ui.global::<UiState>();
+                    // Guard against a stale response: the user may have switched
+                    // channels while this older-page fetch was in flight.
+                    if state.get_active_room_id() != room_id_str.as_str() {
+                        return;
+                    }
+                    state.set_loading_more(false);
+                    match result {
+                        Ok(paginated) => {
+                            state.set_next_token(
+                                paginated.next_token.unwrap_or_default().into(),
+                            );
+                            let mut older: Vec<Message> = paginated
+                                .messages
+                                .into_iter()
+                                .map(stored_message_to_ui)
+                                .collect();
+                            older.extend(state.get_messages().iter());
+                            state.set_messages(
+                                std::rc::Rc::new(slint::VecModel::from(older)).into(),
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to fetch older messages: {e}");
                         }
                     }
                 });
@@ -454,7 +535,6 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 let result = commands::debug::dispatch(&command, &args, state).await;
                 let msg: slint::SharedString =
                     result.map_or_else(|e| format!("Error: {e}").into(), |s| s.into());
-                let ui_handle = ui_handle.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(ui) = ui_handle.upgrade() {
                         ui.set_debug_output(msg);

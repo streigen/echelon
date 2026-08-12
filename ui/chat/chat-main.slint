@@ -11,15 +11,30 @@ export component ChatMain inherits Rectangle {
     // How close to the bottom (in px, roughly 5 message rows) counts as "still
     // watching the latest messages" for auto-scroll purposes.
     property <length> near-bottom-threshold: 220px;
+    // How close to the top counts as "wants older history" and triggers a
+    // backward-pagination fetch.
+    property <length> near-top-threshold: 220px;
     // Kept up to date only by the user's own scrolling (see `changed viewport-y`
     // below) — never touched by content growth — so it reflects where the user
     // was looking right before a new message arrived.
     property <bool> near-bottom: true;
     property <int> message-count: UiState.messages.length;
 
+    // Snapshot of the scroll position taken right as an older-messages fetch
+    // is kicked off, so it can be restored (adjusted for however much taller
+    // the content got) once the prepended page lands — keeping the rows the
+    // user was reading pinned in place instead of jumping around.
+    property <length> pre-load-viewport-height: 0px;
+    property <length> pre-load-viewport-y: 0px;
+    property <bool> is-loading-more: UiState.loading-more;
+
     function is-near-bottom() -> bool {
         return scroll-view.viewport-height + scroll-view.viewport-y
             <= scroll-view.visible-height + near-bottom-threshold;
+    }
+
+    function is-near-top() -> bool {
+        return scroll-view.viewport-y > -near-top-threshold;
     }
 
     auto-scroll-timer := Timer {
@@ -31,9 +46,28 @@ export component ChatMain inherits Rectangle {
         }
     }
 
+    // Layout for the newly prepended rows isn't measured synchronously when
+    // `UiState.messages` changes, so wait a tick (same trick as
+    // auto-scroll-timer) before reading the post-prepend viewport-height.
+    restore-scroll-timer := Timer {
+        interval: 50ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            scroll-view.viewport-y = pre-load-viewport-y
+                - (scroll-view.viewport-height - pre-load-viewport-height);
+        }
+    }
+
     changed message-count => {
         if near-bottom {
             auto-scroll-timer.running = true;
+        }
+    }
+
+    changed is-loading-more => {
+        if !is-loading-more {
+            restore-scroll-timer.running = true;
         }
     }
 
@@ -48,6 +82,12 @@ export component ChatMain inherits Rectangle {
 
                 changed viewport-y => {
                     near-bottom = is-near-bottom();
+                    if is-near-top() && UiState.next-token != "" && !UiState.loading-more {
+                        pre-load-viewport-height = scroll-view.viewport-height;
+                        pre-load-viewport-y = scroll-view.viewport-y;
+                        UiState.loading-more = true;
+                        UiState.load-older-messages();
+                    }
                 }
 
                 VerticalLayout {

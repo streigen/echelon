@@ -1916,6 +1916,7 @@ dependencies = [
  "anyhow",
  "apple-native-keyring-store",
  "blake3",
+ "chrono",
  "futures-core",
  "futures-util",
  "iota_stronghold",

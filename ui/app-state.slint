@@ -56,6 +56,12 @@ export global UiState {
     in-out property <string> active-room-id: "";
     in-out property <[Message]> messages;
     in-out property <bool> messages-loading: false;
+    // Event id to pass as `from` to fetch the next (older) page for the
+    // currently open room; "" means there's nothing older left to load.
+    in-out property <string> next-token: "";
+    // True while an older-messages fetch is in flight, to stop
+    // load-older-messages from firing repeatedly while scrolled to the top.
+    in-out property <bool> loading-more: false;
 
     // Layout state
     in-out property <bool> sidebar-collapsed: false;
@@ -77,4 +83,5 @@ export global UiState {
     callback space-clicked(int);
     callback channel-clicked(string, string); // room id, room name
     callback send-message(string);
+    callback load-older-messages();
 }
