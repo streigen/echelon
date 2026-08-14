@@ -15,6 +15,7 @@ mod storage;
 use app_state::{AppState, app_data_dir};
 use client::ClientHandler;
 use rooms::room_types::SpaceRoom;
+use ruma::{EventId, RoomId};
 use slint::Model;
 use storage::keyring_client::KeyringClient;
 use storage::secret::SecretService;
@@ -185,6 +186,12 @@ fn flush_preview_window(
 
     let state = ui.global::<UiState>();
     let room_id = state.get_active_room_id().to_string();
+    // Validated once for the whole pass, borrowed rather than owned. The
+    // string form is kept too: `spawn_image_fetch` compares it back against
+    // the UI's active room to spot a channel switch.
+    let Ok(parsed_room_id) = <&RoomId>::try_from(room_id.as_str()) else {
+        return;
+    };
     // Rows missing from `pending` did not move. Pending ids missing from the
     // model belong to a room that has since been switched away from.
     for row in state.get_messages().iter() {
@@ -206,7 +213,13 @@ fn flush_preview_window(
             }
             // Kinds with no preview never load, so skip them before claiming
             // an in flight slot that would only be released again.
-            let Some(source) = rooms::messages::get_cached_attachment(&event_id, i)
+            // Borrowed rather than `EventId::parse`, which would allocate an
+            // owned id just to probe the map and drop it again.
+            let Some(source) = <&EventId>::try_from(event_id.as_str())
+                .ok()
+                .and_then(|parsed| {
+                    rooms::messages::get_cached_attachment(parsed_room_id, parsed, i)
+                })
                 .filter(|a| !loaded && a.kind.has_preview())
             else {
                 continue;
@@ -230,13 +243,18 @@ fn flush_preview_window(
 /// attachments so the media source can be found again when the row is
 /// clicked or scrolled into view. Nothing is downloaded here, since fetching
 /// follows visibility instead.
-fn stored_messages_to_ui(messages: Vec<rooms::messages::StoredMessage>) -> Vec<Message> {
+fn stored_messages_to_ui(
+    room_id: &RoomId,
+    messages: Vec<rooms::messages::StoredMessage>,
+) -> Vec<Message> {
     messages
         .into_iter()
         .map(|mut m| {
             let event_id = m.event_id.to_string();
             let attachments = std::mem::take(&mut m.attachments);
-            rooms::messages::cache_attachments(&event_id, &attachments);
+            // Cached from the store's own typed id, not the string copy the
+            // UI row gets.
+            rooms::messages::cache_attachments(room_id, &m.event_id, &attachments);
             let ui_attachments = attachments.iter().map(attachment_to_ui).collect();
 
             Message {
@@ -303,7 +321,10 @@ fn fetch_message_page(
 
             match result {
                 Ok(paginated) => {
-                    let mut msgs = stored_messages_to_ui(paginated.messages);
+                    let Ok(parsed_room_id) = <&RoomId>::try_from(room_id.as_str()) else {
+                        return;
+                    };
+                    let mut msgs = stored_messages_to_ui(parsed_room_id, paginated.messages);
                     state.set_next_token(paginated.next_token.unwrap_or_default().into());
                     if prepend {
                         msgs.extend(state.get_messages().iter());
@@ -577,6 +598,19 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let room_id_str = room_id.to_string();
 
             if let Some(ui) = ui_handle.upgrade() {
+                // Drop the room being left, and the one being opened. The
+                // open refetches its first page and rebuilds those entries,
+                // so keeping them would only hold the scrollback of the last
+                // visit alive behind a model that no longer shows it. On the
+                // very first open the previous id is empty, which simply
+                // fails to parse and clears nothing.
+                let previous_room_id = ui.global::<UiState>().get_active_room_id();
+                for id in [previous_room_id.as_str(), room_id_str.as_str()] {
+                    if let Ok(parsed) = <&RoomId>::try_from(id) {
+                        rooms::messages::clear_room_attachments(parsed);
+                    }
+                }
+
                 ui.global::<UiState>().set_active_room(room_name);
                 ui.global::<UiState>().set_active_room_id(room_id);
                 ui.global::<UiState>().set_messages_loading(true);
@@ -673,8 +707,21 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
         move |event_id, attachment_index| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let global = ui.global::<UiState>();
+            // Only the open room's rows are on screen to be clicked, so its
+            // id is the one the clicked attachment was cached under.
+            let room_id = global.get_active_room_id();
+            let (Ok(room_id), Ok(event_id)) = (
+                <&RoomId>::try_from(room_id.as_str()),
+                <&EventId>::try_from(event_id.as_str()),
+            ) else {
+                return;
+            };
             let Some(attachment) =
-                rooms::messages::get_cached_attachment(&event_id, attachment_index as usize)
+                rooms::messages::get_cached_attachment(room_id, event_id, attachment_index as usize)
             else {
                 return;
             };
@@ -685,14 +732,11 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 return;
             }
 
-            if let Some(ui) = ui_handle.upgrade() {
-                let global = ui.global::<UiState>();
-                global.set_lightbox_visible(true);
-                global.set_lightbox_loading(true);
-                global.set_lightbox_image(slint::Image::default());
-                global.set_lightbox_width(attachment.width.unwrap_or(0) as i32);
-                global.set_lightbox_height(attachment.height.unwrap_or(0) as i32);
-            }
+            global.set_lightbox_visible(true);
+            global.set_lightbox_loading(true);
+            global.set_lightbox_image(slint::Image::default());
+            global.set_lightbox_width(attachment.width.unwrap_or(0) as i32);
+            global.set_lightbox_height(attachment.height.unwrap_or(0) as i32);
 
             let state = state.clone();
             let ui_handle = ui_handle.clone();

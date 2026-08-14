@@ -25,7 +25,9 @@ impl ClientEvents {
     ) {
         trace!("Received message: {:?}", event);
 
-        // Get the content based on event type
+        // Get the content based on event type. The ids stay in their ruma
+        // types, since the attachment cache is keyed by them; only the copies
+        // handed to the UI are stringified.
         let (sender, body, event_id, origin_server_ts, attachment) = match event {
             SyncRoomMessageEvent::Original(original) => {
                 let body = original.content.body().to_string();
@@ -33,7 +35,7 @@ impl ClientEvents {
                 (
                     original.sender.to_string(),
                     body,
-                    original.event_id.to_string(),
+                    original.event_id,
                     original.origin_server_ts,
                     attachment,
                 )
@@ -41,13 +43,13 @@ impl ClientEvents {
             SyncRoomMessageEvent::Redacted(redacted) => (
                 redacted.sender.to_string(),
                 "[Redacted message]".to_string(),
-                redacted.event_id.to_string(),
+                redacted.event_id,
                 redacted.origin_server_ts,
                 None,
             ),
         };
 
-        let room_id = room.room_id().to_string();
+        let room_id = room.room_id().to_owned();
         let time = format_time_of_day(origin_server_ts.0.into());
 
         // Emit event to frontend
@@ -65,9 +67,9 @@ impl ClientEvents {
 
             ui.invoke_matrix_message(
                 sender.into(),
-                room_id.clone().into(),
+                room_id.as_str().into(),
                 body.into(),
-                event_id.clone().into(),
+                event_id.as_str().into(),
                 time.into(),
                 to_model(
                     attachment
@@ -84,7 +86,7 @@ impl ClientEvents {
             // reports its own visibility when it is constructed, and the
             // preview fetch follows from that like it does for any row.
             if let Some(attachment) = attachment {
-                cache_attachments(&event_id, std::slice::from_ref(&attachment));
+                cache_attachments(&room_id, &event_id, std::slice::from_ref(&attachment));
             }
         }) {
             error!("Failed to emit message event: {}", e);
