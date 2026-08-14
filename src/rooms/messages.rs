@@ -61,17 +61,16 @@ const ATTACHMENT_CACHE_CAPACITY: usize = 2048;
 /// cache holding a little less than its cap most of the time.
 const ATTACHMENT_CACHE_TRIM_TO: usize = ATTACHMENT_CACHE_CAPACITY * 3 / 4;
 
-struct CachedAttachments {
-    attachments: Vec<Attachment>,
+struct CachedAttachment {
+    attachment: Attachment,
     /// Tick of the most recent insert or lookup, used to pick eviction
     /// victims. Every access bumps the clock, so these are unique.
     last_used: u64,
 }
 
 /// Attachments by room, then by event id. The UI model cannot carry a
-/// `MediaSource`, so a click or a scroll into view has only a room id, an
-/// event id and an index to go on. This turns those back into something
-/// fetchable.
+/// `MediaSource`, so a click or a scroll into view has only a room id and an
+/// event id to go on. This turns those back into something fetchable.
 ///
 /// Grouping by room is what lets [`clear_room_attachments`] drop a room's
 /// entries without touching anything else. The LRU cap is the backstop for
@@ -79,7 +78,7 @@ struct CachedAttachments {
 /// far enough to accumulate more entries than it will ever show at once.
 #[derive(Default)]
 struct AttachmentCache {
-    rooms: HashMap<OwnedRoomId, HashMap<OwnedEventId, CachedAttachments>>,
+    rooms: HashMap<OwnedRoomId, HashMap<OwnedEventId, CachedAttachment>>,
     /// Monotonic counter standing in for a clock. Ordering is all that
     /// matters here, and a counter cannot go backwards the way a wall clock
     /// can.
@@ -90,10 +89,10 @@ struct AttachmentCache {
 }
 
 impl AttachmentCache {
-    fn insert(&mut self, room_id: &RoomId, event_id: &EventId, attachments: &[Attachment]) {
+    fn insert(&mut self, room_id: &RoomId, event_id: &EventId, attachment: &Attachment) {
         self.tick += 1;
-        let entry = CachedAttachments {
-            attachments: attachments.to_vec(),
+        let entry = CachedAttachment {
+            attachment: attachment.clone(),
             last_used: self.tick,
         };
         let room = self.rooms.entry(room_id.to_owned()).or_default();
@@ -105,13 +104,13 @@ impl AttachmentCache {
         }
     }
 
-    fn get(&mut self, room_id: &RoomId, event_id: &EventId, index: usize) -> Option<Attachment> {
+    fn get(&mut self, room_id: &RoomId, event_id: &EventId) -> Option<Attachment> {
         self.tick += 1;
         let entry = self.rooms.get_mut(room_id)?.get_mut(event_id)?;
         // Touching on read is what keeps the rows currently on screen, which
         // are the ones the preview window looks up, out of the victim set.
         entry.last_used = self.tick;
-        entry.attachments.get(index).cloned()
+        Some(entry.attachment.clone())
     }
 
     fn clear_room(&mut self, room_id: &RoomId) {
@@ -149,21 +148,14 @@ thread_local! {
         std::cell::RefCell::new(AttachmentCache::default());
 }
 
-/// Remember an event's attachments so they can be fetched later.
-pub fn cache_attachments(room_id: &RoomId, event_id: &EventId, attachments: &[Attachment]) {
-    if attachments.is_empty() {
-        return;
-    }
-    ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().insert(room_id, event_id, attachments));
+/// Remember an event's attachment so it can be fetched later.
+pub fn cache_attachment(room_id: &RoomId, event_id: &EventId, attachment: &Attachment) {
+    ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().insert(room_id, event_id, attachment));
 }
 
-/// Look up an attachment cached by [`cache_attachments`].
-pub fn get_cached_attachment(
-    room_id: &RoomId,
-    event_id: &EventId,
-    index: usize,
-) -> Option<Attachment> {
-    ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().get(room_id, event_id, index))
+/// Look up an attachment cached by [`cache_attachment`].
+pub fn get_cached_attachment(room_id: &RoomId, event_id: &EventId) -> Option<Attachment> {
+    ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().get(room_id, event_id))
 }
 
 /// Forget everything cached for a room. Called when a room is left, and
@@ -187,8 +179,10 @@ pub struct StoredMessage {
     pub origin_server_ts: u64,
     pub edited: bool,
     pub redacted: bool,
-    /// Empty for text-only messages.
-    pub attachments: Vec<Attachment>,
+    /// `None` for text-only messages. An `m.room.message` carries exactly one
+    /// msgtype, so an event never has more than one attachment; several files
+    /// are several events.
+    pub attachment: Option<Attachment>,
 }
 
 /// Accumulates timeline events into a deduped, edit/redaction-resolved
@@ -280,7 +274,7 @@ impl MessageStore {
             origin_server_ts: original.origin_server_ts.0.into(),
             edited: false,
             redacted: false,
-            attachments: vec![attachment],
+            attachment: Some(attachment),
         });
     }
 
@@ -302,7 +296,7 @@ impl MessageStore {
         }
         if self.pending_redactions.remove(&event_id) {
             self.messages[idx].body.clear();
-            self.messages[idx].attachments.clear();
+            self.messages[idx].attachment = None;
             self.messages[idx].redacted = true;
         }
     }
@@ -330,9 +324,7 @@ impl MessageStore {
             origin_server_ts: original.origin_server_ts.0.into(),
             edited: false,
             redacted: false,
-            attachments: attachment_of(&original.content.msgtype)
-                .into_iter()
-                .collect(),
+            attachment: attachment_of(&original.content.msgtype),
         });
     }
 
@@ -362,7 +354,7 @@ impl MessageStore {
 
         if let Some(&idx) = self.index.get(&target) {
             self.messages[idx].body.clear();
-            self.messages[idx].attachments.clear();
+            self.messages[idx].attachment = None;
             self.messages[idx].redacted = true;
         } else {
             self.pending_redactions.insert(target);

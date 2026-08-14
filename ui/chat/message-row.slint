@@ -10,9 +10,9 @@ export component MessageRow inherits VerticalLayout {
     in property <length> keep-bottom;
 
     callback reply-clicked();
-    // Attachment index within msg.attachments — chat-main.slint pairs this
-    // with msg.event-id to call UiState.open-lightbox.
-    callback attachment-clicked(int);
+    // chat-main.slint pairs this with msg.event-id to call
+    // UiState.open-lightbox.
+    callback attachment-clicked();
     // Fires on entering/leaving the keep band, and once at construction.
     // See `flush_preview_window` in lib.rs.
     callback preview-window-changed(bool);
@@ -86,7 +86,8 @@ export component MessageRow inherits VerticalLayout {
 
                 Text { text: msg.text; color: rgba(255, 255, 255, 0.85); font-size: 15px; wrap: word-wrap; }
 
-                for att[att-idx] in msg.attachments : Rectangle {
+                if msg.attachment.kind != AttachmentKind.Empty : Rectangle {
+                    property <MessageAttachment> att: msg.attachment;
                     // Mirrors `AttachmentKind::has_preview` on the Rust side.
                     property <bool> previewable: att.kind == AttachmentKind.Image
                         || att.kind == AttachmentKind.Sticker;
@@ -116,7 +117,7 @@ export component MessageRow inherits VerticalLayout {
                             width: 100%;
                             height: 100%;
                             mouse-cursor: pointer;
-                            clicked => { root.attachment-clicked(att-idx); }
+                            clicked => { root.attachment-clicked(); }
                         }
                     }
 

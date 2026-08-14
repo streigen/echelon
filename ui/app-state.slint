@@ -3,8 +3,13 @@
 // eliminating deep two-way binding chains that cause
 // "long callback/instantiation chain" warnings.
 
-// Mirrors `rooms::messages::AttachmentKind`, converted in lib.rs.
+// Mirrors `rooms::messages::AttachmentKind`, converted in lib.rs, plus
+// `Empty` for "this message has no attachment". Slint has no optional type,
+// so the Rust side's `Option<Attachment>` arrives as a default-constructed
+// `MessageAttachment` whose kind is `Empty`. That is why `Empty` is first:
+// a default-constructed struct has to mean "absent".
 export enum AttachmentKind {
+    Empty,
     Image,
     Video,
     Audio,
@@ -12,9 +17,9 @@ export enum AttachmentKind {
     Sticker,
 }
 
-// One media attachment, whatever its kind. Raster kinds share
-// `preview`/`loaded`; the rest carry enough metadata to render their own
-// row without this struct needing per-kind fields.
+// The media attachment on a message, whatever its kind. Raster kinds use
+// `preview`; the rest carry enough metadata to render their own row without
+// this struct needing per-kind fields.
 export struct MessageAttachment {
     kind: AttachmentKind,
     // e.g. "audio/mpeg". Empty when the sender didn't declare one.
@@ -36,7 +41,10 @@ export struct Message {
     // Identifies which message an in-flight attachment fetch belongs to,
     // so its result can be patched into the right row once it lands.
     event-id: string,
-    attachments: [MessageAttachment],
+    // Kind `Empty` when the message carries no media. A Matrix
+    // `m.room.message` has exactly one msgtype, so an event never has more
+    // than one attachment; several files are several events.
+    attachment: MessageAttachment,
 }
 
 // One channel/room, as shown in the sidebar. `id` is the Matrix room id
@@ -121,7 +129,7 @@ export global UiState {
     callback channel-clicked(string, string); // room id, room name
     callback send-message(string);
     callback load-older-messages();
-    callback open-lightbox(string, int); // event id, attachment index
+    callback open-lightbox(string); // event id
     callback close-lightbox();
     // event id, whether the row is in the preview keep band. Drives both
     // fetching and eviction; see chat-main.slint's preview-keep-*.

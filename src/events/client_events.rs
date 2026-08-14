@@ -3,8 +3,8 @@ use ruma::events::room::message::SyncRoomMessageEvent;
 use slint::ComponentHandle;
 use tracing::{error, trace};
 
-use crate::rooms::messages::{attachment_of, cache_attachments};
-use crate::{AppWindow, UiState, attachment_to_ui, format_time_of_day, to_model};
+use crate::rooms::messages::{attachment_of, cache_attachment};
+use crate::{AppWindow, UiState, attachment_to_ui, format_time_of_day};
 
 pub struct ClientEvents;
 
@@ -71,13 +71,7 @@ impl ClientEvents {
                 body.into(),
                 event_id.as_str().into(),
                 time.into(),
-                to_model(
-                    attachment
-                        .as_ref()
-                        .map(attachment_to_ui)
-                        .into_iter()
-                        .collect(),
-                ),
+                attachment_to_ui(attachment.as_ref()),
             );
 
             // `ATTACHMENT_CACHE` is a `thread_local!`, so it has to be
@@ -86,7 +80,7 @@ impl ClientEvents {
             // reports its own visibility when it is constructed, and the
             // preview fetch follows from that like it does for any row.
             if let Some(attachment) = attachment {
-                cache_attachments(&room_id, &event_id, std::slice::from_ref(&attachment));
+                cache_attachment(&room_id, &event_id, &attachment);
             }
         }) {
             error!("Failed to emit message event: {}", e);

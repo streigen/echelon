@@ -48,10 +48,18 @@ pub(crate) fn to_model<T: Clone + 'static>(v: Vec<T>) -> slint::ModelRc<T> {
     std::rc::Rc::new(slint::VecModel::from(v)).into()
 }
 
-/// Convert a domain attachment into its slint generated FFI shape. The
-/// `preview` starts empty and is filled in later by [`spawn_image_fetch`].
-pub(crate) fn attachment_to_ui(a: &rooms::messages::Attachment) -> MessageAttachment {
+/// Convert a message's optional attachment into its slint generated FFI
+/// shape. Slint has no optional type, so "no attachment" is carried as
+/// [`AttachmentKind::Empty`] rather than as a separate flag. The `preview`
+/// starts empty and is filled in later by [`spawn_image_fetch`].
+pub(crate) fn attachment_to_ui(a: Option<&rooms::messages::Attachment>) -> MessageAttachment {
     use rooms::messages::AttachmentKind as Domain;
+    let Some(a) = a else {
+        return MessageAttachment {
+            kind: AttachmentKind::Empty,
+            ..Default::default()
+        };
+    };
     MessageAttachment {
         kind: match a.kind {
             Domain::Image => AttachmentKind::Image,
@@ -67,7 +75,7 @@ pub(crate) fn attachment_to_ui(a: &rooms::messages::Attachment) -> MessageAttach
     }
 }
 
-/// Download and decode one attachment's raster preview off the UI thread,
+/// Download and decode an attachment's raster preview off the UI thread,
 /// then patch it into the row with the matching `event_id`. If the fetch
 /// outlived a channel switch, the result is dropped instead.
 ///
@@ -77,7 +85,6 @@ pub(crate) fn attachment_to_ui(a: &rooms::messages::Attachment) -> MessageAttach
 /// * `ui_handle` - Weak handle used to patch the result back into the UI.
 /// * `room_id` - Room the message belongs to, checked before patching.
 /// * `event_id` - Event whose row receives the preview.
-/// * `attachment_index` - Position of the attachment within that event.
 /// * `attachment` - The attachment to download.
 fn spawn_image_fetch(
     handle: &tokio::runtime::Handle,
@@ -85,7 +92,6 @@ fn spawn_image_fetch(
     ui_handle: slint::Weak<AppWindow>,
     room_id: String,
     event_id: String,
-    attachment_index: usize,
     attachment: rooms::messages::Attachment,
 ) {
     handle.spawn(async move {
@@ -101,11 +107,7 @@ fn spawn_image_fetch(
             Err(e) => Err(e),
         };
         let _ = slint::invoke_from_event_loop(move || {
-            PREVIEW_WINDOW.with(|s| {
-                s.borrow_mut()
-                    .in_flight
-                    .remove(&(event_id.clone(), attachment_index))
-            });
+            PREVIEW_WINDOW.with(|s| s.borrow_mut().in_flight.remove(&event_id));
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
@@ -121,21 +123,24 @@ fn spawn_image_fetch(
                 }
             };
 
-            // Patching the row's own attachments model in place is enough to
-            // repaint it. This is the same shared VecModel the row was built
-            // with.
-            let Some(row) = state.get_messages().iter().find(|r| r.event_id == event_id) else {
+            // `set_row_data` on the messages model repaints just this row.
+            // Slint updates the existing repeater item in place rather than
+            // rebuilding it, so the row's `init` does not fire again and no
+            // spurious visibility report follows from patching a preview in.
+            let messages = state.get_messages();
+            let Some(index) = messages.iter().position(|r| r.event_id == event_id) else {
                 return;
             };
-            if let Some(mut att) = row.attachments.row_data(attachment_index) {
-                // The decoded dimensions are the real ones. Sender declared
-                // sizes are often missing or wrong, and a mismatch renders
-                // the image squished.
-                att.width = decoded.width() as i32;
-                att.height = decoded.height() as i32;
-                att.preview = decoded.into_image();
-                row.attachments.set_row_data(attachment_index, att);
-            }
+            let Some(mut row) = messages.row_data(index) else {
+                return;
+            };
+            // The decoded dimensions are the real ones. Sender declared sizes
+            // are often missing or wrong, and a mismatch renders the image
+            // squished.
+            row.attachment.width = decoded.width() as i32;
+            row.attachment.height = decoded.height() as i32;
+            row.attachment.preview = decoded.into_image();
+            messages.set_row_data(index, row);
         });
     });
 }
@@ -155,9 +160,9 @@ struct PreviewWindow {
     /// rather than a list so a row that flaps during a scroll leaves only its
     /// final answer behind.
     pending: std::collections::HashMap<String, bool>,
-    /// Fetches that are already running, so a row crossing the boundary
-    /// repeatedly does not stack up duplicate downloads.
-    in_flight: std::collections::HashSet<(String, usize)>,
+    /// Event ids whose fetch is already running, so a row crossing the
+    /// boundary repeatedly does not stack up duplicate downloads.
+    in_flight: std::collections::HashSet<String>,
     flush_queued: bool,
 }
 
@@ -194,47 +199,40 @@ fn flush_preview_window(
     };
     // Rows missing from `pending` did not move. Pending ids missing from the
     // model belong to a room that has since been switched away from.
-    for row in state.get_messages().iter() {
+    let messages = state.get_messages();
+    for (index, mut row) in messages.iter().enumerate() {
         let event_id = row.event_id.to_string();
         let Some(&inside) = pending.get(&event_id) else {
             continue;
         };
-        for i in 0..row.attachments.row_count() {
-            let Some(mut attachment) = row.attachments.row_data(i) else {
-                continue;
-            };
-            let loaded = attachment.preview.size().width > 0;
-            if !inside {
-                if loaded {
-                    attachment.preview = slint::Image::default();
-                    row.attachments.set_row_data(i, attachment);
-                }
-                continue;
+        let loaded = row.attachment.preview.size().width > 0;
+        if !inside {
+            if loaded {
+                row.attachment.preview = slint::Image::default();
+                messages.set_row_data(index, row);
             }
-            // Kinds with no preview never load, so skip them before claiming
-            // an in flight slot that would only be released again.
-            // Borrowed rather than `EventId::parse`, which would allocate an
-            // owned id just to probe the map and drop it again.
-            let Some(source) = <&EventId>::try_from(event_id.as_str())
-                .ok()
-                .and_then(|parsed| {
-                    rooms::messages::get_cached_attachment(parsed_room_id, parsed, i)
-                })
-                .filter(|a| !loaded && a.kind.has_preview())
-            else {
-                continue;
-            };
-            if PREVIEW_WINDOW.with(|s| s.borrow_mut().in_flight.insert((event_id.clone(), i))) {
-                spawn_image_fetch(
-                    handle,
-                    client_state.clone(),
-                    ui_handle.clone(),
-                    room_id.clone(),
-                    event_id.clone(),
-                    i,
-                    source,
-                );
-            }
+            continue;
+        }
+        // Kinds with no preview never load, so skip them before claiming an
+        // in flight slot that would only be released again. Borrowed rather
+        // than `EventId::parse`, which would allocate an owned id just to
+        // probe the map and drop it again.
+        let Some(source) = <&EventId>::try_from(event_id.as_str())
+            .ok()
+            .and_then(|parsed| rooms::messages::get_cached_attachment(parsed_room_id, parsed))
+            .filter(|a| !loaded && a.kind.has_preview())
+        else {
+            continue;
+        };
+        if PREVIEW_WINDOW.with(|s| s.borrow_mut().in_flight.insert(event_id.clone())) {
+            spawn_image_fetch(
+                handle,
+                client_state.clone(),
+                ui_handle.clone(),
+                room_id.clone(),
+                event_id.clone(),
+                source,
+            );
         }
     }
 }
@@ -249,13 +247,13 @@ fn stored_messages_to_ui(
 ) -> Vec<Message> {
     messages
         .into_iter()
-        .map(|mut m| {
+        .map(|m| {
             let event_id = m.event_id.to_string();
-            let attachments = std::mem::take(&mut m.attachments);
             // Cached from the store's own typed id, not the string copy the
             // UI row gets.
-            rooms::messages::cache_attachments(room_id, &m.event_id, &attachments);
-            let ui_attachments = attachments.iter().map(attachment_to_ui).collect();
+            if let Some(attachment) = &m.attachment {
+                rooms::messages::cache_attachment(room_id, &m.event_id, attachment);
+            }
 
             Message {
                 user: m.sender.as_ref().into(),
@@ -268,7 +266,7 @@ fn stored_messages_to_ui(
                 .into(),
                 repliedTo: "".into(),
                 event_id: event_id.into(),
-                attachments: to_model(ui_attachments),
+                attachment: attachment_to_ui(m.attachment.as_ref()),
             }
         })
         .collect()
@@ -656,7 +654,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
     // fetch next time that channel is opened).
     ui.on_matrix_message({
         let ui_handle = ui_handle.clone();
-        move |sender, room_id, body, event_id, time, attachments| {
+        move |sender, room_id, body, event_id, time, attachment| {
             if let Some(ui) = ui_handle.upgrade() {
                 let state = ui.global::<UiState>();
                 if state.get_active_room_id() != room_id {
@@ -668,7 +666,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     text: body,
                     repliedTo: slint::SharedString::from(""),
                     event_id,
-                    attachments,
+                    attachment,
                 };
                 let mut msgs: Vec<Message> = state.get_messages().iter().collect();
                 msgs.push(new_msg);
@@ -689,7 +687,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     text: msg_text,
                     repliedTo: slint::SharedString::from(""),
                     event_id: slint::SharedString::from(""),
-                    attachments: to_model(Vec::new()),
+                    attachment: attachment_to_ui(None),
                 };
                 let global = ui.global::<UiState>();
                 let mut msgs: Vec<Message> = global.get_messages().iter().collect();
@@ -706,7 +704,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let state = client_state.clone();
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
-        move |event_id, attachment_index| {
+        move |event_id| {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
@@ -720,9 +718,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             ) else {
                 return;
             };
-            let Some(attachment) =
-                rooms::messages::get_cached_attachment(room_id, event_id, attachment_index as usize)
-            else {
+            let Some(attachment) = rooms::messages::get_cached_attachment(room_id, event_id) else {
                 return;
             };
             // Enlarging only means something for kinds that decode to a
