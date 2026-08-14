@@ -1,10 +1,10 @@
 //! Generic dispatcher for the dev-only debug console (Debug console page in the UI).
 //!
 //! `COMMANDS` is the single source of truth for what shows up in the console: each entry
-//! names a command and its positional argument labels (max 4 — the UI renders that many
-//! input slots). `dispatch` maps a command name + string args back onto the real
+//! names a command and its positional argument labels. The maximum is 4, since the UI
+//! renders that many input slots. `dispatch` maps a command name + string args onto the real
 //! `commands::*` functions. Adding a new backend command to the console means adding one
-//! `CommandSpec` here and one match arm in `dispatch` — no UI changes required.
+//! `CommandSpec` here and one match arm in `dispatch`. No UI changes are required.
 
 use crate::ClientState;
 use crate::account::account_reset_types::AccountResetType;
@@ -62,7 +62,11 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         name: "get_messages",
-        arg_labels: &["room_id", "from (optional pagination token)", "limit (default 50)"],
+        arg_labels: &[
+            "room_id",
+            "from (optional pagination token)",
+            "limit (default 50)",
+        ],
     },
 ];
 
@@ -71,7 +75,11 @@ pub const COMMANDS: &[CommandSpec] = &[
 /// `args` are matched positionally to each command's `arg_labels`; missing trailing args
 /// are treated as empty strings, and empty strings map to `None` for `Option<String>`
 /// parameters. Results that aren't already `String` are formatted for display.
-pub async fn dispatch(command: &str, args: &[String], state: ClientState) -> Result<String, String> {
+pub async fn dispatch(
+    command: &str,
+    args: &[String],
+    state: ClientState,
+) -> Result<String, String> {
     let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
     let opt = |i: usize| {
         let v = arg(i);
@@ -101,13 +109,15 @@ pub async fn dispatch(command: &str, args: &[String], state: ClientState) -> Res
             let ids: Vec<String> = rooms.iter().map(|r| r.room_id().to_string()).collect();
             format!("{} dm rooms\n{}", rooms.len(), ids.join("\n"))
         }),
-        "get_space_hierarchy" => super::spaces::get_space_hierarchy(state).await.map(|spaces| {
-            let entries: Vec<String> = spaces
-                .iter()
-                .map(|s| format!("{} ({} children)", s.room.room_id(), s.children.len()))
-                .collect();
-            format!("{} spaces\n{}", spaces.len(), entries.join("\n"))
-        }),
+        "get_space_hierarchy" => super::spaces::get_space_hierarchy(state)
+            .await
+            .map(|spaces| {
+                let entries: Vec<String> = spaces
+                    .iter()
+                    .map(|s| format!("{} ({} children)", s.room.room_id(), s.children.len()))
+                    .collect();
+                format!("{} spaces\n{}", spaces.len(), entries.join("\n"))
+            }),
         "get_messages" => {
             let room_id = ruma::RoomId::parse(arg(0))
                 .map_err(|e| format!("invalid room_id '{}': {e}", arg(0)))?;

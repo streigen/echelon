@@ -1919,6 +1919,7 @@ dependencies = [
  "chrono",
  "futures-core",
  "futures-util",
+ "image",
  "iota_stronghold",
  "keyring-core",
  "matrix-sdk",

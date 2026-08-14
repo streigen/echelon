@@ -1,10 +1,28 @@
-import { Message } from "../app-state.slint";
+import { Message, MessageAttachment, AttachmentKind } from "../app-state.slint";
 
 export component MessageRow inherits VerticalLayout {
     in property <Message> msg;
     in property <bool> is-first: false;
 
+    // Slice of the scroll content, in the same coordinates as this row's `y`,
+    // whose previews are worth keeping decoded. Supplied by chat-main.
+    in property <length> keep-top;
+    in property <length> keep-bottom;
+
     callback reply-clicked();
+    // Attachment index within msg.attachments — chat-main.slint pairs this
+    // with msg.event-id to call UiState.open-lightbox.
+    callback attachment-clicked(int);
+    // Fires on entering/leaving the keep band, and once at construction.
+    // See `flush_preview_window` in lib.rs.
+    callback preview-window-changed(bool);
+
+    property <bool> in-keep-window: self.y + self.height >= keep-top && self.y <= keep-bottom;
+
+    changed in-keep-window => { root.preview-window-changed(in-keep-window); }
+    // Geometry isn't measured yet here, so this first report is a guess; the
+    // `changed` above corrects it once laid out, within Rust's debounce.
+    init => { root.preview-window-changed(in-keep-window); }
 
     padding-bottom: 24px;
     padding-left: 24px;
@@ -68,12 +86,52 @@ export component MessageRow inherits VerticalLayout {
 
                 Text { text: msg.text; color: rgba(255, 255, 255, 0.85); font-size: 15px; wrap: word-wrap; }
 
-                if msg.image : Rectangle {
-                    width: 200px;
-                    height: 120px;
-                    background: #c9ccd1;
+                for att[att-idx] in msg.attachments : Rectangle {
+                    // Mirrors `AttachmentKind::has_preview` on the Rust side.
+                    property <bool> previewable: att.kind == AttachmentKind.Image
+                        || att.kind == AttachmentKind.Sticker;
+                    // Sender-declared size when there is one, else a
+                    // placeholder box; capped so a huge image can't take the
+                    // whole row.
+                    property <bool> sized: att.width > 0 && att.height > 0;
+
+                    width: sized ? min(att.width * 1px, 320px) : 280px;
+                    height: sized ? self.width * att.height / att.width : 210px;
+                    background: #1b1e27;
                     border-radius: 8px;
-                    Text { text: "LET IT BURN"; color: #00050e; horizontal-alignment: center; vertical-alignment: center; }
+                    clip: true;
+
+                    if previewable && att.preview.width > 0 : Rectangle {
+                        width: 100%;
+                        height: 100%;
+
+                        Image {
+                            source: att.preview;
+                            width: 100%;
+                            height: 100%;
+                            image-fit: contain;
+                        }
+
+                        TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            mouse-cursor: pointer;
+                            clicked => { root.attachment-clicked(att-idx); }
+                        }
+                    }
+
+                    // Video/audio/file have no renderer yet: placeholder,
+                    // labelled with whatever the sender declared.
+                    if !(previewable && att.preview.width > 0) : Text {
+                        text: previewable
+                            ? "loading…"
+                            : (att.mimetype == "" ? "attachment" : att.mimetype);
+                        color: rgba(255, 255, 255, 0.55);
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%;
+                        height: 100%;
+                    }
                 }
             }
         }

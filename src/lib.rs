@@ -43,8 +43,279 @@ where
 }
 
 /// Wraps a `Vec<T>` into a `ModelRc<T>` backed by a fresh `VecModel`.
-fn to_model<T: Clone + 'static>(v: Vec<T>) -> slint::ModelRc<T> {
+pub(crate) fn to_model<T: Clone + 'static>(v: Vec<T>) -> slint::ModelRc<T> {
     std::rc::Rc::new(slint::VecModel::from(v)).into()
+}
+
+/// Convert a domain attachment into its slint generated FFI shape. The
+/// `preview` starts empty and is filled in later by [`spawn_image_fetch`].
+pub(crate) fn attachment_to_ui(a: &rooms::messages::Attachment) -> MessageAttachment {
+    use rooms::messages::AttachmentKind as Domain;
+    MessageAttachment {
+        kind: match a.kind {
+            Domain::Image => AttachmentKind::Image,
+            Domain::Video => AttachmentKind::Video,
+            Domain::Audio => AttachmentKind::Audio,
+            Domain::File => AttachmentKind::File,
+            Domain::Sticker => AttachmentKind::Sticker,
+        },
+        mimetype: a.mimetype.as_deref().unwrap_or_default().into(),
+        width: a.width.unwrap_or(0) as i32,
+        height: a.height.unwrap_or(0) as i32,
+        preview: slint::Image::default(),
+    }
+}
+
+/// Download and decode one attachment's raster preview off the UI thread,
+/// then patch it into the row with the matching `event_id`. If the fetch
+/// outlived a channel switch, the result is dropped instead.
+///
+/// # Arguments
+/// * `handle` - Runtime handle the download is spawned on.
+/// * `client_state` - The client state used to resolve the Matrix client.
+/// * `ui_handle` - Weak handle used to patch the result back into the UI.
+/// * `room_id` - Room the message belongs to, checked before patching.
+/// * `event_id` - Event whose row receives the preview.
+/// * `attachment_index` - Position of the attachment within that event.
+/// * `attachment` - The attachment to download.
+fn spawn_image_fetch(
+    handle: &tokio::runtime::Handle,
+    client_state: ClientState,
+    ui_handle: slint::Weak<AppWindow>,
+    room_id: String,
+    event_id: String,
+    attachment_index: usize,
+    attachment: rooms::messages::Attachment,
+) {
+    handle.spawn(async move {
+        let result = match commands::get_active_client(&client_state).await {
+            Ok(client) => {
+                commands::media::fetch_image(
+                    &client,
+                    &attachment,
+                    commands::media::ImageSize::Display,
+                )
+                .await
+            }
+            Err(e) => Err(e),
+        };
+        let _ = slint::invoke_from_event_loop(move || {
+            PREVIEW_WINDOW.with(|s| {
+                s.borrow_mut()
+                    .in_flight
+                    .remove(&(event_id.clone(), attachment_index))
+            });
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let state = ui.global::<UiState>();
+            if state.get_active_room_id() != room_id {
+                return;
+            }
+            let decoded = match result {
+                Ok(decoded) => decoded,
+                Err(e) => {
+                    eprintln!("Failed to fetch image: {e}");
+                    return;
+                }
+            };
+
+            // Patching the row's own attachments model in place is enough to
+            // repaint it. This is the same shared VecModel the row was built
+            // with.
+            let Some(row) = state.get_messages().iter().find(|r| r.event_id == event_id) else {
+                return;
+            };
+            if let Some(mut att) = row.attachments.row_data(attachment_index) {
+                // The decoded dimensions are the real ones. Sender declared
+                // sizes are often missing or wrong, and a mismatch renders
+                // the image squished.
+                att.width = decoded.width() as i32;
+                att.height = decoded.height() as i32;
+                att.preview = decoded.into_image();
+                row.attachments.set_row_data(attachment_index, att);
+            }
+        });
+    });
+}
+
+/// How long visibility reports are collected before being acted on. This is
+/// long enough that a burst collapses into a single pass over the settled
+/// values. A scroll gesture is one such burst, as is a page of rows all
+/// reporting their pre-layout guess when they are constructed.
+const PREVIEW_WINDOW_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// UI thread bookkeeping for which rows want their previews decoded. It is
+/// written by the `preview-window-changed` callback and drained by
+/// [`flush_preview_window`].
+#[derive(Default)]
+struct PreviewWindow {
+    /// Whether each reported event id is inside the keep band. This is a map
+    /// rather than a list so a row that flaps during a scroll leaves only its
+    /// final answer behind.
+    pending: std::collections::HashMap<String, bool>,
+    /// Fetches that are already running, so a row crossing the boundary
+    /// repeatedly does not stack up duplicate downloads.
+    in_flight: std::collections::HashSet<(String, usize)>,
+    flush_queued: bool,
+}
+
+thread_local! {
+    static PREVIEW_WINDOW: std::cell::RefCell<PreviewWindow> =
+        std::cell::RefCell::new(PreviewWindow::default());
+}
+
+/// Fetch previews for rows inside the keep band, and drop the decoded
+/// buffers of rows outside it. Eviction clears only `preview` and leaves
+/// `width` and `height` alone, so the row keeps its size. Freeing memory
+/// must never move content under the user's cursor.
+fn flush_preview_window(
+    handle: &tokio::runtime::Handle,
+    client_state: &ClientState,
+    ui_handle: &slint::Weak<AppWindow>,
+) {
+    let Some(ui) = ui_handle.upgrade() else {
+        return;
+    };
+    let pending = PREVIEW_WINDOW.with(|s| {
+        let mut state = s.borrow_mut();
+        state.flush_queued = false;
+        std::mem::take(&mut state.pending)
+    });
+
+    let state = ui.global::<UiState>();
+    let room_id = state.get_active_room_id().to_string();
+    // Rows missing from `pending` did not move. Pending ids missing from the
+    // model belong to a room that has since been switched away from.
+    for row in state.get_messages().iter() {
+        let event_id = row.event_id.to_string();
+        let Some(&inside) = pending.get(&event_id) else {
+            continue;
+        };
+        for i in 0..row.attachments.row_count() {
+            let Some(mut attachment) = row.attachments.row_data(i) else {
+                continue;
+            };
+            let loaded = attachment.preview.size().width > 0;
+            if !inside {
+                if loaded {
+                    attachment.preview = slint::Image::default();
+                    row.attachments.set_row_data(i, attachment);
+                }
+                continue;
+            }
+            // Kinds with no preview never load, so skip them before claiming
+            // an in flight slot that would only be released again.
+            let Some(source) = rooms::messages::get_cached_attachment(&event_id, i)
+                .filter(|a| !loaded && a.kind.has_preview())
+            else {
+                continue;
+            };
+            if PREVIEW_WINDOW.with(|s| s.borrow_mut().in_flight.insert((event_id.clone(), i))) {
+                spawn_image_fetch(
+                    handle,
+                    client_state.clone(),
+                    ui_handle.clone(),
+                    room_id.clone(),
+                    event_id.clone(),
+                    i,
+                    source,
+                );
+            }
+        }
+    }
+}
+
+/// Convert a page of messages into the UI's display shape, caching their
+/// attachments so the media source can be found again when the row is
+/// clicked or scrolled into view. Nothing is downloaded here, since fetching
+/// follows visibility instead.
+fn stored_messages_to_ui(messages: Vec<rooms::messages::StoredMessage>) -> Vec<Message> {
+    messages
+        .into_iter()
+        .map(|mut m| {
+            let event_id = m.event_id.to_string();
+            let attachments = std::mem::take(&mut m.attachments);
+            rooms::messages::cache_attachments(&event_id, &attachments);
+            let ui_attachments = attachments.iter().map(attachment_to_ui).collect();
+
+            Message {
+                user: m.sender.as_ref().into(),
+                time: format_time_of_day(m.origin_server_ts).into(),
+                text: if m.redacted {
+                    "[message deleted]".to_string()
+                } else {
+                    m.body
+                }
+                .into(),
+                repliedTo: "".into(),
+                event_id: event_id.into(),
+                attachments: to_model(ui_attachments),
+            }
+        })
+        .collect()
+}
+
+/// Fetch one page of a room's messages and install it in the UI.
+///
+/// # Arguments
+/// * `handle` - Runtime handle the fetch is spawned on.
+/// * `client_state` - The client state to fetch through.
+/// * `ui_handle` - Weak handle to the window that receives the page.
+/// * `room_id` - The room to fetch messages for.
+/// * `token` - `None` to replace the model when opening a channel, or the
+///   pagination token to prepend an older page when scrolling up.
+fn fetch_message_page(
+    handle: &tokio::runtime::Handle,
+    client_state: ClientState,
+    ui_handle: slint::Weak<AppWindow>,
+    room_id: String,
+    token: Option<String>,
+) {
+    handle.spawn(async move {
+        let result = match ruma::RoomId::parse(&room_id) {
+            Ok(parsed) => {
+                commands::messages::get_messages_from_room_paginated(
+                    client_state,
+                    parsed,
+                    token.clone(),
+                    50,
+                )
+                .await
+            }
+            Err(e) => Err(format!("Invalid room id '{room_id}': {e}")),
+        };
+
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let state = ui.global::<UiState>();
+            // Guard against a stale response. If the user switched channels
+            // while this fetch was in flight, dropping the result is better
+            // than clobbering whatever is now loading for the open channel.
+            if state.get_active_room_id() != room_id.as_str() {
+                return;
+            }
+            let prepend = token.is_some();
+            state.set_messages_loading(false);
+            state.set_loading_more(false);
+
+            match result {
+                Ok(paginated) => {
+                    let mut msgs = stored_messages_to_ui(paginated.messages);
+                    state.set_next_token(paginated.next_token.unwrap_or_default().into());
+                    if prepend {
+                        msgs.extend(state.get_messages().iter());
+                    }
+                    state.set_messages(to_model(msgs));
+                }
+                Err(e) => {
+                    eprintln!("Failed to fetch messages: {e}");
+                }
+            }
+        });
+    });
 }
 
 fn room_data_of(room: &matrix_sdk::Room) -> RoomData {
@@ -59,7 +330,7 @@ fn room_data_of(room: &matrix_sdk::Room) -> RoomData {
 }
 
 /// Converts a `get_space_hierarchy` tree into `(tab, categories)` pairs for the
-/// UI, one pair per *root* space only — subspaces are never their own tab.
+/// UI, one pair per root space only. Subspaces are never their own tab.
 /// Within a tab, a root's direct channels become a "CHANNELS" category and
 /// each (possibly nested) subspace becomes its own named category, giving a
 /// folder-like grouping without needing more than one level of UI nesting.
@@ -148,24 +419,6 @@ fn apply_space_categories(ui: &AppWindow, idx: usize) {
         .map(|tab| tab.name)
         .unwrap_or_default();
     state.set_active_space_name(space_name);
-}
-
-/// Converts a fetched, edit/redaction-resolved message into the UI's display shape.
-/// Takes `m` by value so the body string can move straight into `Message`
-/// instead of being cloned out of a borrowed `StoredMessage`.
-fn stored_message_to_ui(m: rooms::messages::StoredMessage) -> Message {
-    Message {
-        user: m.sender.as_ref().into(),
-        time: format_time_of_day(m.origin_server_ts).into(),
-        text: if m.redacted {
-            "[message deleted]".to_string()
-        } else {
-            m.body
-        }
-        .into(),
-        repliedTo: "".into(),
-        image: false,
-    }
 }
 
 /// Formats a millisecond Matrix timestamp (always UTC per the Matrix spec) as
@@ -292,7 +545,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Space tab clicked — swap in that space's cached channel list, no backend call,
+    // Space tab clicked. Swap in that space's cached channel list, no backend call,
     // then auto-open the space's first channel (first non-empty category's first room)
     // by driving the same callback a click on it would fire.
     ui.global::<UiState>().on_space_clicked({
@@ -315,14 +568,12 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Channel clicked — fetch its messages via commands::messages and show them.
+    // Channel clicked. Fetch its messages via commands::messages and show them.
     ui.global::<UiState>().on_channel_clicked({
         let state = client_state.clone();
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
         move |room_id, room_name| {
-            let state = state.clone();
-            let ui_handle = ui_handle.clone();
             let room_id_str = room_id.to_string();
 
             if let Some(ui) = ui_handle.upgrade() {
@@ -333,63 +584,17 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 ui.global::<UiState>().set_loading_more(false);
             }
 
-            handle.spawn(async move {
-                let result = match ruma::RoomId::parse(&room_id_str) {
-                    Ok(parsed) => {
-                        commands::messages::get_messages_from_room_paginated(
-                            state, parsed, None, 50,
-                        )
-                        .await
-                    }
-                    Err(e) => Err(format!("Invalid room id '{room_id_str}': {e}")),
-                };
-
-                let _ = slint::invoke_from_event_loop(move || {
-                    let Some(ui) = ui_handle.upgrade() else {
-                        return;
-                    };
-                    let state = ui.global::<UiState>();
-                    // Guard against a stale response: if the user switched channels again
-                    // while this fetch was in flight, active-room-id no longer matches the
-                    // room this fetch was for — drop the result instead of clobbering
-                    // whatever's now loading/loaded for the newly opened channel.
-                    if state.get_active_room_id() != room_id_str.as_str() {
-                        return;
-                    }
-                    state.set_messages_loading(false);
-                    match result {
-                        Ok(paginated) => {
-                            let msgs: Vec<Message> = paginated
-                                .messages
-                                .into_iter()
-                                .map(stored_message_to_ui)
-                                .collect();
-                            state
-                                .set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
-                            state.set_next_token(
-                                paginated.next_token.unwrap_or_default().into(),
-                            );
-                            state.set_loading_more(false);
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to fetch messages: {e}");
-                        }
-                    }
-                });
-            });
+            fetch_message_page(&handle, state.clone(), ui_handle.clone(), room_id_str, None);
         }
     });
 
-    // User scrolled near the top of the currently open room — fetch the next
-    // (older) page using the token from the previous fetch and prepend it.
+    // User scrolled near the top of the currently open room. Fetch the next
+    // and older page using the token from the previous fetch, then prepend it.
     ui.global::<UiState>().on_load_older_messages({
         let state = client_state.clone();
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
         move || {
-            let state = state.clone();
-            let ui_handle = ui_handle.clone();
-
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
@@ -401,52 +606,13 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 return;
             }
 
-            handle.spawn(async move {
-                let result = match ruma::RoomId::parse(&room_id_str) {
-                    Ok(parsed) => {
-                        commands::messages::get_messages_from_room_paginated(
-                            state,
-                            parsed,
-                            Some(token),
-                            50,
-                        )
-                        .await
-                    }
-                    Err(e) => Err(format!("Invalid room id '{room_id_str}': {e}")),
-                };
-
-                let _ = slint::invoke_from_event_loop(move || {
-                    let Some(ui) = ui_handle.upgrade() else {
-                        return;
-                    };
-                    let state = ui.global::<UiState>();
-                    // Guard against a stale response: the user may have switched
-                    // channels while this older-page fetch was in flight.
-                    if state.get_active_room_id() != room_id_str.as_str() {
-                        return;
-                    }
-                    state.set_loading_more(false);
-                    match result {
-                        Ok(paginated) => {
-                            state.set_next_token(
-                                paginated.next_token.unwrap_or_default().into(),
-                            );
-                            let mut older: Vec<Message> = paginated
-                                .messages
-                                .into_iter()
-                                .map(stored_message_to_ui)
-                                .collect();
-                            older.extend(state.get_messages().iter());
-                            state.set_messages(
-                                std::rc::Rc::new(slint::VecModel::from(older)).into(),
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to fetch older messages: {e}");
-                        }
-                    }
-                });
-            });
+            fetch_message_page(
+                &handle,
+                state.clone(),
+                ui_handle.clone(),
+                room_id_str,
+                Some(token),
+            );
         }
     });
 
@@ -456,7 +622,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
     // fetch next time that channel is opened).
     ui.on_matrix_message({
         let ui_handle = ui_handle.clone();
-        move |sender, room_id, body, _event_id, time| {
+        move |sender, room_id, body, event_id, time, attachments| {
             if let Some(ui) = ui_handle.upgrade() {
                 let state = ui.global::<UiState>();
                 if state.get_active_room_id() != room_id {
@@ -467,7 +633,8 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     time,
                     text: body,
                     repliedTo: slint::SharedString::from(""),
-                    image: false,
+                    event_id,
+                    attachments,
                 };
                 let mut msgs: Vec<Message> = state.get_messages().iter().collect();
                 msgs.push(new_msg);
@@ -476,7 +643,8 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Send message callback — no backend send command yet, so this is UI-local only.
+    // Send message callback. There is no backend send command yet, so this is
+    // UI local only.
     ui.global::<UiState>().on_send_message({
         let ui_handle = ui_handle.clone();
         move |msg_text| {
@@ -486,12 +654,125 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     time: slint::SharedString::from("just now"),
                     text: msg_text,
                     repliedTo: slint::SharedString::from(""),
-                    image: false,
+                    event_id: slint::SharedString::from(""),
+                    attachments: to_model(Vec::new()),
                 };
                 let global = ui.global::<UiState>();
                 let mut msgs: Vec<Message> = global.get_messages().iter().collect();
                 msgs.push(new_msg);
                 global.set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
+            }
+        }
+    });
+
+    // Click to enlarge. The lightbox opens immediately at the cached
+    // attachment's known size with a loading state, then swaps in the full
+    // resolution image once the fetch lands.
+    ui.global::<UiState>().on_open_lightbox({
+        let state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        move |event_id, attachment_index| {
+            let Some(attachment) =
+                rooms::messages::get_cached_attachment(&event_id, attachment_index as usize)
+            else {
+                return;
+            };
+            // Enlarging only means something for kinds that decode to a
+            // raster. A click on a file or audio row must not try to decode
+            // that file as an image.
+            if !attachment.kind.has_preview() {
+                return;
+            }
+
+            if let Some(ui) = ui_handle.upgrade() {
+                let global = ui.global::<UiState>();
+                global.set_lightbox_visible(true);
+                global.set_lightbox_loading(true);
+                global.set_lightbox_image(slint::Image::default());
+                global.set_lightbox_width(attachment.width.unwrap_or(0) as i32);
+                global.set_lightbox_height(attachment.height.unwrap_or(0) as i32);
+            }
+
+            let state = state.clone();
+            let ui_handle = ui_handle.clone();
+            handle.spawn(async move {
+                let result = match commands::get_active_client(&state).await {
+                    Ok(client) => {
+                        commands::media::fetch_image(
+                            &client,
+                            &attachment,
+                            commands::media::ImageSize::Full,
+                        )
+                        .await
+                    }
+                    Err(e) => Err(e),
+                };
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    let global = ui.global::<UiState>();
+                    // The user may have closed the lightbox, or opened a
+                    // different one, by the time this lands.
+                    if !global.get_lightbox_visible() {
+                        return;
+                    }
+                    match result {
+                        Ok(decoded) => {
+                            global.set_lightbox_width(decoded.width() as i32);
+                            global.set_lightbox_height(decoded.height() as i32);
+                            global.set_lightbox_image(decoded.into_image());
+                            global.set_lightbox_loading(false);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to fetch full-resolution image: {e}");
+                            global.set_lightbox_visible(false);
+                        }
+                    }
+                });
+            });
+        }
+    });
+
+    // Rows report when they cross the preview keep band, and once when they
+    // are constructed. Acting a beat later makes a scroll gesture cost one
+    // pass instead of one per row per frame, and it keeps model mutation out
+    // of the property change handler that produced the report.
+    ui.global::<UiState>().on_preview_window_changed({
+        let state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        move |event_id, inside| {
+            let queue_flush = PREVIEW_WINDOW.with(|s| {
+                let mut window = s.borrow_mut();
+                window.pending.insert(event_id.to_string(), inside);
+                let queue = !window.flush_queued;
+                window.flush_queued = true;
+                queue
+            });
+            if !queue_flush {
+                return;
+            }
+            let state = state.clone();
+            let handle = handle.clone();
+            let ui_handle = ui_handle.clone();
+            slint::Timer::single_shot(PREVIEW_WINDOW_DEBOUNCE, move || {
+                flush_preview_window(&handle, &state, &ui_handle);
+            });
+        }
+    });
+
+    ui.global::<UiState>().on_close_lightbox({
+        let ui_handle = ui_handle.clone();
+        move || {
+            if let Some(ui) = ui_handle.upgrade() {
+                let global = ui.global::<UiState>();
+                global.set_lightbox_visible(false);
+                // Drop the held image now, rather than leaving a full
+                // resolution decode on the model until the next open
+                // overwrites it.
+                global.set_lightbox_image(slint::Image::default());
             }
         }
     });

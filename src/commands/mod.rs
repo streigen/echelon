@@ -6,6 +6,7 @@ pub mod account;
 pub mod auth;
 pub mod debug;
 pub mod dm;
+pub mod media;
 pub mod messages;
 pub mod spaces;
 

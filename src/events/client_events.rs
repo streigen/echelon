@@ -1,20 +1,12 @@
 use matrix_sdk::Room;
 use ruma::events::room::message::SyncRoomMessageEvent;
-use serde::Serialize;
+use slint::ComponentHandle;
 use tracing::{error, trace};
 
-use crate::{AppWindow, format_time_of_day};
+use crate::rooms::messages::{attachment_of, cache_attachments};
+use crate::{AppWindow, UiState, attachment_to_ui, format_time_of_day, to_model};
 
 pub struct ClientEvents;
-
-#[derive(Clone, Serialize)]
-struct MessagePayload {
-    sender: String,
-    room_id: String,
-    body: String,
-    event_id: String,
-    time: String,
-}
 
 impl ClientEvents {
     pub fn register_events(client: &matrix_sdk::Client, ui_handle: slint::Weak<AppWindow>) {
@@ -34,14 +26,16 @@ impl ClientEvents {
         trace!("Received message: {:?}", event);
 
         // Get the content based on event type
-        let (sender, body, event_id, origin_server_ts) = match event {
+        let (sender, body, event_id, origin_server_ts, attachment) = match event {
             SyncRoomMessageEvent::Original(original) => {
                 let body = original.content.body().to_string();
+                let attachment = attachment_of(&original.content.msgtype);
                 (
                     original.sender.to_string(),
                     body,
                     original.event_id.to_string(),
                     original.origin_server_ts,
+                    attachment,
                 )
             }
             SyncRoomMessageEvent::Redacted(redacted) => (
@@ -49,28 +43,48 @@ impl ClientEvents {
                 "[Redacted message]".to_string(),
                 redacted.event_id.to_string(),
                 redacted.origin_server_ts,
+                None,
             ),
         };
 
-        // Extract message details. Time is formatted as HH:MM
-        let payload = MessagePayload {
-            sender,
-            room_id: room.room_id().to_string(),
-            body,
-            event_id,
-            time: format_time_of_day(origin_server_ts.0.into()),
-        };
+        let room_id = room.room_id().to_string();
+        let time = format_time_of_day(origin_server_ts.0.into());
 
         // Emit event to frontend
         if let Err(e) = slint::invoke_from_event_loop(move || {
-            if let Some(ui) = ui_handle.upgrade() {
-                ui.invoke_matrix_message(
-                    payload.sender.into(),
-                    payload.room_id.into(),
-                    payload.body.into(),
-                    payload.event_id.into(),
-                    payload.time.into(),
-                );
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            // Messages for other rooms are dropped anyway, since they are
+            // refetched when the channel is opened. Bail out before caching
+            // anything, otherwise a busy account pays for every image in
+            // every joined room.
+            if ui.global::<UiState>().get_active_room_id() != room_id.as_str() {
+                return;
+            }
+
+            ui.invoke_matrix_message(
+                sender.into(),
+                room_id.clone().into(),
+                body.into(),
+                event_id.clone().into(),
+                time.into(),
+                to_model(
+                    attachment
+                        .as_ref()
+                        .map(attachment_to_ui)
+                        .into_iter()
+                        .collect(),
+                ),
+            );
+
+            // `ATTACHMENT_CACHE` is a `thread_local!`, so it has to be
+            // written from the UI thread that reads it, not from this
+            // handler's tokio worker. Nothing is downloaded here. The new row
+            // reports its own visibility when it is constructed, and the
+            // preview fetch follows from that like it does for any row.
+            if let Some(attachment) = attachment {
+                cache_attachments(&event_id, std::slice::from_ref(&attachment));
             }
         }) {
             error!("Failed to emit message event: {}", e);

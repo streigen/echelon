@@ -4,7 +4,8 @@ import { CustomButton } from "./components/button.slint";
 import { OAuthIcon } from "./components/oauth-icon.slint";
 import { ChatPage } from "./chat/chat-page.slint";
 import { DebugPage } from "./debug/debug-page.slint";
-import { UiState, Message, DebugCommand } from "./app-state.slint";
+import { Lightbox } from "./components/lightbox.slint";
+import { UiState, Message, MessageAttachment, DebugCommand } from "./app-state.slint";
 export { UiState }
 
 export component AppWindow inherits Window {
@@ -25,7 +26,7 @@ export component AppWindow inherits Window {
     callback oauth_action(string, string);
     callback open_chat();
     callback forgot_password();
-    callback matrix-message(string, string, string, string, string);
+    callback matrix-message(string, string, string, string, string, [MessageAttachment]);
     in-out property <string> result: "";
 
     // Generic debug console (dev-only): command registry is populated from Rust
@@ -203,4 +204,7 @@ export component AppWindow inherits Window {
         back => { root.active-page = 0; }
         run(cmd, a0, a1, a2, a3) => { root.debug-run-command(cmd, a0, a1, a2, a3); }
     }
+
+    // Declared last so it paints on top of whichever page is active.
+    if UiState.lightbox-visible : Lightbox {}
 }

@@ -3,12 +3,40 @@
 // eliminating deep two-way binding chains that cause
 // "long callback/instantiation chain" warnings.
 
+// Mirrors `rooms::messages::AttachmentKind`, converted in lib.rs.
+export enum AttachmentKind {
+    Image,
+    Video,
+    Audio,
+    File,
+    Sticker,
+}
+
+// One media attachment, whatever its kind. Raster kinds share
+// `preview`/`loaded`; the rest carry enough metadata to render their own
+// row without this struct needing per-kind fields.
+export struct MessageAttachment {
+    kind: AttachmentKind,
+    // e.g. "audio/mpeg". Empty when the sender didn't declare one.
+    mimetype: string,
+    // Natural pixel size from the event (0 if absent), so the box can be
+    // sized before the bytes land and nothing jumps afterwards.
+    width: int,
+    height: int,
+    // Empty until the fetch patches it in; a zero-sized `preview` on a
+    // previewable kind is what "still loading" means.
+    preview: image,
+}
+
 export struct Message {
     user: string,
     time: string,
     text: string,
     repliedTo: string,
-    image: bool,
+    // Identifies which message an in-flight attachment fetch belongs to,
+    // so its result can be patched into the right row once it lands.
+    event-id: string,
+    attachments: [MessageAttachment],
 }
 
 // One channel/room, as shown in the sidebar. `id` is the Matrix room id
@@ -79,9 +107,23 @@ export global UiState {
     in-out property <string> active-space-name: "";
     in-out property <[CategoryData]> categories: [];
 
+    // Click-to-enlarge lightbox (see ui/components/lightbox.slint). Opens at
+    // the attachment's declared size with a loading state; lib.rs patches in
+    // the full-resolution image once it lands.
+    in-out property <bool> lightbox-visible: false;
+    in-out property <bool> lightbox-loading: false;
+    in-out property <image> lightbox-image;
+    in-out property <int> lightbox-width: 0;
+    in-out property <int> lightbox-height: 0;
+
     // Callbacks to Rust backend
     callback space-clicked(int);
     callback channel-clicked(string, string); // room id, room name
     callback send-message(string);
     callback load-older-messages();
+    callback open-lightbox(string, int); // event id, attachment index
+    callback close-lightbox();
+    // event id, whether the row is in the preview keep band. Drives both
+    // fetching and eviction; see chat-main.slint's preview-keep-*.
+    callback preview-window-changed(string, bool);
 }

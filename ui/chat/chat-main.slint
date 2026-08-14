@@ -28,6 +28,17 @@ export component ChatMain inherits Rectangle {
     property <length> pre-load-viewport-y: 0px;
     property <bool> is-loading-more: UiState.loading-more;
 
+    // How far beyond the visible area a preview stays decoded, in viewport
+    // heights. Rows outside report out and Rust drops their pixel buffers,
+    // refetching if they scroll back in.
+    property <float> preview-keep-pages: 2;
+    // The band in scroll-content coordinates, the space a row's own `y` is
+    // in. `viewport-y` is negative as you scroll down.
+    property <length> preview-keep-top:
+        -scroll-view.viewport-y - scroll-view.visible-height * preview-keep-pages;
+    property <length> preview-keep-bottom: -scroll-view.viewport-y
+        + scroll-view.visible-height * (1 + preview-keep-pages);
+
     function is-near-bottom() -> bool {
         return scroll-view.viewport-height + scroll-view.viewport-y
             <= scroll-view.visible-height + near-bottom-threshold;
@@ -95,6 +106,12 @@ export component ChatMain inherits Rectangle {
                     for msg[idx] in UiState.messages : MessageRow {
                         msg: msg;
                         is-first: idx == 0;
+                        keep-top: preview-keep-top;
+                        keep-bottom: preview-keep-bottom;
+                        attachment-clicked(att-idx) => { UiState.open-lightbox(msg.event-id, att-idx); }
+                        preview-window-changed(inside) => {
+                            UiState.preview-window-changed(msg.event-id, inside);
+                        }
                     }
                 }
             }

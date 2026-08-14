@@ -1,0 +1,98 @@
+import { UiState } from "../app-state.slint";
+
+// Discord-style click-to-enlarge overlay. Only ever instantiated while
+// `UiState.lightbox-visible` is true (see `if` in app-window.slint), so
+// `init` firing once on construction is exactly "opened".
+export component Lightbox inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+
+    property <bool> has-size: UiState.lightbox-width > 0 && UiState.lightbox-height > 0;
+    // Largest factor that fits the image in 90% of the window without
+    // upscaling it — whichever axis is tighter wins, which is what keeps
+    // the aspect ratio.
+    property <float> fit: min(1.0, min(
+        root.width * 0.9 / (UiState.lightbox-width * 1px),
+        root.height * 0.9 / (UiState.lightbox-height * 1px)));
+
+    focus-scope := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                UiState.close-lightbox();
+                accept
+            } else {
+                reject
+            }
+        }
+    }
+
+    // Backdrop — click anywhere outside the image to close.
+    backdrop-ta := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { UiState.close-lightbox(); }
+    }
+
+    if has-size : Rectangle {
+        width: UiState.lightbox-width * 1px * fit;
+        height: UiState.lightbox-height * 1px * fit;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+
+        // Swallow clicks on the image itself so they don't fall through
+        // to the backdrop and close the lightbox.
+        TouchArea { width: 100%; height: 100%; }
+
+        Image {
+            source: UiState.lightbox-image;
+            width: 100%;
+            height: 100%;
+            image-fit: contain;
+        }
+
+        if UiState.lightbox-loading : Rectangle {
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.35);
+            Text {
+                text: "loading…";
+                color: white;
+                font-size: 16px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: 100%;
+                height: 100%;
+            }
+        }
+    }
+
+    // Close button, top-right.
+    close-btn := Rectangle {
+        x: parent.width - 56px;
+        y: 16px;
+        width: 40px;
+        height: 40px;
+        border-radius: 20px;
+        background: close-ta.has-hover ? rgba(255, 255, 255, 0.15) : transparent;
+
+        Text {
+            text: "✕";
+            color: white;
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        close-ta := TouchArea {
+            width: 100%;
+            height: 100%;
+            mouse-cursor: pointer;
+            clicked => { UiState.close-lightbox(); }
+        }
+    }
+
+    init => { focus-scope.focus(); }
+}
