@@ -1,6 +1,6 @@
 import "../../static/JetBrainsMono-Regular.ttf";
 import { UiState } from "../app-state.slint";
-import { ScrollView } from "std-widgets.slint";
+import { ListView } from "std-widgets.slint";
 import { ChatHeader } from "./chat-header.slint";
 import { ChatComposer } from "./chat-composer.slint";
 import { MessageRow } from "./message-row.slint";
@@ -86,10 +86,14 @@ export component ChatMain inherits Rectangle {
         ChatHeader {}
 
         Rectangle {
-            scroll-view := ScrollView {
+            // A ListView rather than a ScrollView holding a layout, so only
+            // the rows near the viewport are built. A plain `for` materializes
+            // every row, and nothing trims the model, so a long scrollback
+            // otherwise keeps thousands of live component trees and their
+            // shaped text around.
+            scroll-view := ListView {
                 height: 100%;
                 width: 100%;
-                viewport-width: self.width;
 
                 changed viewport-y => {
                     near-bottom = is-near-bottom();
@@ -101,18 +105,15 @@ export component ChatMain inherits Rectangle {
                     }
                 }
 
-                VerticalLayout {
-                    alignment: start;
-                    for msg[idx] in UiState.messages : MessageRow {
-                        msg: msg;
-                        is-first: idx == 0;
-                        keep-top: preview-keep-top;
-                        keep-bottom: preview-keep-bottom;
-                        attachment-clicked() => { UiState.open-lightbox(msg.event-id); }
-                        attachment-save-clicked() => { UiState.save-attachment(msg.event-id); }
-                        preview-window-changed(inside) => {
-                            UiState.preview-window-changed(msg.event-id, inside);
-                        }
+                for msg[idx] in UiState.messages : MessageRow {
+                    msg: msg;
+                    is-first: idx == 0;
+                    keep-top: preview-keep-top;
+                    keep-bottom: preview-keep-bottom;
+                    attachment-clicked() => { UiState.open-lightbox(msg.event-id); }
+                    attachment-save-clicked() => { UiState.save-attachment(msg.event-id); }
+                    preview-window-changed(inside) => {
+                        UiState.preview-window-changed(msg.event-id, inside);
                     }
                 }
             }

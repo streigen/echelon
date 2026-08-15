@@ -149,20 +149,22 @@ fn spawn_image_fetch(
             // Slint updates the existing repeater item in place rather than
             // rebuilding it, so the row's `init` does not fire again and no
             // spurious visibility report follows from patching a preview in.
-            let messages = state.get_messages();
-            let Some(index) = messages.iter().position(|r| r.event_id == event_id) else {
-                return;
-            };
-            let Some(mut row) = messages.row_data(index) else {
-                return;
-            };
-            // The decoded dimensions are the real ones. Sender declared sizes
-            // are often missing or wrong, and a mismatch renders the image
-            // squished.
-            row.attachment.width = decoded.width() as i32;
-            row.attachment.height = decoded.height() as i32;
-            row.attachment.preview = decoded.into_image();
-            messages.set_row_data(index, row);
+            MESSAGES.with(|messages| {
+                let Some(index) = messages.iter().position(|r| r.event_id == event_id) else {
+                    return;
+                };
+                let Some(mut row) = messages.row_data(index) else {
+                    return;
+                };
+                // The decoded dimensions are the real ones. Sender declared
+                // sizes are often missing or wrong, and a mismatch renders the
+                // image squished.
+                row.attachment.width = decoded.width() as i32;
+                row.attachment.height = decoded.height() as i32;
+                row.attachment.preview = decoded.into_image();
+                messages.set_row_data(index, row);
+                note_preview_loaded(messages, event_id);
+            });
         });
     });
 }
@@ -172,6 +174,17 @@ fn spawn_image_fetch(
 /// values. A scroll gesture is one such burst, as is a page of rows all
 /// reporting their pre-layout guess when they are constructed.
 const PREVIEW_WINDOW_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Hard ceiling on how many rows hold a decoded preview at once, and with it
+/// on the process's pixel memory: a display preview is at most 640x640 RGBA,
+/// so this caps them near 38 MB.
+///
+/// The keep band is the first line of defence and evicts on scroll, but it
+/// only fires for rows that exist to report themselves. Under a virtualized
+/// list a row is destroyed while still inside the band, so it never reports
+/// out. This cap is what bounds previews in that case, since it is driven by
+/// loads rather than by visibility.
+const MAX_LOADED_PREVIEWS: usize = 24;
 
 /// UI thread bookkeeping for which rows want their previews decoded. It is
 /// written by the `preview-window-changed` callback and drained by
@@ -185,12 +198,64 @@ struct PreviewWindow {
     /// Event ids whose fetch is already running, so a row crossing the
     /// boundary repeatedly does not stack up duplicate downloads.
     in_flight: std::collections::HashSet<String>,
+    /// Event ids whose row currently holds a decoded preview, least recently
+    /// loaded first. Kept in step with both eviction paths, so its length is
+    /// the real count of live pixel buffers.
+    loaded: std::collections::VecDeque<String>,
     flush_queued: bool,
 }
 
 thread_local! {
     static PREVIEW_WINDOW: std::cell::RefCell<PreviewWindow> =
         std::cell::RefCell::new(PreviewWindow::default());
+
+    /// The one model behind `UiState.messages`, installed once at startup and
+    /// mutated in place from then on.
+    ///
+    /// Replacing the model instead makes Slint tear down and rebuild every row
+    /// in the repeater, which on a long scrollback means thousands of
+    /// components destroyed and recreated for a single arriving message. It is
+    /// a `thread_local` because `Rc` is not `Send`, and every touch happens on
+    /// the UI thread.
+    static MESSAGES: std::rc::Rc<slint::VecModel<Message>> =
+        std::rc::Rc::new(slint::VecModel::from(Vec::new()));
+}
+
+/// Drop the decoded preview held by `event_id`'s row, if it has one. Clears
+/// only `preview` and leaves `width`/`height` alone, so the row keeps its size
+/// and freeing memory never moves content under the user's cursor.
+fn clear_preview_row(messages: &slint::VecModel<Message>, event_id: &str) {
+    let Some(index) = messages.iter().position(|r| r.event_id == event_id) else {
+        return;
+    };
+    let Some(mut row) = messages.row_data(index) else {
+        return;
+    };
+    if row.attachment.preview.size().width == 0 {
+        return;
+    }
+    row.attachment.preview = slint::Image::default();
+    messages.set_row_data(index, row);
+}
+
+/// Record that `event_id`'s row just had a preview decoded into it, and evict
+/// the oldest previews if that puts the count over [`MAX_LOADED_PREVIEWS`].
+fn note_preview_loaded(messages: &slint::VecModel<Message>, event_id: String) {
+    // The borrow is released before any eviction runs, so `clear_preview_row`
+    // is never called with `PREVIEW_WINDOW` already borrowed.
+    let evicted = PREVIEW_WINDOW.with(|s| {
+        let mut window = s.borrow_mut();
+        // A row can be decoded again after a band eviction, so drop any older
+        // entry rather than letting the same id sit in the queue twice.
+        window.loaded.retain(|id| id != &event_id);
+        window.loaded.push_back(event_id);
+
+        let overflow = window.loaded.len().saturating_sub(MAX_LOADED_PREVIEWS);
+        window.loaded.drain(..overflow).collect::<Vec<_>>()
+    });
+    for id in evicted {
+        clear_preview_row(messages, &id);
+    }
 }
 
 /// How long a toast stays up before clearing itself.
@@ -258,42 +323,46 @@ fn flush_preview_window(
     };
     // Rows missing from `pending` did not move. Pending ids missing from the
     // model belong to a room that has since been switched away from.
-    let messages = state.get_messages();
-    for (index, mut row) in messages.iter().enumerate() {
-        let event_id = row.event_id.to_string();
-        let Some(&inside) = pending.get(&event_id) else {
-            continue;
-        };
-        let loaded = row.attachment.preview.size().width > 0;
-        if !inside {
-            if loaded {
-                row.attachment.preview = slint::Image::default();
-                messages.set_row_data(index, row);
+    MESSAGES.with(|messages| {
+        for (index, mut row) in messages.iter().enumerate() {
+            let event_id = row.event_id.to_string();
+            let Some(&inside) = pending.get(&event_id) else {
+                continue;
+            };
+            let loaded = row.attachment.preview.size().width > 0;
+            if !inside {
+                if loaded {
+                    row.attachment.preview = slint::Image::default();
+                    messages.set_row_data(index, row);
+                    // Dropped here rather than left to age out, so the queue's
+                    // length keeps matching the number of live pixel buffers.
+                    PREVIEW_WINDOW.with(|s| s.borrow_mut().loaded.retain(|id| id != &event_id));
+                }
+                continue;
             }
-            continue;
+            // Kinds with no preview never load, so skip them before claiming an
+            // in flight slot that would only be released again. Borrowed rather
+            // than `EventId::parse`, which would allocate an owned id just to
+            // probe the map and drop it again.
+            let Some(source) = <&EventId>::try_from(event_id.as_str())
+                .ok()
+                .and_then(|parsed| rooms::messages::get_cached_attachment(parsed_room_id, parsed))
+                .filter(|a| !loaded && a.kind.has_preview())
+            else {
+                continue;
+            };
+            if PREVIEW_WINDOW.with(|s| s.borrow_mut().in_flight.insert(event_id.clone())) {
+                spawn_image_fetch(
+                    handle,
+                    client_state.clone(),
+                    ui_handle.clone(),
+                    room_id.clone(),
+                    event_id.clone(),
+                    source,
+                );
+            }
         }
-        // Kinds with no preview never load, so skip them before claiming an
-        // in flight slot that would only be released again. Borrowed rather
-        // than `EventId::parse`, which would allocate an owned id just to
-        // probe the map and drop it again.
-        let Some(source) = <&EventId>::try_from(event_id.as_str())
-            .ok()
-            .and_then(|parsed| rooms::messages::get_cached_attachment(parsed_room_id, parsed))
-            .filter(|a| !loaded && a.kind.has_preview())
-        else {
-            continue;
-        };
-        if PREVIEW_WINDOW.with(|s| s.borrow_mut().in_flight.insert(event_id.clone())) {
-            spawn_image_fetch(
-                handle,
-                client_state.clone(),
-                ui_handle.clone(),
-                room_id.clone(),
-                event_id.clone(),
-                source,
-            );
-        }
-    }
+    });
 }
 
 /// Convert a page of messages into the UI's display shape, caching their
@@ -393,16 +462,26 @@ fn fetch_message_page(
                     let Ok(parsed_room_id) = <&RoomId>::try_from(room_id.as_str()) else {
                         return;
                     };
-                    let mut msgs = stored_messages_to_ui(
+                    let msgs = stored_messages_to_ui(
                         parsed_room_id,
                         paginated.messages,
                         &paginated.display_names,
                     );
                     state.set_next_token(paginated.next_token.unwrap_or_default().into());
-                    if prepend {
-                        msgs.extend(state.get_messages().iter());
-                    }
-                    state.set_messages(to_model(msgs));
+                    MESSAGES.with(|messages| {
+                        if prepend {
+                            // Inserted one at a time, back to front, so the
+                            // rows already on screen keep their components and
+                            // their decoded previews. Rebuilding the model
+                            // instead would throw away the whole scrollback to
+                            // add 50 rows to the top of it.
+                            for msg in msgs.into_iter().rev() {
+                                messages.insert(0, msg);
+                            }
+                        } else {
+                            messages.set_vec(msgs);
+                        }
+                    });
                 }
                 Err(e) => {
                     eprintln!("Failed to fetch messages: {e}");
@@ -568,6 +647,12 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
     let ui = AppWindow::new()?;
     let ui_handle = ui.as_weak();
 
+    // Installed once. Nothing calls `set_messages` after this, so the model
+    // behind `UiState.messages` stays the same object for the process's life
+    // and every update is a mutation of it.
+    ui.global::<UiState>()
+        .set_messages(MESSAGES.with(|messages| messages.clone().into()));
+
     // Setup client state
     let client = ClientHandler::new(app_state.clone(), ui_handle.clone()).await?;
     let client_state: ClientState = Arc::new(tokio::sync::RwLock::new(Some(client)));
@@ -684,6 +769,17 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
+                // The rows of the room being left are about to be replaced
+                // wholesale by the incoming page, so every preview they hold
+                // goes with them. Their queue entries would otherwise sit
+                // there claiming buffers that no longer exist, and evicting
+                // them later would clear rows belonging to the new room.
+                PREVIEW_WINDOW.with(|s| {
+                    let mut window = s.borrow_mut();
+                    window.loaded.clear();
+                    window.pending.clear();
+                });
+
                 ui.global::<UiState>().set_active_room(room_name);
                 ui.global::<UiState>().set_active_room_id(room_id);
                 ui.global::<UiState>().set_messages_loading(true);
@@ -743,9 +839,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     event_id,
                     attachment,
                 };
-                let mut msgs: Vec<Message> = state.get_messages().iter().collect();
-                msgs.push(new_msg);
-                state.set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
+                MESSAGES.with(|messages| messages.push(new_msg));
             }
         }
     });
@@ -753,22 +847,16 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
     // Send message callback. There is no backend send command yet, so this is
     // UI local only.
     ui.global::<UiState>().on_send_message({
-        let ui_handle = ui_handle.clone();
         move |msg_text| {
-            if let Some(ui) = ui_handle.upgrade() {
-                let new_msg = Message {
-                    user: slint::SharedString::from("me"),
-                    time: slint::SharedString::from("just now"),
-                    text: msg_text,
-                    repliedTo: slint::SharedString::from(""),
-                    event_id: slint::SharedString::from(""),
-                    attachment: attachment_to_ui(None),
-                };
-                let global = ui.global::<UiState>();
-                let mut msgs: Vec<Message> = global.get_messages().iter().collect();
-                msgs.push(new_msg);
-                global.set_messages(std::rc::Rc::new(slint::VecModel::from(msgs)).into());
-            }
+            let new_msg = Message {
+                user: slint::SharedString::from("me"),
+                time: slint::SharedString::from("just now"),
+                text: msg_text,
+                repliedTo: slint::SharedString::from(""),
+                event_id: slint::SharedString::from(""),
+                attachment: attachment_to_ui(None),
+            };
+            MESSAGES.with(|messages| messages.push(new_msg));
         }
     });
 
