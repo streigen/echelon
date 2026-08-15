@@ -1,0 +1,89 @@
+use std::collections::{HashMap, HashSet};
+
+use matrix_sdk::Room;
+use ruma::{OwnedUserId, UserId};
+use tracing::warn;
+
+/// The name a member goes by in a room, or `None` when the room's state has no member event for
+/// them. Reads only what is already in the store, so it never hits the network.
+///
+/// A member who set no display name falls back to the localpart of their user id, and a name shared
+/// with another member of the room is suffixed with the user id, as the spec requires, so two people
+/// both calling themselves "alice" stay apart.
+///
+/// # Arguments
+/// * `room` - The room whose member state carries the name.
+/// * `user_id` - The member to resolve.
+async fn stored_name(room: &Room, user_id: &UserId) -> Option<String> {
+    match room.get_member_no_sync(user_id).await {
+        Ok(Some(member)) if member.name_ambiguous() => {
+            Some(format!("{} ({})", member.name(), member.user_id()))
+        }
+        Ok(Some(member)) => Some(member.name().to_owned()),
+        Ok(None) => None,
+        Err(e) => {
+            warn!("Failed to resolve display name for {user_id}: {e}");
+            None
+        }
+    }
+}
+
+/// The name to show for a single room member, falling back to their user id when the room has no
+/// member event for them. That fallback is what the UI showed for every sender before names were
+/// resolved at all, so it is never worse than before.
+///
+/// Nothing is fetched here. Lazy loading means the server bundles a sender's member event with the
+/// events they sent, so a member who is missing from a live message's room state is one this client
+/// has genuinely never seen.
+///
+/// # Arguments
+/// * `room` - The room the message was sent in.
+/// * `user_id` - The sender to resolve.
+pub async fn display_name(room: &Room, user_id: &UserId) -> String {
+    stored_name(room, user_id)
+        .await
+        .unwrap_or_else(|| user_id.to_string())
+}
+
+/// Resolve the display names of every distinct sender in a page of messages, keyed by user id.
+///
+/// Backfilled pages can reach further back than the member state the server bundled with them, so
+/// anything still unresolved after reading the store is worth one member request for the room. That
+/// request is skipped entirely when the store already answered for every sender, which is the
+/// common case and matters in a room with a large membership.
+///
+/// # Arguments
+/// * `room` - The room the messages were sent in.
+/// * `senders` - The senders to resolve, duplicates included.
+pub async fn display_names<I>(room: &Room, senders: I) -> HashMap<OwnedUserId, String>
+where
+    I: IntoIterator<Item = OwnedUserId>,
+{
+    let senders: HashSet<OwnedUserId> = senders.into_iter().collect();
+    let mut names: HashMap<OwnedUserId, String> = HashMap::with_capacity(senders.len());
+    let mut missing: Vec<OwnedUserId> = Vec::new();
+
+    for sender in senders {
+        match stored_name(room, &sender).await {
+            Some(name) => {
+                names.insert(sender, name);
+            }
+            None => missing.push(sender),
+        }
+    }
+
+    if missing.is_empty() {
+        return names;
+    }
+
+    // A failed sync is not fatal, since the unresolved senders fall back to their user ids.
+    if let Err(e) = room.sync_members().await {
+        warn!("Failed to sync members for room {}: {e}", room.room_id());
+    }
+
+    for sender in missing {
+        let name = display_name(room, &sender).await;
+        names.insert(sender, name);
+    }
+    names
+}

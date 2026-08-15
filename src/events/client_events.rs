@@ -3,6 +3,7 @@ use ruma::events::room::message::SyncRoomMessageEvent;
 use slint::ComponentHandle;
 use tracing::{error, trace};
 
+use crate::rooms::members;
 use crate::rooms::messages::{attachment_of, cache_attachment};
 use crate::{AppWindow, UiState, attachment_to_ui, display_text, format_time_of_day};
 
@@ -33,7 +34,7 @@ impl ClientEvents {
                 let body = original.content.body().to_string();
                 let attachment = attachment_of(&original.content.msgtype);
                 (
-                    original.sender.to_string(),
+                    original.sender,
                     body,
                     original.event_id,
                     original.origin_server_ts,
@@ -41,7 +42,7 @@ impl ClientEvents {
                 )
             }
             SyncRoomMessageEvent::Redacted(redacted) => (
-                redacted.sender.to_string(),
+                redacted.sender,
                 "[Redacted message]".to_string(),
                 redacted.event_id,
                 redacted.origin_server_ts,
@@ -51,6 +52,10 @@ impl ClientEvents {
 
         let room_id = room.room_id().to_owned();
         let time = format_time_of_day(origin_server_ts.0.into());
+        // Resolved here rather than on the UI thread, since member state is read asynchronously.
+        // No `sync_members` first: a room receiving live messages is already synced, and a member
+        // this client has never seen falls back to their user id.
+        let sender = members::display_name(&room, &sender).await;
 
         // Emit event to frontend
         if let Err(e) = slint::invoke_from_event_loop(move || {

@@ -300,9 +300,16 @@ fn flush_preview_window(
 /// attachments so the media source can be found again when the row is
 /// clicked or scrolled into view. Nothing is downloaded here, since fetching
 /// follows visibility instead.
+///
+/// # Arguments
+/// * `room_id` - The room the page belongs to, used as the attachment cache key.
+/// * `messages` - The page to convert.
+/// * `display_names` - Sender display names resolved by the fetch, keyed by user id. A sender
+///   missing from it falls back to their user id.
 fn stored_messages_to_ui(
     room_id: &RoomId,
     messages: Vec<rooms::messages::StoredMessage>,
+    display_names: &std::collections::HashMap<ruma::OwnedUserId, String>,
 ) -> Vec<Message> {
     messages
         .into_iter()
@@ -314,8 +321,13 @@ fn stored_messages_to_ui(
                 rooms::messages::cache_attachment(room_id, &m.event_id, attachment);
             }
 
+            let user = ruma::UserId::parse(m.sender.as_ref())
+                .ok()
+                .and_then(|id| display_names.get(&id))
+                .map_or_else(|| m.sender.as_ref(), String::as_str);
+
             Message {
-                user: m.sender.as_ref().into(),
+                user: user.into(),
                 time: format_time_of_day(m.origin_server_ts).into(),
                 text: if m.redacted {
                     "[message deleted]"
@@ -381,7 +393,11 @@ fn fetch_message_page(
                     let Ok(parsed_room_id) = <&RoomId>::try_from(room_id.as_str()) else {
                         return;
                     };
-                    let mut msgs = stored_messages_to_ui(parsed_room_id, paginated.messages);
+                    let mut msgs = stored_messages_to_ui(
+                        parsed_room_id,
+                        paginated.messages,
+                        &paginated.display_names,
+                    );
                     state.set_next_token(paginated.next_token.unwrap_or_default().into());
                     if prepend {
                         msgs.extend(state.get_messages().iter());

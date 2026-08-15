@@ -1,7 +1,11 @@
-use ruma::{EventId, OwnedEventId, OwnedRoomId};
+use std::collections::HashMap;
+
+use matrix_sdk::Room;
+use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedUserId, UserId};
 use tracing::debug;
 
 use crate::ClientState;
+use crate::rooms::members;
 use crate::rooms::messages::{MessageStore, StoredMessage};
 
 /// One page of resolved, oldest-first messages plus the event id to pass
@@ -9,6 +13,9 @@ use crate::rooms::messages::{MessageStore, StoredMessage};
 pub struct PaginatedMessages {
     pub messages: Vec<StoredMessage>,
     pub next_token: Option<String>,
+    /// Display name for each sender in `messages`, keyed by user id. Resolved here rather than in
+    /// the UI layer, since names live in the room's member state and reading it is async.
+    pub display_names: HashMap<OwnedUserId, String>,
 }
 
 /// Fetch one page of messages for a room, folding edits/redactions into
@@ -68,9 +75,11 @@ pub async fn get_messages_from_room_paginated(
                     room_id
                 );
                 let next_token = messages.first().map(|m| m.event_id.to_string());
+                let display_names = resolve_display_names(&room, &messages).await;
                 return Ok(PaginatedMessages {
                     messages,
                     next_token,
+                    display_names,
                 });
             }
         }
@@ -103,10 +112,34 @@ pub async fn get_messages_from_room_paginated(
         .then(|| messages.first().map(|m| m.event_id.to_string()))
         .flatten();
 
+    let display_names = resolve_display_names(&room, &messages).await;
+
     Ok(PaginatedMessages {
         messages,
         next_token,
+        display_names,
     })
+}
+
+/// Resolve the display name of every sender in a page of messages.
+///
+/// Senders whose id does not parse are skipped, which leaves the UI falling back to the raw string
+/// it already holds.
+///
+/// # Arguments
+/// * `room` - The room the messages were sent in.
+/// * `messages` - The page whose senders to resolve.
+async fn resolve_display_names(
+    room: &Room,
+    messages: &[StoredMessage],
+) -> HashMap<OwnedUserId, String> {
+    // Collected rather than passed lazily, so no borrow of `messages` is held across the await and
+    // the returned future stays `Send`.
+    let senders: Vec<OwnedUserId> = messages
+        .iter()
+        .filter_map(|m| UserId::parse(m.sender.as_ref()).ok())
+        .collect();
+    members::display_names(room, senders).await
 }
 
 /// Resolves a slice of already-loaded, oldest-first cache events into
