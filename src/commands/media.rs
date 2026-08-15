@@ -20,8 +20,27 @@ const FULL_MAX_EDGE: u32 = 2560;
 /// Decoder ceilings applied to every image. The bytes come from an untrusted
 /// homeserver, and without these a small crafted file can ask the decoder for
 /// gigabytes. This is known as a decompression bomb.
-const MAX_DECODE_ALLOC: u64 = 192 * 1024 * 1024;
+///
+/// The alloc ceiling is per decode, so it only bounds the process once the
+/// number of decodes running at a time is bounded too. See [`DECODE_PERMITS`].
+/// 64 MB admits a 4000x4000 RGBA source, above anything a preview needs.
+const MAX_DECODE_ALLOC: u64 = 64 * 1024 * 1024;
 const MAX_DECODE_EDGE: u32 = 16384;
+
+/// How many image fetches may be downloading or decoding at once.
+///
+/// The preview keep band spans five viewport heights, so a scroll into an
+/// image-heavy room can ask for a dozen images in the same pass. Each decode
+/// transiently holds the compressed bytes plus the full-size decoded surface,
+/// which for a 12MP photo is around 40 MB, so letting them all run at once is
+/// what takes the process to several hundred MB.
+///
+/// The permit is held across the download as well as the decode. That costs a
+/// little latency when previews are queued, and in exchange it bounds the
+/// compressed buffers waiting to be decoded rather than just the decodes.
+const DECODE_PERMITS: usize = 3;
+
+static DECODE_LIMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(DECODE_PERMITS);
 
 /// Which resolution of an attachment to fetch.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -85,6 +104,14 @@ pub async fn fetch_image(
         source: source.clone(),
         format,
     };
+
+    // Bound to `DECODE_PERMITS` concurrent fetches. Bound as `_permit` rather
+    // than `_`, so it is held for the rest of the body instead of being
+    // released on the spot.
+    let _permit = DECODE_LIMIT
+        .acquire()
+        .await
+        .map_err(|e| format!("Image decode limiter closed: {e}"))?;
 
     let bytes = client
         .media()
@@ -281,7 +308,13 @@ fn decode_image(bytes: Vec<u8>, max_edge: u32) -> Result<DecodedImage, String> {
         .map_err(|e| format!("Failed to decode image: {e}"))?;
     let decoded = if decoded.width() > max_edge || decoded.height() > max_edge {
         // Preserves the aspect ratio, and only ever shrinks given the guard.
-        decoded.thumbnail(max_edge, max_edge)
+        let scaled = decoded.thumbnail(max_edge, max_edge);
+        // `thumbnail` takes `&self`, so without this the full-size surface is
+        // never moved out of the outer binding and stays live until the
+        // function returns, alongside every buffer below. On a 12MP photo that
+        // is around 36 MB held for no reason.
+        drop(decoded);
+        scaled
     } else {
         decoded
     };
