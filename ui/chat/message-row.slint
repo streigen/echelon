@@ -13,6 +13,9 @@ export component MessageRow inherits VerticalLayout {
     // chat-main.slint pairs this with msg.event-id to call
     // UiState.open-lightbox.
     callback attachment-clicked();
+    // Same, for UiState.save-attachment. Only reachable from kinds with no
+    // preview; previewable ones offer this inside the lightbox instead.
+    callback attachment-save-clicked();
     // Fires on entering/leaving the keep band, and once at construction.
     // See `flush_preview_window` in lib.rs.
     callback preview-window-changed(bool);
@@ -86,11 +89,11 @@ export component MessageRow inherits VerticalLayout {
 
                 Text { text: msg.text; color: rgba(255, 255, 255, 0.85); font-size: 15px; wrap: word-wrap; }
 
-                if msg.attachment.kind != AttachmentKind.Empty : Rectangle {
+                // Raster kinds render their own preview. Mirrors
+                // `AttachmentKind::has_preview` on the Rust side.
+                if msg.attachment.kind == AttachmentKind.Image
+                    || msg.attachment.kind == AttachmentKind.Sticker : Rectangle {
                     property <MessageAttachment> att: msg.attachment;
-                    // Mirrors `AttachmentKind::has_preview` on the Rust side.
-                    property <bool> previewable: att.kind == AttachmentKind.Image
-                        || att.kind == AttachmentKind.Sticker;
                     // Sender-declared size when there is one, else a
                     // placeholder box; capped so a huge image can't take the
                     // whole row.
@@ -102,7 +105,7 @@ export component MessageRow inherits VerticalLayout {
                     border-radius: 8px;
                     clip: true;
 
-                    if previewable && att.preview.width > 0 : Rectangle {
+                    if att.preview.width > 0 : Rectangle {
                         width: 100%;
                         height: 100%;
 
@@ -121,17 +124,91 @@ export component MessageRow inherits VerticalLayout {
                         }
                     }
 
-                    // Video/audio/file have no renderer yet: placeholder,
-                    // labelled with whatever the sender declared.
-                    if !(previewable && att.preview.width > 0) : Text {
-                        text: previewable
-                            ? "loading…"
-                            : (att.mimetype == "" ? "attachment" : att.mimetype);
+                    if att.preview.width == 0 : Text {
+                        text: "loading…";
                         color: rgba(255, 255, 255, 0.55);
                         horizontal-alignment: center;
                         vertical-alignment: center;
                         width: 100%;
                         height: 100%;
+                    }
+                }
+
+                // Everything else — video, audio, file — has no renderer.
+                // These get a file card: name, type, and a way to save it.
+                // Video lives here rather than in the lightbox until there is
+                // a player to hand a click to.
+                if msg.attachment.kind == AttachmentKind.Video
+                    || msg.attachment.kind == AttachmentKind.Audio
+                    || msg.attachment.kind == AttachmentKind.File : Rectangle {
+                    property <MessageAttachment> att: msg.attachment;
+
+                    width: 320px;
+                    height: card-layout.preferred-height;
+                    background: #1b1e27;
+                    border-radius: 8px;
+
+                    card-layout := HorizontalLayout {
+                        padding: 12px;
+                        spacing: 12px;
+                        alignment: start;
+
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("../../static/attach.svg");
+                                width: 18px;
+                                height: 18px;
+                                colorize: rgba(255, 255, 255, 0.55);
+                            }
+                        }
+
+                        VerticalLayout {
+                            spacing: 2px;
+                            alignment: center;
+                            horizontal-stretch: 1;
+
+                            Text {
+                                text: att.filename == "" ? "attachment" : att.filename;
+                                color: rgba(255, 255, 255, 0.85);
+                                font-size: 14px;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: att.mimetype == "" ? "unknown type" : att.mimetype;
+                                color: rgba(255, 255, 255, 0.45);
+                                font-size: 12px;
+                                overflow: elide;
+                            }
+                        }
+
+                        if att.savable : VerticalLayout {
+                            alignment: center;
+                            save-btn := Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: save-ta.has-hover
+                                    ? rgba(255, 255, 255, 0.12)
+                                    : transparent;
+
+                                Image {
+                                    source: @image-url("../../static/download.svg");
+                                    width: 16px;
+                                    height: 16px;
+                                    colorize: save-ta.has-hover
+                                        ? #FFFFFF
+                                        : rgba(255, 255, 255, 0.55);
+                                }
+
+                                save-ta := TouchArea {
+                                    width: 100%;
+                                    height: 100%;
+                                    mouse-cursor: pointer;
+                                    clicked => { root.attachment-save-clicked(); }
+                                }
+                            }
+                        }
                     }
                 }
             }

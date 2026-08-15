@@ -5,6 +5,7 @@ import { OAuthIcon } from "./components/oauth-icon.slint";
 import { ChatPage } from "./chat/chat-page.slint";
 import { DebugPage } from "./debug/debug-page.slint";
 import { Lightbox } from "./components/lightbox.slint";
+import { Toast } from "./components/toast.slint";
 import { UiState, Message, MessageAttachment, DebugCommand } from "./app-state.slint";
 export { UiState }
 
@@ -207,4 +208,8 @@ export component AppWindow inherits Window {
 
     // Declared last so it paints on top of whichever page is active.
     if UiState.lightbox-visible : Lightbox {}
+
+    // Above even the lightbox: saving is reachable from inside it, so its
+    // result has to be visible from there too.
+    if UiState.toast-text != "" : Toast {}
 }

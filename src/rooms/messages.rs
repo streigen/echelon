@@ -29,6 +29,15 @@ impl AttachmentKind {
     pub fn has_preview(self) -> bool {
         matches!(self, Self::Image | Self::Sticker)
     }
+
+    /// Whether "save to disk" is a sensible thing to offer for this kind.
+    /// Everything but a sticker is a file the user sent deliberately and may
+    /// want to keep. A sticker is one image out of a pack (MSC2545), it has
+    /// no name of its own, and the useful action on one is adding its pack,
+    /// not writing a lone PNG somewhere.
+    pub fn is_savable(self) -> bool {
+        !matches!(self, Self::Sticker)
+    }
 }
 
 /// A media attachment, carrying just enough to fetch and render it later.
@@ -45,6 +54,10 @@ pub struct Attachment {
     /// Declared content type. Kinds without a renderer use it to label
     /// themselves, and a future file row can use it to pick an icon.
     pub mimetype: Option<String>,
+    /// Sender-declared file name. Labels the row for kinds with no preview,
+    /// and seeds the name in the save dialog. Sender-controlled, so it is
+    /// only ever a suggestion: see `commands::media::save_attachment`.
+    pub filename: String,
     pub width: Option<u32>,
     pub height: Option<u32>,
 }
@@ -398,18 +411,27 @@ pub(crate) fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
                 &$m.source,
                 info.and_then(|i| i.thumbnail_source.clone()),
                 info.and_then(|i| i.mimetype.clone()),
+                $m.filename().to_owned(),
                 info.and_then(|i| i.width),
                 info.and_then(|i| i.height),
             )
         }};
     }
 
-    let (kind, source, thumbnail_source, mimetype, width, height) = match msgtype {
+    let (kind, source, thumbnail_source, mimetype, filename, width, height) = match msgtype {
         MessageType::Image(m) => visual!(AttachmentKind::Image, m),
         MessageType::Video(m) => visual!(AttachmentKind::Video, m),
         MessageType::Audio(m) => {
             let mimetype = m.info.as_deref().and_then(|i| i.mimetype.clone());
-            (AttachmentKind::Audio, &m.source, None, mimetype, None, None)
+            (
+                AttachmentKind::Audio,
+                &m.source,
+                None,
+                mimetype,
+                m.filename().to_owned(),
+                None,
+                None,
+            )
         }
         MessageType::File(m) => {
             let info = m.info.as_deref();
@@ -418,6 +440,7 @@ pub(crate) fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
                 &m.source,
                 info.and_then(|i| i.thumbnail_source.clone()),
                 info.and_then(|i| i.mimetype.clone()),
+                m.filename().to_owned(),
                 None,
                 None,
             )
@@ -430,6 +453,7 @@ pub(crate) fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
         source: source.clone(),
         thumbnail_source,
         mimetype,
+        filename,
         width: width.map(uint_to_u32),
         height: height.map(uint_to_u32),
     })
@@ -437,12 +461,17 @@ pub(crate) fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
 
 /// The same, for the standalone `m.sticker` event. A sticker is an image
 /// whose info block is mandatory rather than optional.
+///
+/// It has no file name: `m.sticker` defines `body` as a description of the
+/// image, and unlike `m.room.message` there is no `filename` field to fall
+/// back on. Nothing needs one, since stickers are not savable.
 fn attachment_of_sticker(content: &StickerEventContent) -> Attachment {
     Attachment {
         kind: AttachmentKind::Sticker,
         source: content.source.clone().into(),
         thumbnail_source: content.info.thumbnail_source.clone(),
         mimetype: content.info.mimetype.clone(),
+        filename: String::new(),
         width: content.info.width.map(uint_to_u32),
         height: content.info.height.map(uint_to_u32),
     }

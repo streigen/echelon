@@ -109,6 +109,7 @@ export component ChatMain inherits Rectangle {
                         keep-top: preview-keep-top;
                         keep-bottom: preview-keep-bottom;
                         attachment-clicked() => { UiState.open-lightbox(msg.event-id); }
+                        attachment-save-clicked() => { UiState.save-attachment(msg.event-id); }
                         preview-window-changed(inside) => {
                             UiState.preview-window-changed(msg.event-id, inside);
                         }

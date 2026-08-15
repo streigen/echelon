@@ -69,6 +69,8 @@ pub(crate) fn attachment_to_ui(a: Option<&rooms::messages::Attachment>) -> Messa
             Domain::Sticker => AttachmentKind::Sticker,
         },
         mimetype: a.mimetype.as_deref().unwrap_or_default().into(),
+        filename: a.filename.as_str().into(),
+        savable: a.kind.is_savable(),
         width: a.width.unwrap_or(0) as i32,
         height: a.height.unwrap_or(0) as i32,
         preview: slint::Image::default(),
@@ -169,6 +171,39 @@ struct PreviewWindow {
 thread_local! {
     static PREVIEW_WINDOW: std::cell::RefCell<PreviewWindow> =
         std::cell::RefCell::new(PreviewWindow::default());
+}
+
+/// How long a toast stays up before clearing itself.
+const TOAST_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
+
+thread_local! {
+    /// Bumped by every toast, so a timer left over from a message the user
+    /// has already replaced cannot cut the new one short.
+    static TOAST_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Show a transient status line at the bottom of the window. Must be called
+/// on the UI thread.
+fn show_toast(ui: &AppWindow, text: String, is_error: bool) {
+    let generation = TOAST_GENERATION.with(|g| {
+        g.set(g.get() + 1);
+        g.get()
+    });
+    let global = ui.global::<UiState>();
+    global.set_toast_error(is_error);
+    global.set_toast_text(text.into());
+
+    let ui_handle = ui.as_weak();
+    slint::Timer::single_shot(TOAST_DURATION, move || {
+        // A newer toast is on screen and owns its own expiry.
+        if TOAST_GENERATION.with(|g| g.get()) != generation {
+            return;
+        }
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.global::<UiState>()
+                .set_toast_text(slint::SharedString::new());
+        }
+    });
 }
 
 /// Fetch previews for rows inside the keep band, and drop the decoded
@@ -733,6 +768,10 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             global.set_lightbox_image(slint::Image::default());
             global.set_lightbox_width(attachment.width.unwrap_or(0) as i32);
             global.set_lightbox_height(attachment.height.unwrap_or(0) as i32);
+            // The save control acts on this event, and is only offered for
+            // kinds worth saving.
+            global.set_lightbox_event_id(event_id.as_str().into());
+            global.set_lightbox_savable(attachment.kind.is_savable());
 
             let state = state.clone();
             let ui_handle = ui_handle.clone();
@@ -809,11 +848,75 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             if let Some(ui) = ui_handle.upgrade() {
                 let global = ui.global::<UiState>();
                 global.set_lightbox_visible(false);
+                global.set_lightbox_event_id(slint::SharedString::new());
+                global.set_lightbox_savable(false);
                 // Drop the held image now, rather than leaving a full
                 // resolution decode on the model until the next open
                 // overwrites it.
                 global.set_lightbox_image(slint::Image::default());
             }
+        }
+    });
+
+    // Save an attachment to disk, from either a file card in the timeline or
+    // the lightbox's save control. The whole thing — dialog included — runs
+    // off the UI thread, so a user sitting on the file picker does not freeze
+    // the app behind it.
+    ui.global::<UiState>().on_save_attachment({
+        let state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        move |event_id| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            // Same reasoning as open_lightbox: only the open room's rows are
+            // on screen to be clicked.
+            let room_id = ui.global::<UiState>().get_active_room_id();
+            let (Ok(room_id), Ok(event_id)) = (
+                <&RoomId>::try_from(room_id.as_str()),
+                <&EventId>::try_from(event_id.as_str()),
+            ) else {
+                return;
+            };
+            let Some(attachment) = rooms::messages::get_cached_attachment(room_id, event_id) else {
+                return;
+            };
+            // Belt and braces: the UI already hides the control for these.
+            if !attachment.kind.is_savable() {
+                return;
+            }
+
+            let state = state.clone();
+            let ui_handle = ui_handle.clone();
+            handle.spawn(async move {
+                let result = match commands::get_active_client(&state).await {
+                    Ok(client) => commands::media::save_attachment(&client, &attachment).await,
+                    Err(e) => Err(e),
+                };
+                // The path is worth showing even on desktop, where the user
+                // chose it: the dialog can be pointed somewhere they did not
+                // mean, and on mobile it is the only way they learn where the
+                // file went.
+                let toast = match result {
+                    Ok(Some(path)) => Some((format!("Saved to {}", path.display()), false)),
+                    // The user dismissed the dialog; that is not an outcome
+                    // worth narrating back to them.
+                    Ok(None) => None,
+                    Err(e) => Some((format!("Failed to save attachment: {e}"), true)),
+                };
+                let Some((text, is_error)) = toast else {
+                    return;
+                };
+                if is_error {
+                    eprintln!("{text}");
+                }
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(ui) = ui_handle.upgrade() {
+                        show_toast(&ui, text, is_error);
+                    }
+                });
+            });
         }
     });
 

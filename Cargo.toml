@@ -39,6 +39,7 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 
 # Desktop specific. install backend-winit for non ios/android builds
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 slint = { version = "1.17.0", features = ["backend-winit"] }
 
 # Android-specific secure storage.

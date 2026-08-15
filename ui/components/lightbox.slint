@@ -67,30 +67,62 @@ export component Lightbox inherits Rectangle {
         }
     }
 
-    // Close button, top-right.
-    close-btn := Rectangle {
-        x: parent.width - 56px;
+    // Controls, top-right. Laid out right to left so hiding the save button
+    // leaves close where it has always been.
+    HorizontalLayout {
+        // A layout would otherwise stretch to fill the overlay; pinning it to
+        // its content is what lets it sit in the corner.
+        width: self.preferred-width;
+        height: self.preferred-height;
+        x: parent.width - self.width - 16px;
         y: 16px;
-        width: 40px;
-        height: 40px;
-        border-radius: 20px;
-        background: close-ta.has-hover ? rgba(255, 255, 255, 0.15) : transparent;
+        spacing: 8px;
 
-        Text {
-            text: "✕";
-            color: white;
-            font-size: 20px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: 100%;
-            height: 100%;
+        if UiState.lightbox-savable : save-btn := Rectangle {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: save-ta.has-hover ? rgba(255, 255, 255, 0.15) : transparent;
+
+            Image {
+                source: @image-url("../../static/download.svg");
+                width: 18px;
+                height: 18px;
+                colorize: white;
+            }
+
+            save-ta := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: pointer;
+                // Saving writes the original file, not the downscaled copy on
+                // screen, so it does not need to wait for the decode.
+                clicked => { UiState.save-attachment(UiState.lightbox-event-id); }
+            }
         }
 
-        close-ta := TouchArea {
-            width: 100%;
-            height: 100%;
-            mouse-cursor: pointer;
-            clicked => { UiState.close-lightbox(); }
+        close-btn := Rectangle {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: close-ta.has-hover ? rgba(255, 255, 255, 0.15) : transparent;
+
+            Text {
+                text: "✕";
+                color: white;
+                font-size: 20px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: 100%;
+                height: 100%;
+            }
+
+            close-ta := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: pointer;
+                clicked => { UiState.close-lightbox(); }
+            }
         }
     }
 
