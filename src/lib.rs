@@ -77,6 +77,26 @@ pub(crate) fn attachment_to_ui(a: Option<&rooms::messages::Attachment>) -> Messa
     }
 }
 
+/// The text to show above a message's attachment, which for a bare attachment is nothing.
+///
+/// A media event's `body` is the file name unless the sender also sent a caption, in which case a
+/// separate `filename` field carries the name instead (MSC2530, stable since Matrix 1.10). Only a
+/// caption is worth showing, since the file card already displays the name and an image needs no
+/// label at all.
+///
+/// # Arguments
+/// * `body` - The message body from the event.
+/// * `attachment` - The message's attachment, if it has one.
+pub(crate) fn display_text<'a>(
+    body: &'a str,
+    attachment: Option<&rooms::messages::Attachment>,
+) -> &'a str {
+    match attachment {
+        Some(a) if a.filename == body => "",
+        _ => body,
+    }
+}
+
 /// Download and decode an attachment's raster preview off the UI thread,
 /// then patch it into the row with the matching `event_id`. If the fetch
 /// outlived a channel switch, the result is dropped instead.
@@ -177,13 +197,17 @@ thread_local! {
 const TOAST_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
 
 thread_local! {
-    /// Bumped by every toast, so a timer left over from a message the user
-    /// has already replaced cannot cut the new one short.
+    /// Bumped by every toast, so a timer left over from a replaced message cannot cut the new one
+    /// short.
     static TOAST_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// Show a transient status line at the bottom of the window. Must be called
-/// on the UI thread.
+/// Show a transient status line at the bottom of the window. Must be called on the UI thread.
+///
+/// # Arguments
+/// * `ui` - The window to show the toast in.
+/// * `text` - The message to display.
+/// * `is_error` - Whether to style the toast as a failure.
 fn show_toast(ui: &AppWindow, text: String, is_error: bool) {
     let generation = TOAST_GENERATION.with(|g| {
         g.set(g.get() + 1);
@@ -294,9 +318,9 @@ fn stored_messages_to_ui(
                 user: m.sender.as_ref().into(),
                 time: format_time_of_day(m.origin_server_ts).into(),
                 text: if m.redacted {
-                    "[message deleted]".to_string()
+                    "[message deleted]"
                 } else {
-                    m.body
+                    display_text(&m.body, m.attachment.as_ref())
                 }
                 .into(),
                 repliedTo: "".into(),
@@ -768,8 +792,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             global.set_lightbox_image(slint::Image::default());
             global.set_lightbox_width(attachment.width.unwrap_or(0) as i32);
             global.set_lightbox_height(attachment.height.unwrap_or(0) as i32);
-            // The save control acts on this event, and is only offered for
-            // kinds worth saving.
+            // The save control acts on this event, and is only offered for kinds worth saving.
             global.set_lightbox_event_id(event_id.as_str().into());
             global.set_lightbox_savable(attachment.kind.is_savable());
 
@@ -858,10 +881,9 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Save an attachment to disk, from either a file card in the timeline or
-    // the lightbox's save control. The whole thing — dialog included — runs
-    // off the UI thread, so a user sitting on the file picker does not freeze
-    // the app behind it.
+    // Save an attachment to disk, from either a file card in the timeline or the lightbox's save
+    // control. The dialog runs off the UI thread, so sitting on the file picker does not freeze the
+    // app behind it.
     ui.global::<UiState>().on_save_attachment({
         let state = client_state.clone();
         let handle = rt_handle.clone();
@@ -870,8 +892,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let Some(ui) = ui_handle.upgrade() else {
                 return;
             };
-            // Same reasoning as open_lightbox: only the open room's rows are
-            // on screen to be clicked.
+            // Same as open_lightbox: only the open room's rows are on screen to be clicked.
             let room_id = ui.global::<UiState>().get_active_room_id();
             let (Ok(room_id), Ok(event_id)) = (
                 <&RoomId>::try_from(room_id.as_str()),
@@ -882,7 +903,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let Some(attachment) = rooms::messages::get_cached_attachment(room_id, event_id) else {
                 return;
             };
-            // Belt and braces: the UI already hides the control for these.
+            // The UI already hides the control for these, so this is only a backstop.
             if !attachment.kind.is_savable() {
                 return;
             }
@@ -894,14 +915,11 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     Ok(client) => commands::media::save_attachment(&client, &attachment).await,
                     Err(e) => Err(e),
                 };
-                // The path is worth showing even on desktop, where the user
-                // chose it: the dialog can be pointed somewhere they did not
-                // mean, and on mobile it is the only way they learn where the
-                // file went.
+                // Report the path even on desktop, where the dialog can be pointed somewhere the
+                // user did not mean. On mobile it is the only way they learn where the file went.
                 let toast = match result {
                     Ok(Some(path)) => Some((format!("Saved to {}", path.display()), false)),
-                    // The user dismissed the dialog; that is not an outcome
-                    // worth narrating back to them.
+                    // The user dismissed the dialog, which is not worth reporting back.
                     Ok(None) => None,
                     Err(e) => Some((format!("Failed to save attachment: {e}"), true)),
                 };

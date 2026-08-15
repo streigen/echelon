@@ -4,7 +4,7 @@ use slint::ComponentHandle;
 use tracing::{error, trace};
 
 use crate::rooms::messages::{attachment_of, cache_attachment};
-use crate::{AppWindow, UiState, attachment_to_ui, format_time_of_day};
+use crate::{AppWindow, UiState, attachment_to_ui, display_text, format_time_of_day};
 
 pub struct ClientEvents;
 
@@ -68,7 +68,7 @@ impl ClientEvents {
             ui.invoke_matrix_message(
                 sender.into(),
                 room_id.as_str().into(),
-                body.into(),
+                display_text(&body, attachment.as_ref()).into(),
                 event_id.as_str().into(),
                 time.into(),
                 attachment_to_ui(attachment.as_ref()),

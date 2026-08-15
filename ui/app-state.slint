@@ -24,11 +24,9 @@ export struct MessageAttachment {
     kind: AttachmentKind,
     // e.g. "audio/mpeg". Empty when the sender didn't declare one.
     mimetype: string,
-    // Sender-declared file name, used to label kinds with no preview. Empty
-    // for stickers, which have no name in the spec.
+    // Sender-declared file name, used to label kinds with no preview. Empty for stickers.
     filename: string,
-    // Whether to offer a save button for this attachment. Mirrors
-    // `AttachmentKind::is_savable` on the Rust side.
+    // Whether to offer a save button. Mirrors `AttachmentKind::is_savable` on the Rust side.
     savable: bool,
     // Natural pixel size from the event (0 if absent), so the box can be
     // sized before the bytes land and nothing jumps afterwards.
@@ -129,15 +127,13 @@ export global UiState {
     in-out property <image> lightbox-image;
     in-out property <int> lightbox-width: 0;
     in-out property <int> lightbox-height: 0;
-    // Event whose attachment is on screen, so the lightbox's save button has
-    // something to pass back to `save-attachment`.
+    // Event whose attachment is on screen, passed back by the lightbox's save button.
     in-out property <string> lightbox-event-id: "";
-    // False for kinds saving makes no sense for (stickers), which hides the
-    // save control rather than letting it fail on click.
+    // False for stickers, which hides the save control rather than letting it fail on click.
     in-out property <bool> lightbox-savable: false;
 
-    // Transient status line (see ui/components/toast.slint). Non-empty text
-    // is what makes it visible; lib.rs clears it on a timer.
+    // Transient status line (see ui/components/toast.slint). Non-empty text makes it visible, and
+    // lib.rs clears it on a timer.
     in-out property <string> toast-text: "";
     in-out property <bool> toast-error: false;
 
@@ -148,8 +144,7 @@ export global UiState {
     callback load-older-messages();
     callback open-lightbox(string); // event id
     callback close-lightbox();
-    // event id. Opens the platform's save dialog and writes the attachment's
-    // original bytes wherever the user points it.
+    // event id. Opens the platform's save dialog and writes the attachment's original bytes there.
     callback save-attachment(string);
     // event id, whether the row is in the preview keep band. Drives both
     // fetching and eviction; see chat-main.slint's preview-keep-*.

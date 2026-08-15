@@ -13,8 +13,8 @@ export component MessageRow inherits VerticalLayout {
     // chat-main.slint pairs this with msg.event-id to call
     // UiState.open-lightbox.
     callback attachment-clicked();
-    // Same, for UiState.save-attachment. Only reachable from kinds with no
-    // preview; previewable ones offer this inside the lightbox instead.
+    // Same, for UiState.save-attachment. Only reachable from kinds with no preview, since
+    // previewable ones offer this inside the lightbox instead.
     callback attachment-save-clicked();
     // Fires on entering/leaving the keep band, and once at construction.
     // See `flush_preview_window` in lib.rs.
@@ -87,10 +87,16 @@ export component MessageRow inherits VerticalLayout {
                     Text { text: msg.time; color: #40529F; font-size: 13px; }
                 }
 
-                Text { text: msg.text; color: rgba(255, 255, 255, 0.85); font-size: 15px; wrap: word-wrap; }
+                // Empty for a bare attachment, where the body is only the file name (see
+                // `display_text` in lib.rs). An empty Text would still take up a line's height.
+                if msg.text != "" : Text {
+                    text: msg.text;
+                    color: rgba(255, 255, 255, 0.85);
+                    font-size: 15px;
+                    wrap: word-wrap;
+                }
 
-                // Raster kinds render their own preview. Mirrors
-                // `AttachmentKind::has_preview` on the Rust side.
+                // Raster kinds render their own preview. Mirrors `AttachmentKind::has_preview`.
                 if msg.attachment.kind == AttachmentKind.Image
                     || msg.attachment.kind == AttachmentKind.Sticker : Rectangle {
                     property <MessageAttachment> att: msg.attachment;
@@ -134,10 +140,9 @@ export component MessageRow inherits VerticalLayout {
                     }
                 }
 
-                // Everything else — video, audio, file — has no renderer.
-                // These get a file card: name, type, and a way to save it.
-                // Video lives here rather than in the lightbox until there is
-                // a player to hand a click to.
+                // Video, audio and file have no renderer, so they get a card with the name,
+                // type and a way to save it. Video stays here rather than in the lightbox
+                // until there is a player to hand a click to.
                 if msg.attachment.kind == AttachmentKind.Video
                     || msg.attachment.kind == AttachmentKind.Audio
                     || msg.attachment.kind == AttachmentKind.File : Rectangle {
@@ -148,13 +153,16 @@ export component MessageRow inherits VerticalLayout {
                     background: #1b1e27;
                     border-radius: 8px;
 
+                    // Every column but the text one is fixed width, so the slack goes to the
+                    // text and the save button stays against the card's right edge whatever
+                    // the name's length.
                     card-layout := HorizontalLayout {
                         padding: 12px;
                         spacing: 12px;
-                        alignment: start;
 
                         VerticalLayout {
                             alignment: center;
+                            horizontal-stretch: 0;
                             Image {
                                 source: @image-url("../../static/attach.svg");
                                 width: 18px;
@@ -168,6 +176,8 @@ export component MessageRow inherits VerticalLayout {
                             alignment: center;
                             horizontal-stretch: 1;
 
+                            // `elide` drops the minimum width to one ellipsis, so a long
+                            // name shrinks to fit the card instead of widening it.
                             Text {
                                 text: att.filename == "" ? "attachment" : att.filename;
                                 color: rgba(255, 255, 255, 0.85);
@@ -184,6 +194,7 @@ export component MessageRow inherits VerticalLayout {
 
                         if att.savable : VerticalLayout {
                             alignment: center;
+                            horizontal-stretch: 0;
                             save-btn := Rectangle {
                                 width: 32px;
                                 height: 32px;

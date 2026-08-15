@@ -1,20 +1,17 @@
 import { UiState } from "../app-state.slint";
 
-// Transient status line along the bottom of the window, for results the user
-// asked for but is not watching a spinner over — "saved to <path>" and the
-// like. Only ever instantiated while `UiState.toast-text` is non-empty (see
-// the `if` in app-window.slint); the clearing is a timer in lib.rs.
+// Transient status line along the bottom of the window, for results like "saved to <path>". Only
+// instantiated while `UiState.toast-text` is non-empty (see the `if` in app-window.slint), and
+// cleared by a timer in lib.rs.
 //
-// Nothing here takes a TouchArea, so the toast never eats a click meant for
-// whatever it is floating over.
+// Nothing here takes a TouchArea, so the toast never eats a click meant for what it floats over.
 export component Toast inherits Rectangle {
     width: 100%;
     height: 100%;
     background: transparent;
 
     Rectangle {
-        // Capped so a long path shrinks the label into eliding rather than
-        // running off both edges of the window.
+        // Capped so a long path elides rather than running off both edges of the window.
         width: min(body.preferred-width, parent.width - 48px);
         height: body.preferred-height;
         x: (parent.width - self.width) / 2;

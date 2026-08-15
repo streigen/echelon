@@ -30,11 +30,9 @@ impl AttachmentKind {
         matches!(self, Self::Image | Self::Sticker)
     }
 
-    /// Whether "save to disk" is a sensible thing to offer for this kind.
-    /// Everything but a sticker is a file the user sent deliberately and may
-    /// want to keep. A sticker is one image out of a pack (MSC2545), it has
-    /// no name of its own, and the useful action on one is adding its pack,
-    /// not writing a lone PNG somewhere.
+    /// Whether to offer "save to disk" for this kind. Everything but a sticker is a file the sender
+    /// chose to send and the user may want to keep. A sticker is one image out of a pack (MSC2545),
+    /// has no name of its own, and is added by its pack rather than saved on its own.
     pub fn is_savable(self) -> bool {
         !matches!(self, Self::Sticker)
     }
@@ -54,9 +52,8 @@ pub struct Attachment {
     /// Declared content type. Kinds without a renderer use it to label
     /// themselves, and a future file row can use it to pick an icon.
     pub mimetype: Option<String>,
-    /// Sender-declared file name. Labels the row for kinds with no preview,
-    /// and seeds the name in the save dialog. Sender-controlled, so it is
-    /// only ever a suggestion: see `commands::media::save_attachment`.
+    /// Sender-declared file name, which labels the row for kinds with no preview and seeds the save
+    /// dialog. Sender-controlled, so it is only ever a suggestion.
     pub filename: String,
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -459,12 +456,11 @@ pub(crate) fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
     })
 }
 
-/// The same, for the standalone `m.sticker` event. A sticker is an image
-/// whose info block is mandatory rather than optional.
+/// The same, for the standalone `m.sticker` event. A sticker is an image whose info block is
+/// mandatory rather than optional.
 ///
-/// It has no file name: `m.sticker` defines `body` as a description of the
-/// image, and unlike `m.room.message` there is no `filename` field to fall
-/// back on. Nothing needs one, since stickers are not savable.
+/// The file name is left empty because `m.sticker` defines `body` as a description of the image and
+/// has no `filename` field to fall back on. Nothing needs one, since stickers are not savable.
 fn attachment_of_sticker(content: &StickerEventContent) -> Attachment {
     Attachment {
         kind: AttachmentKind::Sticker,

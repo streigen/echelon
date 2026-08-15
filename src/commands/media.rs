@@ -103,9 +103,13 @@ pub async fn fetch_image(
         .map_err(|e| format!("Image decode task failed: {e}"))?
 }
 
-/// Download an attachment's original bytes, undecoded. This is the path for
-/// saving to disk, where the file has to land byte for byte as the sender
-/// uploaded it — no thumbnailing, no re-encoding, and no kind restriction.
+/// Download an attachment's original bytes, undecoded. Used for saving to disk, where the file
+/// must land byte for byte as the sender uploaded it, so there is no thumbnailing and no kind
+/// restriction.
+///
+/// # Arguments
+/// * `client` - The Matrix client to download through.
+/// * `attachment` - The attachment whose original file to fetch.
 pub async fn fetch_file(client: &Client, attachment: &Attachment) -> Result<Vec<u8>, String> {
     let request = MediaRequestParameters {
         source: attachment.source.clone(),
@@ -118,27 +122,27 @@ pub async fn fetch_file(client: &Client, attachment: &Attachment) -> Result<Vec<
         .map_err(|e| format!("Failed to download attachment: {e}"))
 }
 
-/// Ask the user where to put an attachment, then download it there. Returns
-/// the path written, or `None` if the user dismissed the dialog.
+/// Ask the user where to save an attachment, then download it there. Returns the path written, or
+/// `None` if the user dismissed the dialog.
 ///
-/// The dialog comes first so a cancel costs no download, and so the user gets
-/// an immediate response to their click rather than one that arrives whenever
-/// the file finishes transferring.
+/// The dialog is shown before the download starts, so a cancel costs no transfer and the click is
+/// answered immediately.
+///
+/// # Arguments
+/// * `client` - The Matrix client to download through.
+/// * `attachment` - The attachment to save.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub async fn save_attachment(
     client: &Client,
     attachment: &Attachment,
 ) -> Result<Option<std::path::PathBuf>, String> {
-    // The sender picked this name, so it is untrusted. It is safe as a
-    // suggestion because the file picker is what decides the real path, and
-    // the user confirms it. Nothing here writes to it directly.
+    // The suggested name is sender-controlled, but only the picker decides the real path.
     let mut dialog = rfd::AsyncFileDialog::new()
         .set_title("Save attachment")
         .set_file_name(suggested_filename(attachment))
         .set_can_create_directories(true);
-    // Start where a browser would. Left unset when there is no downloads
-    // directory to point at, so the dialog falls back to its own default
-    // rather than to a path that does not exist.
+
+    // Left unset when there is no downloads directory, so the dialog uses its own default.
     if let Some(directory) = downloads_dir() {
         dialog = dialog.set_directory(directory);
     }
@@ -154,13 +158,8 @@ pub async fn save_attachment(
     Ok(Some(file.path().to_path_buf()))
 }
 
-/// The user's downloads directory, if it can be worked out and actually
-/// exists. This is the save dialog's starting point, so the common case —
-/// keep the file, where files are kept — is one click.
-///
-/// Every branch here is a guess, which is why the result is only returned
-/// once it has been confirmed to exist. A wrong guess means no starting
-/// directory, and the dialog falls back to its own default.
+/// The user's downloads directory, used as the save dialog's starting point. Every branch is a
+/// guess, so the path is only returned once it has been confirmed to exist.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn downloads_dir() -> Option<std::path::PathBuf> {
     // Windows has no `HOME`; the equivalent there is `USERPROFILE`.
@@ -168,28 +167,28 @@ fn downloads_dir() -> Option<std::path::PathBuf> {
         std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?,
     );
 
-    // macOS and Windows both localize only the folder's *display* name, so
-    // the directory entry really is called "Downloads" on both. The one case
-    // this misses is a Windows user who relocated theirs, which needs
+    // macOS and Windows localize only the folder's display name, so on disk it really is
+    // "Downloads". This misses a Windows user who relocated theirs, which needs
     // `SHGetKnownFolderPath` to answer properly.
     #[cfg(not(target_os = "linux"))]
     let directory = home.join("Downloads");
-    // Linux is the opposite: the directory itself is created under a
-    // localized name, so it has to be looked up rather than assumed.
+
+    // Linux is the opposite: the directory is created under a localized name, so it is looked up.
     #[cfg(target_os = "linux")]
     let directory = xdg_download_dir(&home).unwrap_or_else(|| home.join("Downloads"));
 
     directory.is_dir().then_some(directory)
 }
 
-/// Read `XDG_DOWNLOAD_DIR` out of the user-dirs config. It is not an
-/// environment variable — `xdg-user-dirs` writes it to a file — and reading
-/// it is what makes a localized or relocated downloads folder work. On a
-/// non-English desktop it is created as `~/Téléchargements`, `~/Descargas`
-/// and so on, and a hardcoded `~/Downloads` finds nothing at all.
+/// Read `XDG_DOWNLOAD_DIR` out of the user-dirs config, which is a file written by `xdg-user-dirs`
+/// rather than an environment variable. On a non-English desktop the directory is created as
+/// `~/Téléchargements`, `~/Descargas` and so on, which a hardcoded `~/Downloads` would never find.
 ///
-/// Returning `None` means the config is missing, which means `xdg-user-dirs`
-/// never ran, which means there is no localized directory to have found.
+/// Returns `None` when the config is missing, which means `xdg-user-dirs` never ran and there is no
+/// localized directory to find.
+///
+/// # Arguments
+/// * `home` - The user's home directory, used to expand the file's `$HOME` prefix.
 #[cfg(target_os = "linux")]
 fn xdg_download_dir(home: &std::path::Path) -> Option<std::path::PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
@@ -202,8 +201,8 @@ fn xdg_download_dir(home: &std::path::Path) -> Option<std::path::PathBuf> {
             continue;
         };
         let value = value.trim().trim_matches('"');
-        // Paths under the home directory are written as "$HOME/...", the one
-        // expansion this file uses.
+
+        // Paths under the home directory are written as "$HOME/...", the only expansion used here.
         return Some(match value.strip_prefix("$HOME") {
             Some(rest) => home.join(rest.trim_start_matches('/')),
             None => std::path::PathBuf::from(value),
@@ -212,34 +211,39 @@ fn xdg_download_dir(home: &std::path::Path) -> Option<std::path::PathBuf> {
     None
 }
 
-/// Mobile has no desktop-style file picker, and wiring up Android's Storage
-/// Access Framework needs JNI that does not exist here yet. Until it does,
-/// the file goes to the app's own downloads directory under a sanitized name.
+/// Save an attachment on mobile, where there is no desktop-style file picker. The file goes to the
+/// app's own downloads directory, since Android's Storage Access Framework needs JNI that does not
+/// exist here yet.
 ///
-/// TODO: replace with an `ACTION_CREATE_DOCUMENT` intent on Android so the
-/// user picks the destination, matching the desktop behaviour.
+/// TODO: replace with an `ACTION_CREATE_DOCUMENT` intent on Android so the user picks the
+/// destination, matching the desktop behaviour.
+///
+/// # Arguments
+/// * `client` - The Matrix client to download through.
+/// * `attachment` - The attachment to save.
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub async fn save_attachment(
     client: &Client,
     attachment: &Attachment,
 ) -> Result<Option<std::path::PathBuf>, String> {
     let dir = crate::app_state::app_data_dir(crate::APP_ID).join("downloads");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
 
-    // `suggested_filename` has already reduced this to a single component, so
-    // it cannot escape `dir`.
+    // `suggested_filename` returns a single path component, so it cannot escape `dir`.
     let path = dir.join(suggested_filename(attachment));
     let bytes = fetch_file(client, attachment).await?;
     std::fs::write(&path, &bytes).map_err(|e| format!("Failed to write file: {e}"))?;
     Ok(Some(path))
 }
 
-/// The name to save under, or to seed the save dialog with. Falls back to the
-/// kind's own word when the sender declared nothing usable, since a dialog
-/// prefilled with an empty name is worse than one prefilled with a wrong one.
+/// The name to save an attachment under, or to seed the save dialog with. Falls back to the kind's
+/// own word when the sender declared nothing usable.
+///
+/// # Arguments
+/// * `attachment` - The attachment being saved.
 fn suggested_filename(attachment: &Attachment) -> String {
-    // Only the last component is a file name; a sender-supplied "../x" would
-    // otherwise open the dialog in the parent directory.
+    // Keep only the last component, so a sender-supplied "../x" cannot walk out of a directory.
     let declared = attachment
         .filename
         .rsplit(['/', '\\'])

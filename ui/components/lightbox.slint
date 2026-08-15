@@ -67,11 +67,9 @@ export component Lightbox inherits Rectangle {
         }
     }
 
-    // Controls, top-right. Laid out right to left so hiding the save button
-    // leaves close where it has always been.
+    // Controls, top-right. Close comes last so hiding the save button leaves it where it was.
     HorizontalLayout {
-        // A layout would otherwise stretch to fill the overlay; pinning it to
-        // its content is what lets it sit in the corner.
+        // A layout would otherwise stretch to fill the overlay, so it is pinned to its content.
         width: self.preferred-width;
         height: self.preferred-height;
         x: parent.width - self.width - 16px;
@@ -95,8 +93,8 @@ export component Lightbox inherits Rectangle {
                 width: 100%;
                 height: 100%;
                 mouse-cursor: pointer;
-                // Saving writes the original file, not the downscaled copy on
-                // screen, so it does not need to wait for the decode.
+                // Saving writes the original file rather than the downscaled copy on screen, so it
+                // does not have to wait for the decode.
                 clicked => { UiState.save-attachment(UiState.lightbox-event-id); }
             }
         }
