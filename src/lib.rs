@@ -522,12 +522,12 @@ fn flush_preview_window(
 /// # Arguments
 /// * `room_id` - The room the page belongs to, used as the attachment cache key.
 /// * `messages` - The page to convert.
-/// * `display_names` - Sender display names resolved by the fetch, keyed by user id. A sender
-///   missing from it falls back to their user id.
+/// * `display_names` - Sender display names resolved by the fetch, keyed by the same interned
+///   sender string the messages carry. A sender missing from it falls back to their user id.
 fn stored_messages_to_ui(
     room_id: &RoomId,
     messages: Vec<rooms::messages::StoredMessage>,
-    display_names: &std::collections::HashMap<ruma::OwnedUserId, String>,
+    display_names: &std::collections::HashMap<std::sync::Arc<str>, String>,
 ) -> Vec<Message> {
     messages
         .into_iter()
@@ -539,9 +539,11 @@ fn stored_messages_to_ui(
                 rooms::messages::cache_attachment(room_id, &m.event_id, attachment);
             }
 
-            let user = ruma::UserId::parse(m.sender.as_ref())
-                .ok()
-                .and_then(|id| display_names.get(&id))
+            // Looked up by the sender string the message already holds. Parsing it
+            // into a typed id first would allocate one per row purely to probe the
+            // map with, and throw it away again.
+            let user = display_names
+                .get(m.sender.as_ref())
                 .map_or_else(|| m.sender.as_ref(), String::as_str);
 
             Message {

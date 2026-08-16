@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use matrix_sdk::Room;
-use ruma::{OwnedUserId, UserId};
+use ruma::UserId;
 use tracing::warn;
 
 /// The name a member goes by in a room, or `None` when the room's state has no member event for
@@ -56,7 +57,15 @@ pub async fn own_display_name(room: &Room) -> String {
     display_name(room, room.own_user_id()).await
 }
 
-/// Resolve the display names of every distinct sender in a page of messages, keyed by user id.
+/// Resolve the display names of every distinct sender in a page of messages, keyed by the same
+/// interned sender string the messages themselves carry.
+///
+/// Keyed by `Arc<str>` rather than by `OwnedUserId` so that looking a sender up costs a hash of a
+/// string the caller already holds. A map keyed by the typed id would make every row parse and
+/// allocate an id purely to probe it, and ruma's owned ids are `Box<str>` unless the
+/// `ruma_identifiers_storage` cfg says otherwise, so each of those is a real allocation. The typed
+/// id is still what the store is asked with, but that happens once per distinct sender here, and it
+/// borrows out of the key rather than allocating.
 ///
 /// Backfilled pages can reach further back than the member state the server bundled with them, so
 /// anything still unresolved after reading the store is worth one member request for the room. That
@@ -65,17 +74,21 @@ pub async fn own_display_name(room: &Room) -> String {
 ///
 /// # Arguments
 /// * `room` - The room the messages were sent in.
-/// * `senders` - The senders to resolve, duplicates included.
-pub async fn display_names<I>(room: &Room, senders: I) -> HashMap<OwnedUserId, String>
+/// * `senders` - The senders to resolve, duplicates included. A sender whose id does not parse is
+///   left out, which leaves the caller falling back to the raw string it already has.
+pub async fn display_names<I>(room: &Room, senders: I) -> HashMap<Arc<str>, String>
 where
-    I: IntoIterator<Item = OwnedUserId>,
+    I: IntoIterator<Item = Arc<str>>,
 {
-    let senders: HashSet<OwnedUserId> = senders.into_iter().collect();
-    let mut names: HashMap<OwnedUserId, String> = HashMap::with_capacity(senders.len());
-    let mut missing: Vec<OwnedUserId> = Vec::new();
+    let senders: HashSet<Arc<str>> = senders.into_iter().collect();
+    let mut names: HashMap<Arc<str>, String> = HashMap::with_capacity(senders.len());
+    let mut missing: Vec<Arc<str>> = Vec::new();
 
     for sender in senders {
-        match stored_name(room, &sender).await {
+        let Ok(user_id) = <&UserId>::try_from(sender.as_ref()) else {
+            continue;
+        };
+        match stored_name(room, user_id).await {
             Some(name) => {
                 names.insert(sender, name);
             }
@@ -93,7 +106,13 @@ where
     }
 
     for sender in missing {
-        let name = display_name(room, &sender).await;
+        // Reparsed rather than carried through the vec above, since a borrow taken from `sender`
+        // cannot be stored alongside the `sender` it points into. It parsed once already, so this
+        // cannot fail.
+        let Ok(user_id) = <&UserId>::try_from(sender.as_ref()) else {
+            continue;
+        };
+        let name = display_name(room, user_id).await;
         names.insert(sender, name);
     }
     names

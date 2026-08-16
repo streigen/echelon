@@ -1,12 +1,11 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use matrix_sdk::deserialized_responses::TimelineEvent;
 use matrix_sdk::event_cache::{RoomEventCache, RoomEventCacheSubscriber};
 use matrix_sdk::{Room, RoomState};
 use ruma::events::room::message::RoomMessageEventContent;
-use ruma::{
-    EventId, OwnedEventId, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomId, UserId,
-};
+use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedTransactionId, RoomId};
 use tokio::sync::Mutex;
 use tracing::{debug, trace};
 
@@ -84,9 +83,11 @@ async fn subscribe_active_room(
 pub struct PaginatedMessages {
     pub messages: Vec<StoredMessage>,
     pub next_token: Option<String>,
-    /// Display name for each sender in `messages`, keyed by user id. Resolved here rather than in
-    /// the UI layer, since names live in the room's member state and reading it is async.
-    pub display_names: HashMap<OwnedUserId, String>,
+    /// Display name for each sender in `messages`, keyed by the same interned string
+    /// [`StoredMessage::sender`] holds, so a row looks its sender up without parsing or allocating
+    /// anything. Resolved here rather than in the UI layer, since names live in the room's member
+    /// state and reading it is async.
+    pub display_names: HashMap<Arc<str>, String>,
 }
 
 /// Fetch one page of messages for a room, folding edits/redactions into
@@ -278,16 +279,11 @@ pub async fn send_message(
 /// # Arguments
 /// * `room` - The room the messages were sent in.
 /// * `messages` - The page whose senders to resolve.
-async fn resolve_display_names(
-    room: &Room,
-    messages: &[StoredMessage],
-) -> HashMap<OwnedUserId, String> {
+async fn resolve_display_names(room: &Room, messages: &[StoredMessage]) -> HashMap<Arc<str>, String> {
     // Collected rather than passed lazily, so no borrow of `messages` is held across the await and
-    // the returned future stays `Send`.
-    let senders: Vec<OwnedUserId> = messages
-        .iter()
-        .filter_map(|m| UserId::parse(m.sender.as_ref()).ok())
-        .collect();
+    // the returned future stays `Send`. Each entry is a handle on the sender string the message
+    // already interned, so this is a refcount bump per message and no copying.
+    let senders: Vec<Arc<str>> = messages.iter().map(|m| m.sender.clone()).collect();
     members::display_names(room, senders).await
 }
 
