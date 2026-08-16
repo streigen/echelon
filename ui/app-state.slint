@@ -44,7 +44,13 @@ export struct Message {
     repliedTo: string,
     // Identifies which message an in-flight attachment fetch belongs to,
     // so its result can be patched into the right row once it lands.
+    // A `pending` row has no event id yet and carries the send's transaction
+    // id here instead, which is what lib.rs looks it up by.
     event-id: string,
+    // A message this client has sent but the homeserver has not acknowledged
+    // yet. Drawn dimmed, and either settles into a normal row or is dropped
+    // when the send fails.
+    pending: bool,
     // Kind `Empty` when the message carries no media. A Matrix
     // `m.room.message` has exactly one msgtype, so an event never has more
     // than one attachment; several files are several events.

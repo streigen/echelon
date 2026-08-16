@@ -58,6 +58,11 @@ export component MessageRow inherits VerticalLayout {
             spacing: 16px;
             alignment: start;
 
+            // Dims the whole message, avatar included, while the send is
+            // unacknowledged. Applied here rather than per-Text so nothing
+            // added to the row later has to remember to dim itself.
+            opacity: msg.pending ? 0.45 : 1.0;
+
             // Avatar
             Rectangle {
                 width: 44px;

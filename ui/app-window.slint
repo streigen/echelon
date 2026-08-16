@@ -27,7 +27,11 @@ export component AppWindow inherits Window {
     callback oauth_action(string, string);
     callback open_chat();
     callback forgot_password();
-    callback matrix-message(string, string, string, string, string, MessageAttachment);
+    // sender, room id, body, event id, time, attachment, transaction id. The
+    // transaction id is empty for everyone else's messages; for our own it is
+    // the one the send was made with, and it names the pending row this event
+    // settles.
+    callback matrix-message(string, string, string, string, string, MessageAttachment, string);
     in-out property <string> result: "";
 
     // Generic debug console (dev-only): command registry is populated from Rust

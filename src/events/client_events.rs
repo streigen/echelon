@@ -29,7 +29,12 @@ impl ClientEvents {
         // Get the content based on event type. The ids stay in their ruma
         // types, since the attachment cache is keyed by them; only the copies
         // handed to the UI are stringified.
-        let (sender, body, event_id, origin_server_ts, attachment) = match event {
+        //
+        // `unsigned.transaction_id` is only set on the device that sent the event, so it is `None`
+        // for everyone else's messages. On our own it identifies the send, which is how the UI
+        // finds the pending row it is already showing for this message instead of adding a second
+        // one.
+        let (sender, body, event_id, origin_server_ts, attachment, transaction_id) = match event {
             SyncRoomMessageEvent::Original(original) => {
                 let body = original.content.body().to_string();
                 let attachment = attachment_of(&original.content.msgtype);
@@ -39,6 +44,7 @@ impl ClientEvents {
                     original.event_id,
                     original.origin_server_ts,
                     attachment,
+                    original.unsigned.transaction_id,
                 )
             }
             SyncRoomMessageEvent::Redacted(redacted) => (
@@ -46,6 +52,7 @@ impl ClientEvents {
                 "[Redacted message]".to_string(),
                 redacted.event_id,
                 redacted.origin_server_ts,
+                None,
                 None,
             ),
         };
@@ -77,6 +84,7 @@ impl ClientEvents {
                 event_id.as_str().into(),
                 time.into(),
                 attachment_to_ui(attachment.as_ref()),
+                transaction_id.as_deref().map_or("", |id| id.as_str()).into(),
             );
 
             // `ATTACHMENT_CACHE` is a `thread_local!`, so it has to be

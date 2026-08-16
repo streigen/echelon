@@ -45,6 +45,17 @@ pub async fn display_name(room: &Room, user_id: &UserId) -> String {
         .unwrap_or_else(|| user_id.to_string())
 }
 
+/// The name this account goes by in `room`.
+///
+/// Resolved exactly like any other member's, so a message labels itself the same way the copy the
+/// server echoes back will be labelled once it arrives.
+///
+/// # Arguments
+/// * `room` - The room to read our own member event from.
+pub async fn own_display_name(room: &Room) -> String {
+    display_name(room, room.own_user_id()).await
+}
+
 /// Resolve the display names of every distinct sender in a page of messages, keyed by user id.
 ///
 /// Backfilled pages can reach further back than the member state the server bundled with them, so

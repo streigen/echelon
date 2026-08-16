@@ -4,7 +4,9 @@ use matrix_sdk::deserialized_responses::TimelineEvent;
 use matrix_sdk::event_cache::{RoomEventCache, RoomEventCacheSubscriber};
 use matrix_sdk::{Room, RoomState};
 use ruma::events::room::message::RoomMessageEventContent;
-use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId};
+use ruma::{
+    EventId, OwnedEventId, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomId, UserId,
+};
 use tokio::sync::Mutex;
 use tracing::{debug, trace};
 
@@ -196,6 +198,28 @@ pub async fn get_messages_from_room_paginated(
     })
 }
 
+/// The display name this account has in a room.
+///
+/// Read from the room's stored member state, so it costs no network round trip. The UI resolves it
+/// when a channel is opened and holds onto it, which is what lets a message being sent be labelled
+/// at the moment it is typed, before there is an echoed event with a sender to resolve.
+///
+/// # Arguments
+/// * `client_state` - The client state containing the Matrix client to read through.
+/// * `room_id` - The room whose member state carries the name.
+pub async fn own_display_name(
+    client_state: ClientState,
+    room_id: OwnedRoomId,
+) -> Result<String, String> {
+    let client = super::get_active_client(&client_state).await?;
+
+    let room = client
+        .get_room(&room_id)
+        .ok_or_else(|| format!("Room {room_id} not found"))?;
+
+    Ok(members::own_display_name(&room).await)
+}
+
 /// Send a plain text message to a room.
 ///
 /// The event is handed to the SDK's send queue, so it is retried across reconnects and encrypted
@@ -206,10 +230,15 @@ pub async fn get_messages_from_room_paginated(
 /// * `client_state` - The client state containing the Matrix client to send with.
 /// * `room_id` - The room to send the message to.
 /// * `body` - The message text. Sent as `m.text`.
+/// * `txn_id` - Caller-chosen transaction id for this send. The homeserver puts it back in the
+///   echoed event's `unsigned.transaction_id`, but only for the device that sent it, which is how
+///   the UI recognises its own message and settles the row it is already showing for it. Must never
+///   be reused, since the homeserver treats a repeat as a retry of the same send.
 pub async fn send_message(
     client_state: ClientState,
     room_id: OwnedRoomId,
     body: String,
+    txn_id: OwnedTransactionId,
 ) -> Result<OwnedEventId, String> {
     trace!("Sending message to room: {}", room_id);
 
@@ -231,6 +260,7 @@ pub async fn send_message(
 
     let response = room
         .send(RoomMessageEventContent::text_plain(body))
+        .with_transaction_id(txn_id)
         .await
         .map_err(|e| format!("Failed to send message to room {room_id}: {e}"))?;
 

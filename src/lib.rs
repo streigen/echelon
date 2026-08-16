@@ -219,6 +219,34 @@ thread_local! {
     /// the UI thread.
     static MESSAGES: std::rc::Rc<slint::VecModel<Message>> =
         std::rc::Rc::new(slint::VecModel::from(Vec::new()));
+
+    /// The name this account goes by in the open room, resolved when the channel
+    /// is opened so a message being sent can be labelled the instant it is typed
+    /// rather than a round trip later.
+    ///
+    /// A display name belongs to a member's state in one room rather than to the
+    /// account, so the same user is free to go by a different name in every room
+    /// they are in. This holds the open room's name only, like `MESSAGES` holds
+    /// the open room's rows, and is cleared alongside them when the channel
+    /// changes so the room being left cannot label a message sent to the next
+    /// one. Empty while a channel is opening, and briefly on the first open.
+    static OWN_DISPLAY_NAME: std::cell::RefCell<slint::SharedString> =
+        std::cell::RefCell::new(slint::SharedString::new());
+}
+
+/// Index of the row standing in for the send `txn_id`, or `None` if it is no
+/// longer there.
+///
+/// A pending row holds its transaction id in `event_id` until the homeserver
+/// hands a real one back. Rows come out of a Slint model by value, so every row
+/// walked past is a clone; searching from the newest end means the row a send
+/// just put up is found in a step or two rather than after the whole scrollback.
+fn find_pending_row(messages: &slint::VecModel<Message>, txn_id: &str) -> Option<usize> {
+    (0..messages.row_count()).rev().find(|&index| {
+        messages
+            .row_data(index)
+            .is_some_and(|row| row.pending && row.event_id == txn_id)
+    })
 }
 
 /// Drop the decoded preview held by `event_id`'s row, if it has one. Clears
@@ -407,9 +435,57 @@ fn stored_messages_to_ui(
                 repliedTo: "".into(),
                 event_id: event_id.into(),
                 attachment: attachment_to_ui(m.attachment.as_ref()),
+                // Anything the server has handed back is acknowledged by definition.
+                pending: false,
             }
         })
         .collect()
+}
+
+/// Resolve the name this account goes by in `room_id` and hold onto it for the
+/// messages sent from that room, which are labelled before there is an echoed
+/// event to take a sender from.
+///
+/// Reads the room's stored member state, so it is off the network and lands
+/// within a frame or two of the channel opening.
+///
+/// # Arguments
+/// * `handle` - Runtime handle the resolve is spawned on.
+/// * `client_state` - The client state to read through.
+/// * `ui_handle` - Weak handle used to check the room is still open.
+/// * `room_id` - The room whose name for us to resolve.
+fn resolve_own_display_name(
+    handle: &tokio::runtime::Handle,
+    client_state: ClientState,
+    ui_handle: slint::Weak<AppWindow>,
+    room_id: String,
+) {
+    handle.spawn(async move {
+        let Ok(parsed) = ruma::RoomId::parse(&room_id) else {
+            return;
+        };
+        let name = match commands::messages::own_display_name(client_state, parsed).await {
+            Ok(name) => name,
+            Err(e) => {
+                // Only costs the pending row its label, so there is nothing to
+                // report to the user here.
+                eprintln!("Failed to resolve own display name: {e}");
+                return;
+            }
+        };
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            // The channel may have been switched while this was in flight, and
+            // the name of the room being left must not label a message sent to
+            // the one now open.
+            if ui.global::<UiState>().get_active_room_id() != room_id.as_str() {
+                return;
+            }
+            OWN_DISPLAY_NAME.with(|held| *held.borrow_mut() = name.into());
+        });
+    });
 }
 
 /// Fetch one page of a room's messages and install it in the UI.
@@ -788,6 +864,9 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     window.loaded.clear();
                     window.pending.clear();
                 });
+                // Belongs to the room being left. The resolve below replaces it.
+                OWN_DISPLAY_NAME
+                    .with(|name| *name.borrow_mut() = slint::SharedString::new());
 
                 ui.global::<UiState>().set_active_room(room_name);
                 ui.global::<UiState>().set_active_room_id(room_id);
@@ -796,6 +875,12 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 ui.global::<UiState>().set_loading_more(false);
             }
 
+            resolve_own_display_name(
+                &handle,
+                state.clone(),
+                ui_handle.clone(),
+                room_id_str.clone(),
+            );
             fetch_message_page(&handle, state.clone(), ui_handle.clone(), room_id_str, None);
         }
     });
@@ -834,10 +919,19 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
     // fetch next time that channel is opened).
     ui.on_matrix_message({
         let ui_handle = ui_handle.clone();
-        move |sender, room_id, body, event_id, time, attachment| {
+        move |sender, room_id, body, event_id, time, attachment, transaction_id| {
             if let Some(ui) = ui_handle.upgrade() {
                 let state = ui.global::<UiState>();
                 if state.get_active_room_id() != room_id {
+                    return;
+                }
+                // A message this client sent already has a row on screen, put up
+                // by `on_send_message` and settled by the send's own response, so
+                // appending this echo would show it twice. The homeserver hands
+                // the transaction id back to the sending device only, which is
+                // what makes it safe to drop on: no one else's message carries
+                // one.
+                if !transaction_id.is_empty() {
                     return;
                 }
                 let new_msg = Message {
@@ -847,6 +941,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     repliedTo: slint::SharedString::from(""),
                     event_id,
                     attachment,
+                    pending: false,
                 };
                 MESSAGES.with(|messages| messages.push(new_msg));
             }
@@ -856,12 +951,12 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
     // Send message callback. The composer only carries the text, so the room is
     // taken from whichever channel is open at the moment of the send.
     //
-    // Nothing is pushed into the model here. The sent event comes back through
-    // the sync handler like any other message (see `on_matrix_message`), which
-    // is where its real event id, timestamp, and display name come from. A
-    // local row as well would show the message twice, since the two carry no
-    // shared key to fold them back together. Only failures surface here, as a
-    // toast.
+    // The row goes up here, dimmed, before the request is made, so a message
+    // appears as it is typed rather than a round trip later. The send's own
+    // response settles it: on success the row takes the event id the homeserver
+    // assigned and stops being pending, and on failure it comes back down with
+    // the reason shown as a toast. The homeserver's echo of the same event is
+    // dropped by `on_matrix_message`, since this row already stands for it.
     ui.global::<UiState>().on_send_message({
         let state = client_state.clone();
         let handle = rt_handle.clone();
@@ -883,18 +978,63 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 }
             };
 
+            // Names both the send and the row standing in for it, and is what
+            // ties the two back together once the homeserver answers.
+            let txn_id = ruma::TransactionId::new();
+            MESSAGES.with(|messages| {
+                messages.push(Message {
+                    // Empty only if the channel's resolve has not landed yet, in
+                    // which case the row is labelled when the send settles.
+                    user: OWN_DISPLAY_NAME.with(|name| name.borrow().clone()),
+                    // The homeserver stamps the event itself, but has not been
+                    // asked yet. Both are shown to the minute, so the local
+                    // clock reads the same as the stamp that replaces it.
+                    time: format_time_of_day(chrono::Utc::now().timestamp_millis() as u64).into(),
+                    text: msg_text.clone(),
+                    repliedTo: slint::SharedString::from(""),
+                    event_id: txn_id.as_str().into(),
+                    attachment: attachment_to_ui(None),
+                    pending: true,
+                });
+            });
+
             let state = state.clone();
             let ui_handle = ui_handle.clone();
             let body = msg_text.to_string();
             handle.spawn(async move {
-                let Err(e) = commands::messages::send_message(state, room_id, body).await else {
-                    return;
-                };
+                let result =
+                    commands::messages::send_message(state, room_id, body, txn_id.clone()).await;
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = ui_handle.upgrade() else {
                         return;
                     };
-                    show_toast(&ui, format!("Failed to send message: {e}"), true);
+                    MESSAGES.with(|messages| {
+                        // Gone if the channel was switched while the send was in
+                        // flight, which clears the model. The message is in the
+                        // room regardless and shows up when it is reopened.
+                        let Some(index) = find_pending_row(messages, txn_id.as_str()) else {
+                            return;
+                        };
+                        let Ok(event_id) = &result else {
+                            // Takes the text the user typed down with it. It is
+                            // in the toast, and keeping it properly is what a
+                            // resend queue would be for.
+                            messages.remove(index);
+                            return;
+                        };
+                        let Some(mut row) = messages.row_data(index) else {
+                            return;
+                        };
+                        if row.user.is_empty() {
+                            row.user = OWN_DISPLAY_NAME.with(|name| name.borrow().clone());
+                        }
+                        row.event_id = event_id.as_str().into();
+                        row.pending = false;
+                        messages.set_row_data(index, row);
+                    });
+                    if let Err(e) = result {
+                        show_toast(&ui, format!("Failed to send message: {e}"), true);
+                    }
                 });
             });
         }
