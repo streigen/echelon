@@ -49,9 +49,18 @@ impl ClientHandler {
     ///
     /// An account's store is named after its user id, and the user id is only known
     /// once the homeserver has answered, so the request that establishes it cannot be
-    /// made through the client that will own the store. Nothing is persisted here and
-    /// no sync is started; the session this produces is adopted by a real client via
-    /// [`ClientHandler::adopt_session`].
+    /// made through the client that will own the store. A store cannot be attached
+    /// after the fact either, since it is fixed when the client is built. The session
+    /// this produces is handed to a real client by
+    /// [`ClientHandler::restore_session`].
+    ///
+    /// Nothing of the account's cryptographic identity may be written from here, or
+    /// it would be written into memory that is about to be dropped while the server
+    /// keeps the public half. Two things currently ensure that: no sync is started,
+    /// so device keys are never uploaded, and the post-login initialization task only
+    /// bootstraps cross-signing when `auto_enable_cross_signing` is set, which the
+    /// default [`matrix_sdk::encryption::EncryptionSettings`] leaves off. Turning that
+    /// on has to be done on the client built by `get_new_client`, never on this one.
     ///
     /// # Arguments
     /// * `homeserver` - The homeserver URL to authenticate against.
