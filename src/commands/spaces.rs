@@ -72,18 +72,26 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
         }
     }
 
-    for k in hierarchy.clone() {
+    // Borrowed, not cloned: cloning copied the whole tree on every call just to
+    // format a log line.
+    for k in &hierarchy {
         debug!(
             "Space: {:?} has children {:?}",
             k.room.name(),
             k.children
                 .iter()
-                .map(|r| r.room.name().unwrap())
+                .map(|r| room_label(&r.room))
                 .collect::<Vec<String>>()
         );
     }
 
     Ok(hierarchy)
+}
+
+/// A room's name, or its id when it has none. Only the log line above needs
+/// this, and a room without a name must not take the process down for it.
+fn room_label(room: &Room) -> String {
+    room.name().unwrap_or_else(|| room.room_id().to_string())
 }
 
 fn build_tree(

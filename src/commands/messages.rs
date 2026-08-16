@@ -1,12 +1,80 @@
 use std::collections::HashMap;
 
 use matrix_sdk::Room;
-use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedUserId, UserId};
+use matrix_sdk::deserialized_responses::TimelineEvent;
+use matrix_sdk::event_cache::{RoomEventCache, RoomEventCacheSubscriber};
+use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId};
+use tokio::sync::Mutex;
 use tracing::debug;
 
 use crate::ClientState;
 use crate::rooms::members;
 use crate::rooms::messages::{MessageStore, StoredMessage};
+
+/// The event cache subscription belonging to the room the user has open.
+///
+/// A [`RoomEventCacheSubscriber`] is how the SDK is told that a room is being
+/// looked at. Dropping the last one held for a room notifies the SDK's
+/// auto-shrink task, which unloads every chunk of that room's in-memory
+/// timeline but the last one. The persisted copy is left alone, so scrollback
+/// still comes back without a network round trip.
+///
+/// Nothing else in the client ever takes one, so without this the count never
+/// leaves zero, the notification is never sent, and the in-memory timeline of
+/// every room opened this session stays live for the rest of the process.
+static ACTIVE_ROOM_SUBSCRIPTION: Mutex<Option<ActiveRoomSubscription>> = Mutex::const_new(None);
+
+struct ActiveRoomSubscription {
+    room_id: OwnedRoomId,
+    /// Never read from. It is held for its `Drop`, which is what asks the SDK
+    /// to shrink the room once it stops being the open one. The updates it
+    /// buffers in the meantime are bounded by the broadcast channel's own
+    /// capacity, so an unread subscriber cannot grow without limit.
+    _subscriber: RoomEventCacheSubscriber,
+}
+
+/// Take over the active-room subscription for `room_id`, releasing the previous
+/// room's so it shrinks, and return the events already loaded for the new one.
+///
+/// Subscribing hands back the current events anyway, so this stands in for the
+/// [`RoomEventCache::events`] read the caller would otherwise do rather than
+/// adding a second copy of the same list.
+///
+/// # Arguments
+/// * `room_id` - The room being opened.
+/// * `cache` - That room's event cache.
+async fn subscribe_active_room(
+    room_id: &RoomId,
+    cache: &RoomEventCache,
+) -> Result<Vec<TimelineEvent>, String> {
+    let mut active = ACTIVE_ROOM_SUBSCRIPTION.lock().await;
+
+    // Reopening the room that already holds the subscription. Releasing and
+    // retaking it would shrink the very room the user is about to read.
+    if active
+        .as_ref()
+        .is_some_and(|held| &*held.room_id == room_id)
+    {
+        return cache
+            .events()
+            .await
+            .map_err(|e| format!("Failed to read local event cache: {e}"));
+    }
+
+    // Released before the new one is taken, so the room being left shrinks even
+    // if subscribing to the room being opened fails.
+    *active = None;
+
+    let (events, subscriber) = cache
+        .subscribe()
+        .await
+        .map_err(|e| format!("Failed to subscribe to the event cache: {e}"))?;
+    *active = Some(ActiveRoomSubscription {
+        room_id: room_id.to_owned(),
+        _subscriber: subscriber,
+    });
+    Ok(events)
+}
 
 /// One page of resolved, oldest-first messages plus the event id to pass
 /// back as `from` to load the next (older) page.
@@ -49,10 +117,16 @@ pub async fn get_messages_from_room_paginated(
         .await
         .map_err(|e| format!("Event cache unavailable for room {room_id}: {e}"))?;
 
-    let cached = cache
-        .events()
-        .await
-        .map_err(|e| format!("Failed to read local event cache: {e}"))?;
+    // Opening a room takes the subscription over from whichever room held it.
+    // Paging further back inside the room that already holds it must leave it
+    // where it is, since dropping it would unload the scrollback being read.
+    let cached = match &anchor {
+        None => subscribe_active_room(&room_id, &cache).await?,
+        Some(_) => cache
+            .events()
+            .await
+            .map_err(|e| format!("Failed to read local event cache: {e}"))?,
+    };
 
     // Cached events are oldest-first. `window_end` is the index of the edge
     let window_end = match &anchor {

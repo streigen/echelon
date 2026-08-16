@@ -769,11 +769,20 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                // The rows of the room being left are about to be replaced
-                // wholesale by the incoming page, so every preview they hold
-                // goes with them. Their queue entries would otherwise sit
-                // there claiming buffers that no longer exist, and evicting
-                // them later would clear rows belonging to the new room.
+                // Drop the rows of the room being left, and every decoded
+                // preview they hold, here rather than leaving them for the
+                // incoming page to overwrite. Doing it now is also what makes
+                // the queues below safe to clear alongside them: their entries
+                // would otherwise claim buffers belonging to rows on their way
+                // out, and evicting those later would clear rows belonging to
+                // the new room.
+                //
+                // It closes the one path where the buffers were never freed at
+                // all. A failed fetch never reaches `set_vec`, so the old rows
+                // stayed in the model holding their previews, untracked by a
+                // queue that had already been cleared, with nothing left that
+                // could evict them.
+                MESSAGES.with(|messages| messages.set_vec(Vec::new()));
                 PREVIEW_WINDOW.with(|s| {
                     let mut window = s.borrow_mut();
                     window.loaded.clear();
