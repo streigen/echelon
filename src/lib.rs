@@ -23,13 +23,6 @@ use storage::store::EchelonStore;
 
 pub use client::ClientState;
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
-use mimalloc::MiMalloc;
-
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
-
 slint::include_modules!();
 
 const APP_ID: &str = "com.streigen.echelon";
