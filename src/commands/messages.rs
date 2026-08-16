@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
-use matrix_sdk::Room;
 use matrix_sdk::deserialized_responses::TimelineEvent;
 use matrix_sdk::event_cache::{RoomEventCache, RoomEventCacheSubscriber};
+use matrix_sdk::{Room, RoomState};
+use ruma::events::room::message::RoomMessageEventContent;
 use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId};
 use tokio::sync::Mutex;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::ClientState;
 use crate::rooms::members;
@@ -193,6 +194,50 @@ pub async fn get_messages_from_room_paginated(
         next_token,
         display_names,
     })
+}
+
+/// Send a plain text message to a room.
+///
+/// The event is handed to the SDK's send queue, so it is retried across reconnects and encrypted
+/// first if the room is. The returned event id is the one the homeserver assigned, which is what the
+/// live sync handler will echo back for this message.
+///
+/// # Arguments
+/// * `client_state` - The client state containing the Matrix client to send with.
+/// * `room_id` - The room to send the message to.
+/// * `body` - The message text. Sent as `m.text`.
+pub async fn send_message(
+    client_state: ClientState,
+    room_id: OwnedRoomId,
+    body: String,
+) -> Result<OwnedEventId, String> {
+    trace!("Sending message to room: {}", room_id);
+
+    if body.trim().is_empty() {
+        return Err("message content is required".to_string());
+    }
+
+    let client = super::get_active_client(&client_state).await?;
+
+    let room = client
+        .get_room(&room_id)
+        .ok_or_else(|| format!("Room {room_id} not found"))?;
+
+    // Sending into a room that was only previewed or has already been left fails at the homeserver
+    // with a permission error, so it's rejected here where the reason can be stated plainly.
+    if room.state() != RoomState::Joined {
+        return Err(format!("Not joined to room {room_id}"));
+    }
+
+    let response = room
+        .send(RoomMessageEventContent::text_plain(body))
+        .await
+        .map_err(|e| format!("Failed to send message to room {room_id}: {e}"))?;
+
+    let event_id = response.response.event_id;
+    debug!("Sent message {} to room {}", event_id, room_id);
+
+    Ok(event_id)
 }
 
 /// Resolve the display name of every sender in a page of messages.

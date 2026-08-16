@@ -853,19 +853,50 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Send message callback. There is no backend send command yet, so this is
-    // UI local only.
+    // Send message callback. The composer only carries the text, so the room is
+    // taken from whichever channel is open at the moment of the send.
+    //
+    // Nothing is pushed into the model here. The sent event comes back through
+    // the sync handler like any other message (see `on_matrix_message`), which
+    // is where its real event id, timestamp, and display name come from. A
+    // local row as well would show the message twice, since the two carry no
+    // shared key to fold them back together. Only failures surface here, as a
+    // toast.
     ui.global::<UiState>().on_send_message({
+        let state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
         move |msg_text| {
-            let new_msg = Message {
-                user: slint::SharedString::from("me"),
-                time: slint::SharedString::from("just now"),
-                text: msg_text,
-                repliedTo: slint::SharedString::from(""),
-                event_id: slint::SharedString::from(""),
-                attachment: attachment_to_ui(None),
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
             };
-            MESSAGES.with(|messages| messages.push(new_msg));
+            let active_room_id = ui.global::<UiState>().get_active_room_id();
+            if active_room_id.is_empty() {
+                show_toast(&ui, "No channel open".to_string(), true);
+                return;
+            }
+            let room_id = match ruma::RoomId::parse(active_room_id.as_str()) {
+                Ok(room_id) => room_id,
+                Err(e) => {
+                    show_toast(&ui, format!("Invalid room id '{active_room_id}': {e}"), true);
+                    return;
+                }
+            };
+
+            let state = state.clone();
+            let ui_handle = ui_handle.clone();
+            let body = msg_text.to_string();
+            handle.spawn(async move {
+                let Err(e) = commands::messages::send_message(state, room_id, body).await else {
+                    return;
+                };
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    show_toast(&ui, format!("Failed to send message: {e}"), true);
+                });
+            });
         }
     });
 
