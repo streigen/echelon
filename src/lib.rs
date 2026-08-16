@@ -1,7 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::error::Error;
-use std::future::Future;
 use std::sync::Arc;
 
 mod account;
@@ -26,22 +25,6 @@ pub use client::ClientState;
 slint::include_modules!();
 
 const APP_ID: &str = "com.streigen.echelon";
-
-fn spawn_ui_command<F, Fut>(handle: &tokio::runtime::Handle, _ui: slint::Weak<AppWindow>, f: F)
-where
-    F: FnOnce() -> Fut + Send + 'static,
-    Fut: Future<Output = slint::SharedString> + Send + 'static,
-{
-    handle.spawn(async move {
-        let start = std::time::Instant::now();
-        let msg = f().await;
-        println!(
-            "Backend Result: {} ({}ms)",
-            msg,
-            start.elapsed().as_millis()
-        );
-    });
-}
 
 /// Wraps a `Vec<T>` into a `ModelRc<T>` backed by a fresh `VecModel`.
 pub(crate) fn to_model<T: Clone + 'static>(v: Vec<T>) -> slint::ModelRc<T> {
@@ -71,6 +54,7 @@ pub(crate) fn attachment_to_ui(a: Option<&rooms::messages::Attachment>) -> Messa
         mimetype: a.mimetype.as_deref().unwrap_or_default().into(),
         filename: a.filename.as_str().into(),
         savable: a.kind.is_savable(),
+        previewable: a.previewable(),
         width: a.width.unwrap_or(0) as i32,
         height: a.height.unwrap_or(0) as i32,
         preview: slint::Image::default(),
@@ -107,6 +91,7 @@ pub(crate) fn display_text<'a>(
 /// * `ui_handle` - Weak handle used to patch the result back into the UI.
 /// * `room_id` - Room the message belongs to, checked before patching.
 /// * `event_id` - Event whose row receives the preview.
+/// * `hint` - Where that row sat when the fetch was started, checked before use.
 /// * `attachment` - The attachment to download.
 fn spawn_image_fetch(
     handle: &tokio::runtime::Handle,
@@ -114,6 +99,7 @@ fn spawn_image_fetch(
     ui_handle: slint::Weak<AppWindow>,
     room_id: String,
     event_id: String,
+    hint: usize,
     attachment: rooms::messages::Attachment,
 ) {
     handle.spawn(async move {
@@ -150,7 +136,7 @@ fn spawn_image_fetch(
             // rebuilding it, so the row's `init` does not fire again and no
             // spurious visibility report follows from patching a preview in.
             MESSAGES.with(|messages| {
-                let Some(index) = messages.iter().position(|r| r.event_id == event_id) else {
+                let Some(index) = row_index(messages, &event_id, Some(hint)) else {
                     return;
                 };
                 let Some(mut row) = messages.row_data(index) else {
@@ -191,10 +177,15 @@ const MAX_LOADED_PREVIEWS: usize = 24;
 /// [`flush_preview_window`].
 #[derive(Default)]
 struct PreviewWindow {
-    /// Whether each reported event id is inside the keep band. This is a map
-    /// rather than a list so a row that flaps during a scroll leaves only its
-    /// final answer behind.
-    pending: std::collections::HashMap<String, bool>,
+    /// Where each reported event id last said it was, and whether it was inside
+    /// the keep band. This is a map rather than a list so a row that flaps
+    /// during a scroll leaves only its final answer behind.
+    ///
+    /// The index is the row's position at the time it reported, kept as a hint
+    /// so the flush can go straight to the row rather than searching the model
+    /// for it. It is verified before use, since a page can be prepended in the
+    /// time between the report and the flush.
+    pending: std::collections::HashMap<String, (usize, bool)>,
     /// Event ids whose fetch is already running, so a row crossing the
     /// boundary repeatedly does not stack up duplicate downloads.
     in_flight: std::collections::HashSet<String>,
@@ -249,11 +240,38 @@ fn find_pending_row(messages: &slint::VecModel<Message>, txn_id: &str) -> Option
     })
 }
 
+/// Index of the row holding `event_id`, checking `hint` before falling back to a
+/// search.
+///
+/// Rows are handed to Rust with the index they had when they reported themselves, and
+/// the model can have been prepended to or trimmed since. Checking the hint costs one
+/// row clone and is right in almost every case; when it is not, the search behind it
+/// is the one that would have been needed regardless. Searching from the newest end
+/// because that is where the rows being looked up almost always are: the newest page
+/// is what is on screen.
+fn row_index(
+    messages: &slint::VecModel<Message>,
+    event_id: &str,
+    hint: Option<usize>,
+) -> Option<usize> {
+    let matches = |index: usize| {
+        messages
+            .row_data(index)
+            .is_some_and(|row| row.event_id == event_id)
+    };
+    if let Some(hint) = hint {
+        if matches(hint) {
+            return Some(hint);
+        }
+    }
+    (0..messages.row_count()).rev().find(|&index| matches(index))
+}
+
 /// Drop the decoded preview held by `event_id`'s row, if it has one. Clears
 /// only `preview` and leaves `width`/`height` alone, so the row keeps its size
 /// and freeing memory never moves content under the user's cursor.
 fn clear_preview_row(messages: &slint::VecModel<Message>, event_id: &str) {
-    let Some(index) = messages.iter().position(|r| r.event_id == event_id) else {
+    let Some(index) = row_index(messages, event_id, None) else {
         return;
     };
     let Some(mut row) = messages.row_data(index) else {
@@ -284,6 +302,100 @@ fn note_preview_loaded(messages: &slint::VecModel<Message>, event_id: String) {
     for id in evicted {
         clear_preview_row(messages, &id);
     }
+}
+
+/// Messages asked for per fetch, and so the size of one prepended page.
+const MESSAGE_PAGE: u32 = 50;
+
+/// Cap on how many rows the model holds: two pages either side of the viewport.
+///
+/// A row is small next to a decoded preview, but the model is the one thing here
+/// that grows without limit, since scrolling back prepends a page at a time and
+/// nothing ever gave any of it back. Rows are dropped from whichever end the user
+/// has scrolled away from, so what goes is always the furthest thing from the
+/// viewport. See [`trim_messages`].
+const MAX_MESSAGE_ROWS: usize = MESSAGE_PAGE as usize * 4;
+
+/// Drop rows past [`MAX_MESSAGE_ROWS`] off one end of the model.
+///
+/// Called from the scroll timers rather than at the moment rows are added, so that
+/// removal always happens on the far side of the viewport and never moves content
+/// under the user. Both ends leave the model consistent with what can be fetched
+/// again: the oldest end is the pagination anchor, which moves with it, while the
+/// newest end has no forward pagination to move, so its loss is recorded and the
+/// latest page is reloaded whole when the user comes back down to it.
+///
+/// # Arguments
+/// * `ui` - The window whose model to trim.
+/// * `drop_oldest` - Trim the oldest rows when true, the newest when false.
+fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
+    MESSAGES.with(|messages| {
+        let overflow = messages.row_count().saturating_sub(MAX_MESSAGE_ROWS);
+        if overflow == 0 {
+            return;
+        }
+
+        let mut dropped = Vec::with_capacity(overflow);
+        for _ in 0..overflow {
+            let index = if drop_oldest {
+                0
+            } else {
+                messages.row_count() - 1
+            };
+            let Some(row) = messages.row_data(index) else {
+                break;
+            };
+            dropped.push(row.event_id.to_string());
+            messages.remove(index);
+        }
+
+        // The rows took their decoded previews with them, so the queue that stands
+        // for the live pixel buffers has to lose them too. Left in, they would be
+        // counted against the cap and evict previews that are still on screen.
+        // Anything still in flight for them lands on a row that no longer exists and
+        // is dropped there.
+        PREVIEW_WINDOW.with(|s| {
+            let mut window = s.borrow_mut();
+            window.loaded.retain(|id| !dropped.contains(id));
+            window.pending.retain(|id, _| !dropped.contains(id));
+        });
+
+        let state = ui.global::<UiState>();
+        if drop_oldest {
+            // The next page back is anchored on the oldest row still shown, which
+            // has just changed. Left pointing at a row that was dropped, the fetch
+            // would skip everything between the two.
+            if let Some(oldest) = messages.row_data(0) {
+                state.set_next_token(oldest.event_id);
+            }
+        } else {
+            state.set_newer_trimmed(true);
+        }
+    });
+}
+
+/// Empty the open channel's rows and everything keyed to them.
+///
+/// Used when the rows on screen stop standing for anything: a channel switch, and a
+/// reload of the latest page. The queues have to go with the rows, since their
+/// entries would otherwise claim buffers belonging to rows on their way out, and
+/// evicting those later would clear rows belonging to whatever replaced them.
+///
+/// # Arguments
+/// * `ui` - The window whose message view to reset.
+fn reset_message_view(ui: &AppWindow) {
+    MESSAGES.with(|messages| messages.set_vec(Vec::new()));
+    PREVIEW_WINDOW.with(|s| {
+        let mut window = s.borrow_mut();
+        window.loaded.clear();
+        window.pending.clear();
+    });
+
+    let state = ui.global::<UiState>();
+    state.set_messages_loading(true);
+    state.set_next_token(slint::SharedString::new());
+    state.set_loading_more(false);
+    state.set_newer_trimmed(false);
 }
 
 /// How long a toast stays up before clearing itself.
@@ -349,12 +461,17 @@ fn flush_preview_window(
     let Ok(parsed_room_id) = <&RoomId>::try_from(room_id.as_str()) else {
         return;
     };
-    // Rows missing from `pending` did not move. Pending ids missing from the
-    // model belong to a room that has since been switched away from.
+    // Walked over the rows that reported, not over the model. Only rows that
+    // crossed the band are in here, which during a scroll is a handful, while the
+    // model behind them can be the whole scrollback. A pending id with no row left
+    // belongs to a room that has since been switched away from, or to a row that
+    // trimming dropped.
     MESSAGES.with(|messages| {
-        for (index, mut row) in messages.iter().enumerate() {
-            let event_id = row.event_id.to_string();
-            let Some(&inside) = pending.get(&event_id) else {
+        for (event_id, (hint, inside)) in pending {
+            let Some(index) = row_index(messages, &event_id, Some(hint)) else {
+                continue;
+            };
+            let Some(mut row) = messages.row_data(index) else {
                 continue;
             };
             let loaded = row.attachment.preview.size().width > 0;
@@ -368,14 +485,17 @@ fn flush_preview_window(
                 }
                 continue;
             }
-            // Kinds with no preview never load, so skip them before claiming an
-            // in flight slot that would only be released again. Borrowed rather
-            // than `EventId::parse`, which would allocate an owned id just to
-            // probe the map and drop it again.
+            if loaded {
+                continue;
+            }
+            // Attachments that are not rendered inline never load, so skip them
+            // before claiming an in flight slot that would only be released again.
+            // Borrowed rather than `EventId::parse`, which would allocate an owned
+            // id just to probe the map and drop it again.
             let Some(source) = <&EventId>::try_from(event_id.as_str())
                 .ok()
                 .and_then(|parsed| rooms::messages::get_cached_attachment(parsed_room_id, parsed))
-                .filter(|a| !loaded && a.kind.has_preview())
+                .filter(rooms::messages::Attachment::previewable)
             else {
                 continue;
             };
@@ -385,7 +505,8 @@ fn flush_preview_window(
                     client_state.clone(),
                     ui_handle.clone(),
                     room_id.clone(),
-                    event_id.clone(),
+                    event_id,
+                    index,
                     source,
                 );
             }
@@ -511,7 +632,7 @@ fn fetch_message_page(
                     client_state,
                     parsed,
                     token.clone(),
-                    50,
+                    MESSAGE_PAGE,
                 )
                 .await
             }
@@ -735,21 +856,36 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
     let rt_handle = tokio::runtime::Handle::current();
 
     // UI Auth hooks (mapping to backend)
+    // Both outcomes are reported as a toast. Until this, a failed login and a
+    // successful one looked exactly alike from the window: the result went to stdout
+    // and nothing on screen moved.
     ui.on_login({
-        let state = client_state.clone();
+        let client_state = client_state.clone();
         let handle = rt_handle.clone();
-        let ui = ui_handle.clone();
+        let ui_handle = ui_handle.clone();
         move |username, password, homeserver| {
-            let (state, ui) = (state.clone(), ui.clone());
+            let (client_state, ui_handle) = (client_state.clone(), ui_handle.clone());
             let (username, password, homeserver) = (
                 username.to_string(),
                 password.to_string(),
                 homeserver.to_string(),
             );
-            spawn_ui_command(&handle, ui, move || async move {
-                commands::auth::login(username, password, homeserver, state)
-                    .await
-                    .map_or_else(|e| e.into(), |s| s.into())
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_loading(true);
+            }
+            handle.spawn(async move {
+                let result =
+                    commands::auth::login(username, password, homeserver, client_state).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    ui.set_loading(false);
+                    match result {
+                        Ok(message) => show_toast(&ui, message, false),
+                        Err(e) => show_toast(&ui, e, true),
+                    }
+                });
             });
         }
     });
@@ -847,32 +983,20 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
 
                 // Drop the rows of the room being left, and every decoded
                 // preview they hold, here rather than leaving them for the
-                // incoming page to overwrite. Doing it now is also what makes
-                // the queues below safe to clear alongside them: their entries
-                // would otherwise claim buffers belonging to rows on their way
-                // out, and evicting those later would clear rows belonging to
-                // the new room.
+                // incoming page to overwrite.
                 //
                 // It closes the one path where the buffers were never freed at
                 // all. A failed fetch never reaches `set_vec`, so the old rows
                 // stayed in the model holding their previews, untracked by a
                 // queue that had already been cleared, with nothing left that
                 // could evict them.
-                MESSAGES.with(|messages| messages.set_vec(Vec::new()));
-                PREVIEW_WINDOW.with(|s| {
-                    let mut window = s.borrow_mut();
-                    window.loaded.clear();
-                    window.pending.clear();
-                });
+                reset_message_view(&ui);
                 // Belongs to the room being left. The resolve below replaces it.
                 OWN_DISPLAY_NAME
                     .with(|name| *name.borrow_mut() = slint::SharedString::new());
 
                 ui.global::<UiState>().set_active_room(room_name);
                 ui.global::<UiState>().set_active_room_id(room_id);
-                ui.global::<UiState>().set_messages_loading(true);
-                ui.global::<UiState>().set_next_token("".into());
-                ui.global::<UiState>().set_loading_more(false);
             }
 
             resolve_own_display_name(
@@ -910,6 +1034,40 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 room_id_str,
                 Some(token),
             );
+        }
+    });
+
+    // The user scrolled back down to the bottom after trimming dropped the newest
+    // rows. Nothing paginates forwards, so the latest page is refetched whole, which
+    // is the same work opening the channel does and is served from the local event
+    // cache the same way.
+    ui.global::<UiState>().on_load_latest_messages({
+        let client_state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        move || {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            let room_id = ui.global::<UiState>().get_active_room_id().to_string();
+            if room_id.is_empty() {
+                return;
+            }
+            // Clears `newer-trimmed`, which is what stops the scroll handler from
+            // asking again before this fetch has landed.
+            reset_message_view(&ui);
+            fetch_message_page(&handle, client_state.clone(), ui_handle.clone(), room_id, None);
+        }
+    });
+
+    // Fired by the scroll timers once the position they were restoring has settled,
+    // so rows only ever go away on the side the user has scrolled away from.
+    ui.global::<UiState>().on_trim_messages({
+        let ui_handle = ui_handle.clone();
+        move |drop_oldest| {
+            if let Some(ui) = ui_handle.upgrade() {
+                trim_messages(&ui, drop_oldest);
+            }
         }
     });
 
@@ -1064,10 +1222,11 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let Some(attachment) = rooms::messages::get_cached_attachment(room_id, event_id) else {
                 return;
             };
-            // Enlarging only means something for kinds that decode to a
-            // raster. A click on a file or audio row must not try to decode
-            // that file as an image.
-            if !attachment.kind.has_preview() {
+            // Enlarging only means something for an attachment that is rendered
+            // inline in the first place. A click on a file card must not try to
+            // decode that file as an image, and a row only offers this click when
+            // it holds a preview to enlarge.
+            if !attachment.previewable() {
                 return;
             }
 
@@ -1129,10 +1288,12 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let state = client_state.clone();
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
-        move |event_id, inside| {
+        move |index, event_id, inside| {
             let queue_flush = PREVIEW_WINDOW.with(|s| {
                 let mut window = s.borrow_mut();
-                window.pending.insert(event_id.to_string(), inside);
+                window
+                    .pending
+                    .insert(event_id.to_string(), (index.max(0) as usize, inside));
                 let queue = !window.flush_queued;
                 window.flush_queued = true;
                 queue

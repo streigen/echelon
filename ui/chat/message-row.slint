@@ -3,6 +3,9 @@ import { Message, MessageAttachment, AttachmentKind } from "../app-state.slint";
 export component MessageRow inherits VerticalLayout {
     in property <Message> msg;
     in property <bool> is-first: false;
+    // This row's position in the model, passed along with every visibility report so
+    // Rust can go straight to the row instead of searching for it.
+    in property <int> index;
 
     // Slice of the scroll content, in the same coordinates as this row's `y`,
     // whose previews are worth keeping decoded. Supplied by chat-main.
@@ -101,9 +104,9 @@ export component MessageRow inherits VerticalLayout {
                     wrap: word-wrap;
                 }
 
-                // Raster kinds render their own preview. Mirrors `AttachmentKind::has_preview`.
-                if msg.attachment.kind == AttachmentKind.Image
-                    || msg.attachment.kind == AttachmentKind.Sticker : Rectangle {
+                // Decided in Rust by `Attachment::previewable`, which is the kind
+                // question and the size question together.
+                if msg.attachment.previewable : Rectangle {
                     property <MessageAttachment> att: msg.attachment;
                     // Sender-declared size when there is one, else a
                     // placeholder box; capped so a huge image can't take the
@@ -145,12 +148,13 @@ export component MessageRow inherits VerticalLayout {
                     }
                 }
 
-                // Video, audio and file have no renderer, so they get a card with the name,
-                // type and a way to save it. Video stays here rather than in the lightbox
-                // until there is a player to hand a click to.
-                if msg.attachment.kind == AttachmentKind.Video
-                    || msg.attachment.kind == AttachmentKind.Audio
-                    || msg.attachment.kind == AttachmentKind.File : Rectangle {
+                // Everything else with an attachment gets a card with the name, type
+                // and a way to save it: video, audio and file, which have no renderer,
+                // and images too big to be worth pulling down uninvited. Video stays
+                // here rather than in the lightbox until there is a player to hand a
+                // click to.
+                if msg.attachment.kind != AttachmentKind.Empty
+                    && !msg.attachment.previewable : Rectangle {
                     property <MessageAttachment> att: msg.attachment;
 
                     width: 320px;

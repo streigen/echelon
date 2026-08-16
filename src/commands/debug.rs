@@ -42,7 +42,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         name: "restore_session",
-        arg_labels: &["username", "homeserver"],
+        arg_labels: &["user_id (@user:server)", "homeserver"],
     },
     CommandSpec {
         name: "reset_account",

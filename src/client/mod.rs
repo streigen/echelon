@@ -5,6 +5,7 @@ use tokio::sync::RwLock;
 use url::Url;
 
 use crate::app_state::AppState;
+use crate::storage::secret::Session;
 use crate::AppWindow;
 use sync_manager::SyncManager;
 
@@ -47,4 +48,32 @@ impl ClientHandler {
     pub async fn stop_sync(&self) {
         self.sync_manager.stop_sync().await;
     }
+}
+
+/// Read the session an authentication request just established off the client it was
+/// made on.
+///
+/// The ids come from the homeserver's answer rather than from anything the user
+/// typed. They name the account's store and its stronghold snapshot, and a guess
+/// would name a different one on any server whose name differs from its client URL,
+/// or whenever the server normalizes the localpart.
+///
+/// # Arguments
+/// * `client` - The client the request was made on, now carrying the session.
+pub(crate) fn session_of(client: &Client) -> anyhow::Result<Session> {
+    let tokens = client
+        .session_tokens()
+        .ok_or_else(|| anyhow::anyhow!("Missing session tokens after authentication"))?;
+    Ok(Session {
+        user_id: client
+            .user_id()
+            .ok_or_else(|| anyhow::anyhow!("Missing user id after authentication"))?
+            .to_string(),
+        device_id: client
+            .device_id()
+            .ok_or_else(|| anyhow::anyhow!("Missing device id after authentication"))?
+            .to_string(),
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+    })
 }

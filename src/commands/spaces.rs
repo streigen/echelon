@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use matrix_sdk::Room;
 use matrix_sdk::deserialized_responses::SyncOrStrippedState;
@@ -14,7 +14,10 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
     let client = super::get_active_client(&client_state).await?;
     let all_joined_rooms = client.joined_rooms();
 
-    let room_map: HashMap<OwnedRoomId, Room> = all_joined_rooms
+    // Ordered, because the roots are found by walking this map and they become the
+    // space tabs in that order. A `HashMap` reshuffles them on every run, so the
+    // sidebar's tabs would sit somewhere different each launch.
+    let room_map: BTreeMap<OwnedRoomId, Room> = all_joined_rooms
         .into_iter()
         .map(|r| (r.room_id().to_owned(), r))
         .collect();
@@ -96,7 +99,7 @@ fn room_label(room: &Room) -> String {
 
 fn build_tree(
     current_id: &OwnedRoomId,
-    room_map: &HashMap<OwnedRoomId, Room>,
+    room_map: &BTreeMap<OwnedRoomId, Room>,
     parent_to_children: &HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
     visited: &mut HashSet<OwnedRoomId>,
 ) -> Option<SpaceRoom> {

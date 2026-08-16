@@ -1,16 +1,26 @@
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::{AuthSession, SessionMeta, SessionTokens};
 use ruma::{OwnedDeviceId, OwnedUserId};
-use url::Url;
 
-use crate::events::client_events::ClientEvents;
-use crate::storage::secret::Session;
+use crate::client::session_of;
 use crate::client::sync_manager::SyncManager;
+use crate::events::client_events::ClientEvents;
 
 use super::ClientHandler;
 
 impl ClientHandler {
     /// Log in a user with the given username, password, and homeserver.
+    ///
+    /// The request runs on a store-less client, because an account's store is named
+    /// after its real user id and that id is only known once the homeserver has
+    /// answered. Deriving it from the username and the URL host instead gets a
+    /// different answer whenever the server's name differs from the URL it is served
+    /// on, which is the usual arrangement, and the account would then be filed under
+    /// a name nothing else looks it up by.
+    ///
+    /// The established session is persisted and then adopted by a real, store-backed
+    /// client through [`ClientHandler::restore_session`], which is the one place such
+    /// a client is built.
     ///
     /// # Arguments
     /// * `username` - The username of the account to log in to.
@@ -22,87 +32,68 @@ impl ClientHandler {
         password: String,
         homeserver: String,
     ) -> anyhow::Result<Option<ClientHandler>> {
-        // Derive the full Matrix user ID so we can look up / generate the sqlite password
-        // before we even open the store, ensuring the DB is always encrypted from first open.
-        let user_id = format!(
-            "@{}:{}",
-            username,
-            Url::parse(&homeserver)?.domain().unwrap_or(&homeserver)
-        );
-        let sqlite_pwd = self.app_state.secret_service.get_or_create_sqlite_pwd(&user_id)?;
-
-        let new_client = self
-            .get_new_client(&username, &homeserver, Some(sqlite_pwd))
-            .await?;
-        new_client
+        let auth_client = self.get_auth_client(&homeserver).await?;
+        auth_client
             .matrix_auth()
             .login_username(&username, &password)
             .initial_device_display_name("Echelon")
             .send()
             .await?;
 
-        ClientEvents::register_events(&new_client, self.ui_handle.clone());
+        let session = session_of(&auth_client)?;
+        drop(auth_client);
 
-        // store the session tokens in stronghold
-        let session_tokens = new_client
-            .session_tokens()
-            .ok_or_else(|| anyhow::anyhow!("Missing session tokens after login"))?;
-        let user_id = new_client
-            .user_id()
-            .ok_or_else(|| anyhow::anyhow!("Missing user_id after login"))?
-            .to_string();
-        self.app_state.secret_service.set_session(&Session {
-            user_id: user_id.clone(),
-            device_id: new_client.device_id().map(|d| d.to_string()).unwrap_or_default(),
-            access_token: session_tokens.access_token,
-            refresh_token: session_tokens.refresh_token,
-        })?;
-
-        // store the new username
+        let user_id = session.user_id.clone();
+        self.app_state.secret_service.set_session(&session)?;
         self.app_state.echelon_store.add_account(&user_id)?;
 
-        Ok(Some(ClientHandler {
-            matrix_client: new_client,
-            sync_manager: SyncManager::new(),
-            app_state: self.app_state.clone(),
-            ui_handle: self.ui_handle.clone(),
-        }))
+        self.restore_session(user_id, homeserver).await
     }
 
-    /// Restore a previous session for the given username and homeserver. This will attempt to load
-    /// the session from the client's store, and if successful, will start the sync loop for that
-    /// session. This is used for session persistence across app restarts.
+    /// Build the client that owns a stored account and restore its session into it.
+    ///
+    /// This is the only path that opens an account's encrypted store, so every way in
+    /// (a fresh login, a registration, or an app restart) ends up here.
     ///
     /// # Arguments
-    /// * `username` - The username of the session to restore.
-    /// * `homeserver` - The homeserver of the session to restore, used to disambiguate sessions.
+    /// * `user_id` - The full Matrix user id of the account to restore, as stored by
+    ///   [`crate::storage::store::EchelonStore`].
+    /// * `homeserver` - The homeserver URL the account lives on.
     pub async fn restore_session(
         &self,
-        username: String,
+        user_id: String,
         homeserver: String,
     ) -> anyhow::Result<Option<ClientHandler>> {
-        let user_id = format!(
-            "@{}:{}",
-            username,
-            Url::parse(&homeserver)?.domain().unwrap_or(&homeserver)
-        );
-        let sqlite_pwd = self.app_state.secret_service.get_sqlite_pwd(&user_id)?;
+        let sqlite_pwd = self
+            .app_state
+            .secret_service
+            .get_or_create_sqlite_pwd(&user_id)?;
 
-        let new_client = self.get_new_client(&username, &homeserver, sqlite_pwd).await?;
-        let session = self.app_state.secret_service
+        let new_client = self
+            .get_new_client(&user_id, &homeserver, &sqlite_pwd)
+            .await?;
+        let mut session = self
+            .app_state
+            .secret_service
             .get_session(&user_id)?
             .ok_or_else(|| anyhow::anyhow!("No stored session found for user"))?;
+
+        // Taken rather than moved out: the session's zeroizing drop makes it a `Drop`
+        // type, and a `Drop` type's fields cannot be moved out of. Taking hands the
+        // SDK the same buffer the token already lives in, so it is never copied; what
+        // stays behind is an empty string, which the drop then wipes for free.
+        let tokens = SessionTokens {
+            access_token: std::mem::take(&mut session.access_token),
+            refresh_token: session.refresh_token.take(),
+        };
 
         new_client
             .restore_session(AuthSession::Matrix(MatrixSession {
                 meta: SessionMeta {
-                    user_id: OwnedUserId::try_from(session.user_id)?,
-                    device_id: OwnedDeviceId::try_from(session.device_id)?,
+                    user_id: OwnedUserId::try_from(session.user_id.as_str())?,
+                    device_id: OwnedDeviceId::try_from(session.device_id.as_str())?,
                 },
-                tokens: SessionTokens {
-                    access_token: session.access_token,
-                    refresh_token: session.refresh_token,
-                },
+                tokens,
             }))
             .await?;
 

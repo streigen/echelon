@@ -54,6 +54,11 @@ export component ChatMain inherits Rectangle {
         triggered => {
             self.running = false;
             scroll-view.viewport-y = -100000px;
+            // Pinned to the bottom, so the scrollback above is what the model has too
+            // much of. Trimming it now costs nothing visible: the rows that go are
+            // the ones furthest from the viewport, and the position is already being
+            // driven to the end.
+            UiState.trim-messages(true);
         }
     }
 
@@ -67,6 +72,11 @@ export component ChatMain inherits Rectangle {
             self.running = false;
             scroll-view.viewport-y = pre-load-viewport-y
                 - (scroll-view.viewport-height - pre-load-viewport-height);
+            // After the restore, not with the prepend: the restore reads the height
+            // the model grew by, and rows removed in the same pass would be counted
+            // in that growth and throw the position off. Removing them now takes
+            // content away from below the viewport only, which moves nothing above it.
+            UiState.trim-messages(false);
         }
     }
 
@@ -103,17 +113,24 @@ export component ChatMain inherits Rectangle {
                         UiState.loading-more = true;
                         UiState.load-older-messages();
                     }
+                    // Back at the bottom after scrolling far enough up that the newest
+                    // rows were trimmed away. There is no page-at-a-time way forward,
+                    // so the latest page is reloaded whole.
+                    if near-bottom && UiState.newer-trimmed && !UiState.messages-loading {
+                        UiState.load-latest-messages();
+                    }
                 }
 
                 for msg[idx] in UiState.messages : MessageRow {
                     msg: msg;
+                    index: idx;
                     is-first: idx == 0;
                     keep-top: preview-keep-top;
                     keep-bottom: preview-keep-bottom;
                     attachment-clicked() => { UiState.open-lightbox(msg.event-id); }
                     attachment-save-clicked() => { UiState.save-attachment(msg.event-id); }
                     preview-window-changed(inside) => {
-                        UiState.preview-window-changed(msg.event-id, inside);
+                        UiState.preview-window-changed(idx, msg.event-id, inside);
                     }
                 }
             }

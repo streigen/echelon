@@ -164,23 +164,26 @@ pub async fn logout(state: ClientState) -> Result<String, String> {
     Ok("logged out".into())
 }
 
-/// Restore a previous session for the given username and homeserver.
+/// Restore a previous session for the given user id and homeserver.
 ///
 /// This attempts to load the session from secure storage and, if successful,
 /// starts the sync loop for that session. It is used for persistence across app restarts.
 ///
 /// # Arguments
-/// * `username` - The username of the session to restore.
-/// * `homeserver` - The homeserver used to disambiguate sessions.
+/// * `user_id` - The full Matrix user id of the session to restore, as listed by
+///   [`crate::storage::store::EchelonStore::get_accounts`]. Sessions are stored under
+///   the id the homeserver reported, not under anything the user typed, so a username
+///   is not enough to find one.
+/// * `homeserver` - The homeserver the account lives on.
 /// * `state` - The client state containing the Matrix client to restore on.
 pub async fn restore_session(
-    username: String,
+    user_id: String,
     homeserver: String,
     state: ClientState,
 ) -> Result<String, String> {
-    debug!("Restoring session for user: {}", username);
-    if username.trim().is_empty() {
-        return Err("username is required".to_string());
+    debug!("Restoring session for user: {}", user_id);
+    if user_id.trim().is_empty() {
+        return Err("user id is required".to_string());
     }
 
     // Call restore_session in a separate scope so the read lock is dropped before write access.
@@ -189,7 +192,7 @@ pub async fn restore_session(
         let Some(client_handler) = state_r.as_ref() else {
             return Err("No active client session".to_string());
         };
-        client_handler.restore_session(username, homeserver).await
+        client_handler.restore_session(user_id, homeserver).await
     };
 
     match handler {

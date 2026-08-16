@@ -38,6 +38,20 @@ impl AttachmentKind {
     }
 }
 
+/// Largest attachment that will be pulled down and decoded for an inline preview.
+///
+/// Past this the row shows a file card with a download button instead, so the bytes
+/// only move if the user asks for them. A preview is fetched because a row scrolled
+/// into view, which is nobody's decision, and this is the size past which that stops
+/// being a reasonable thing to do uninvited.
+///
+/// This is not a memory bound, and must not be read as one. The decision is made from
+/// the size the *sender* declared, and a sender that understates it is believed right
+/// up until the bytes are already in memory. What actually bounds a decode is
+/// `MAX_DECODE_ALLOC` and the downscale, both applied to the real data; what bounds
+/// the transfer is nothing.
+pub const MAX_PREVIEW_BYTES: u64 = 8 * 1024 * 1024;
+
 /// A media attachment, carrying just enough to fetch and render it later.
 /// One shape covers every kind, so a new kind needs no new field here.
 #[derive(Debug, Clone)]
@@ -57,6 +71,43 @@ pub struct Attachment {
     pub filename: String,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    /// Sender-declared size of the full file, in bytes.
+    pub size: Option<u64>,
+    /// Sender-declared size of `thumbnail_source`, in bytes.
+    pub thumbnail_size: Option<u64>,
+}
+
+impl Attachment {
+    /// Bytes an inline preview of this attachment would pull down, when that is
+    /// knowable before asking for it.
+    ///
+    /// `None` means the cost cannot be predicted, which covers the case where the
+    /// homeserver scales the image for us: unencrypted media with no sender
+    /// thumbnail is fetched through the thumbnail endpoint, so the original's size
+    /// says nothing about what crosses the wire. Mirrors the source selection in
+    /// [`crate::commands::media::fetch_image`], and has to keep mirroring it.
+    fn preview_bytes(&self) -> Option<u64> {
+        match (&self.thumbnail_source, &self.source) {
+            // A sender thumbnail is fetched as-is, whatever the original weighs.
+            (Some(_), _) => self.thumbnail_size,
+            // Scaled by the homeserver on the way out.
+            (None, MediaSource::Plain(_)) => None,
+            // The server cannot thumbnail what it cannot decrypt, so this is the
+            // whole file.
+            (None, MediaSource::Encrypted(_)) => self.size,
+        }
+    }
+
+    /// Whether to render this attachment inline. False for a kind that has no raster
+    /// to show, and for one whose preview would cost more than [`MAX_PREVIEW_BYTES`]
+    /// to fetch. Those fall back to a file card, which offers the download the user
+    /// can ask for deliberately.
+    pub fn previewable(&self) -> bool {
+        self.kind.has_preview()
+            && self
+                .preview_bytes()
+                .is_none_or(|bytes| bytes <= MAX_PREVIEW_BYTES)
+    }
 }
 
 /// Upper bound on how many events' attachments stay resolvable at once.
@@ -411,39 +462,46 @@ pub(crate) fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
                 $m.filename().to_owned(),
                 info.and_then(|i| i.width),
                 info.and_then(|i| i.height),
+                info.and_then(|i| i.size),
+                info.and_then(|i| i.thumbnail_info.as_ref()?.size),
             )
         }};
     }
 
-    let (kind, source, thumbnail_source, mimetype, filename, width, height) = match msgtype {
-        MessageType::Image(m) => visual!(AttachmentKind::Image, m),
-        MessageType::Video(m) => visual!(AttachmentKind::Video, m),
-        MessageType::Audio(m) => {
-            let mimetype = m.info.as_deref().and_then(|i| i.mimetype.clone());
-            (
-                AttachmentKind::Audio,
-                &m.source,
-                None,
-                mimetype,
-                m.filename().to_owned(),
-                None,
-                None,
-            )
-        }
-        MessageType::File(m) => {
-            let info = m.info.as_deref();
-            (
-                AttachmentKind::File,
-                &m.source,
-                info.and_then(|i| i.thumbnail_source.clone()),
-                info.and_then(|i| i.mimetype.clone()),
-                m.filename().to_owned(),
-                None,
-                None,
-            )
-        }
-        _ => return None,
-    };
+    let (kind, source, thumbnail_source, mimetype, filename, width, height, size, thumbnail_size) =
+        match msgtype {
+            MessageType::Image(m) => visual!(AttachmentKind::Image, m),
+            MessageType::Video(m) => visual!(AttachmentKind::Video, m),
+            MessageType::Audio(m) => {
+                let info = m.info.as_deref();
+                (
+                    AttachmentKind::Audio,
+                    &m.source,
+                    None,
+                    info.and_then(|i| i.mimetype.clone()),
+                    m.filename().to_owned(),
+                    None,
+                    None,
+                    info.and_then(|i| i.size),
+                    None,
+                )
+            }
+            MessageType::File(m) => {
+                let info = m.info.as_deref();
+                (
+                    AttachmentKind::File,
+                    &m.source,
+                    info.and_then(|i| i.thumbnail_source.clone()),
+                    info.and_then(|i| i.mimetype.clone()),
+                    m.filename().to_owned(),
+                    None,
+                    None,
+                    info.and_then(|i| i.size),
+                    info.and_then(|i| i.thumbnail_info.as_ref()?.size),
+                )
+            }
+            _ => return None,
+        };
 
     Some(Attachment {
         kind,
@@ -453,6 +511,8 @@ pub(crate) fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
         filename,
         width: width.map(uint_to_u32),
         height: height.map(uint_to_u32),
+        size: size.map(u64::from),
+        thumbnail_size: thumbnail_size.map(u64::from),
     })
 }
 
@@ -470,6 +530,13 @@ fn attachment_of_sticker(content: &StickerEventContent) -> Attachment {
         filename: String::new(),
         width: content.info.width.map(uint_to_u32),
         height: content.info.height.map(uint_to_u32),
+        size: content.info.size.map(u64::from),
+        thumbnail_size: content
+            .info
+            .thumbnail_info
+            .as_ref()
+            .and_then(|info| info.size)
+            .map(u64::from),
     }
 }
 

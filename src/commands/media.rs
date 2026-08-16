@@ -1,12 +1,13 @@
 use std::io::Cursor;
 
+use image::{ColorType, ImageDecoder};
 use matrix_sdk::Client;
 use matrix_sdk::media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings};
 use ruma::UInt;
 use ruma::api::client::media::get_content_thumbnail::v3::Method;
 use ruma::events::room::MediaSource;
 
-use crate::rooms::messages::Attachment;
+use crate::rooms::messages::{Attachment, MAX_PREVIEW_BYTES};
 
 /// Longest edge kept for an in-chat attachment. This is also the size asked
 /// of the homeserver's thumbnail endpoint. It is twice the 320px attachment
@@ -118,6 +119,24 @@ pub async fn fetch_image(
         .get_media_content(&request, true)
         .await
         .map_err(|e| format!("Failed to download image: {e}"))?;
+
+    // `Attachment::previewable` decided this was worth fetching from the size the
+    // sender declared, which the sender is free to make up. This is the same ceiling
+    // applied to what actually arrived, and it catches both an understated size and a
+    // homeserver that answered a thumbnail request with the original.
+    //
+    // It bounds the decode, not the transfer. `get_media_content` has already
+    // buffered the whole body by the time this runs, with no size limit and no
+    // timeout, and for encrypted media it allocated a second buffer that size again
+    // to decrypt into. Nothing here can bound that: the SDK exposes no streaming or
+    // length-limited download. What holds the process together meanwhile is
+    // `DECODE_PERMITS`, which caps how many of these can be in flight at once.
+    if size == ImageSize::Display && bytes.len() as u64 > MAX_PREVIEW_BYTES {
+        return Err(format!(
+            "Attachment is {} bytes, over the {MAX_PREVIEW_BYTES} byte preview limit",
+            bytes.len()
+        ));
+    }
 
     let max_edge = match size {
         ImageSize::Display => DISPLAY_MAX_EDGE,
@@ -303,8 +322,25 @@ fn decode_image(bytes: Vec<u8>, max_edge: u32) -> Result<DecodedImage, String> {
     limits.max_alloc = Some(MAX_DECODE_ALLOC);
     reader.limits(limits);
 
-    let decoded = reader
-        .decode()
+    let decoder = reader
+        .into_decoder()
+        .map_err(|e| format!("Failed to read image header: {e}"))?;
+    let (width, height) = decoder.dimensions();
+
+    // An image that is already RGBA8 and already small enough is decoded straight
+    // into the buffer Slint will render from, so the pixels are written once and
+    // never copied. Every other case has to go through `DynamicImage`, either to
+    // convert the colour or to downscale, and pays one copy into the shared buffer
+    // at the end. That copy is bounded by `max_edge`, so it is the small one.
+    if width <= max_edge && height <= max_edge && decoder.color_type() == ColorType::Rgba8 {
+        let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(width, height);
+        decoder
+            .read_image(buffer.make_mut_bytes())
+            .map_err(|e| format!("Failed to decode image: {e}"))?;
+        return Ok(DecodedImage(buffer));
+    }
+
+    let decoded = image::DynamicImage::from_decoder(decoder)
         .map_err(|e| format!("Failed to decode image: {e}"))?;
     let decoded = if decoded.width() > max_edge || decoded.height() > max_edge {
         // Preserves the aspect ratio, and only ever shrinks given the guard.

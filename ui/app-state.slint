@@ -28,6 +28,11 @@ export struct MessageAttachment {
     filename: string,
     // Whether to offer a save button. Mirrors `AttachmentKind::is_savable` on the Rust side.
     savable: bool,
+    // Whether to render this inline at all. Mirrors `Attachment::previewable`: false
+    // for kinds with no raster, and for an image whose preview would cost more to
+    // fetch than the limit allows. Both fall back to the file card, which offers a
+    // download instead of pulling the bytes down on its own.
+    previewable: bool,
     // Natural pixel size from the event (0 if absent), so the box can be
     // sized before the bytes land and nothing jumps afterwards.
     width: int,
@@ -108,6 +113,11 @@ export global UiState {
     // True while an older-messages fetch is in flight, to stop
     // load-older-messages from firing repeatedly while scrolled to the top.
     in-out property <bool> loading-more: false;
+    // Set when trimming dropped rows off the newest end of the model, which happens
+    // once scrolling back has grown it past its cap. There is no forward pagination
+    // to put them back one page at a time, so scrolling to the bottom reloads the
+    // latest page instead (see load-latest-messages).
+    in-out property <bool> newer-trimmed: false;
 
     // Layout state
     in-out property <bool> sidebar-collapsed: false;
@@ -148,11 +158,23 @@ export global UiState {
     callback channel-clicked(string, string); // room id, room name
     callback send-message(string);
     callback load-older-messages();
+    // Reload the newest page, replacing the model. Fired when the user scrolls back
+    // to the bottom after trimming dropped the rows that used to be there.
+    callback load-latest-messages();
+    // Drop rows past the model's cap, from the oldest end when the argument is true
+    // and from the newest end when it is false. Called from the scroll timers rather
+    // than at the moment rows are added, so rows only ever go away on the side the
+    // user has scrolled away from and the viewport does not shift under them.
+    callback trim-messages(bool);
     callback open-lightbox(string); // event id
     callback close-lightbox();
     // event id. Opens the platform's save dialog and writes the attachment's original bytes there.
     callback save-attachment(string);
-    // event id, whether the row is in the preview keep band. Drives both
+    // row index, event id, whether the row is in the preview keep band. Drives both
     // fetching and eviction; see chat-main.slint's preview-keep-*.
-    callback preview-window-changed(string, bool);
+    //
+    // The index is a hint, not an identity: it saves Rust a scan of the model to find
+    // the row again, and it is checked against the event id before being used, since
+    // a page can be prepended between the report and the moment it is acted on.
+    callback preview-window-changed(int, string, bool);
 }

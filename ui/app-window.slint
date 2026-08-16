@@ -18,7 +18,9 @@ export component AppWindow inherits Window {
 
     in-out property <string> username: "";
     in-out property <string> password: "";
-    in-out property <string> homeserver: "matrix.org";
+    // Full URL, not a bare server name: this is parsed as one before any request is
+    // made, and "matrix.org" on its own is not a URL.
+    in-out property <string> homeserver: "https://matrix.org";
     in-out property <string> error: "";
     in-out property <bool> loading: false;
     in-out property <bool> show_password: false;
