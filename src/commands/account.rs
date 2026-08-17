@@ -1,16 +1,13 @@
 use crate::account::account_reset_types::AccountResetType;
 use crate::ClientState;
 
-/// Reset the account based on the specified reset type and provided credentials or backup key.
-///
-/// This handles different reset flows (identity reset vs key backup recovery)
-/// according to the provided `AccountResetType`.
+/// Reset the account identity or key backup.
 ///
 /// # Arguments
 /// * `account_reset_type` - The reset method to execute.
-/// * `password` - Optional password, required for identity reset.
-/// * `key_backup` - Optional key backup secret, required for key backup reset.
-/// * `state` - The client state containing the Matrix client for the reset operation.
+/// * `password` - Optional password for identity reset.
+/// * `key_backup` - Optional key backup secret for backup reset.
+/// * `state` - The client state.
 pub async fn reset_account(
     account_reset_type: AccountResetType,
     password: Option<String>,

@@ -91,12 +91,7 @@ impl EchelonStore {
         self.keyring.key_provider(&self.keyring_account)
     }
 
-    /// Open (or lazily create) the stronghold and return its Store.
-    ///
-    /// ### Returns
-    ///
-    /// If the snapshot file is missing, it will be created on commit, so this does not return an error in that case.
-    /// Returns an error if the snapshot file exists but cannot be loaded, or if the client cannot be loaded/created.
+    /// Open the stronghold store.
     fn open(&self) -> Result<(Stronghold, iota_stronghold::Store, KeyProvider)> {
         let key_provider = self.key_provider()?;
         let (stronghold, store) = open_store(&key_provider, &self.snapshot_path, APP_CLIENT, true)?
@@ -109,15 +104,7 @@ impl EchelonStore {
         commit_store(stronghold, key_provider, &self.snapshot_path)
     }
 
-    /// Read the list of accounts from the store, returning an empty list if not present.
-    ///
-    /// # Arguments
-    /// * `store` - The stronghold store from which to read the accounts list.
-    ///
-    /// ### Retruns
-    /// Returns an error if the data is present but cannot be deserialized, or if there is an issue reading from the store.
-    /// Returns `Ok(Accounts::default())` if the "accounts" key is not present in the store, which is expected on first run.
-    ///
+    /// Read the list of accounts from the store, returning default if missing.
     fn read_accounts(&self, store: &iota_stronghold::Store) -> Result<Accounts> {
         match store.get(b"accounts")? {
             Some(bytes) => Ok(serde_json::from_slice(&bytes)?),
@@ -126,13 +113,6 @@ impl EchelonStore {
     }
 
     /// Write the list of accounts to the store.
-    ///
-    /// # Arguments
-    /// * `store` - The stronghold store to which to write the accounts list.
-    /// * `accounts` - The list of accounts to persist.
-    ///
-    /// ### Returns
-    /// An error if the accounts cannot be serialized or if there is an issue writing to the store.
     fn write_accounts(
         &self,
         store: &iota_stronghold::Store,
@@ -185,14 +165,10 @@ impl EchelonStore {
         self.commit(&stronghold, &key_provider)
     }
 
-    /// Record the homeserver URL an account is reached through, leaving its position in
-    /// the list and the most-recently-used marker alone.
-    ///
-    /// Used to fill in an entry that predates the URL being stored, and to write back a
-    /// URL that rediscovery found had moved. Does nothing if the account is unknown.
+    /// Record the homeserver URL for an account.
     ///
     /// # Arguments
-    /// * `user_id` - The full Matrix user id of the account to update.
+    /// * `user_id` - The full Matrix user ID to update.
     /// * `homeserver` - The homeserver URL to record.
     pub fn set_homeserver(&self, user_id: &str, homeserver: &str) -> Result<()> {
         let (stronghold, store, key_provider) = self.open()?;

@@ -9,36 +9,17 @@ use ruma::events::room::MediaSource;
 
 use crate::rooms::messages::{Attachment, MAX_PREVIEW_BYTES};
 
-/// Longest edge kept for an in-chat attachment. This is also the size asked
-/// of the homeserver's thumbnail endpoint. It is twice the 320px attachment
-/// width used in message-row.slint, so images stay sharp on HiDPI screens.
+/// Maximum edge resolution for in-chat image thumbnails.
 const DISPLAY_MAX_EDGE: u32 = 640;
 
-/// Longest edge kept for the lightbox, roughly a 4K screen's short edge.
-/// Past this the extra pixels are invisible but the buffer is not.
+/// Maximum edge resolution for full-size lightbox images.
 const FULL_MAX_EDGE: u32 = 2560;
 
-/// Decoder ceilings applied to every image. The bytes come from an untrusted
-/// homeserver, and without these a small crafted file can ask the decoder for
-/// gigabytes. This is known as a decompression bomb.
-///
-/// The alloc ceiling is per decode, so it only bounds the process once the
-/// number of decodes running at a time is bounded too. See [`DECODE_PERMITS`].
-/// 64 MB admits a 4000x4000 RGBA source, above anything a preview needs.
+/// Security decoding ceilings to prevent image decompression bomb attacks.
 const MAX_DECODE_ALLOC: u64 = 64 * 1024 * 1024;
 const MAX_DECODE_EDGE: u32 = 16384;
 
-/// How many image fetches may be downloading or decoding at once.
-///
-/// The preview keep band spans five viewport heights, so a scroll into an
-/// image-heavy room can ask for a dozen images in the same pass. Each decode
-/// transiently holds the compressed bytes plus the full-size decoded surface,
-/// which for a 12MP photo is around 40 MB, so letting them all run at once is
-/// what takes the process to several hundred MB.
-///
-/// The permit is held across the download as well as the decode. That costs a
-/// little latency when previews are queued, and in exchange it bounds the
-/// compressed buffers waiting to be decoded rather than just the decodes.
+/// Maximum allowed concurrent image download and decode operations.
 const DECODE_PERMITS: usize = 3;
 
 static DECODE_LIMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(DECODE_PERMITS);
@@ -75,15 +56,10 @@ impl DecodedImage {
 
 /// Download and decode an image attachment at the requested size.
 ///
-/// The fetch goes through `client.media()`, which is backed by the local
-/// media cache, so repeat views do not hit the network again.
-///
-/// [`ImageSize::Display`] has three strategies, in order of preference:
-/// 1. Use a sender-provided `thumbnail_source`, which is already small.
-/// 2. For unencrypted media, ask the homeserver to scale it, so only the
-///    smaller image crosses the wire.
-/// 3. For encrypted media with no attached thumbnail, fetch the full file.
-///    The server cannot thumbnail content it cannot decrypt.
+/// # Arguments
+/// * `client` - Matrix client for fetching content.
+/// * `attachment` - Image attachment to fetch.
+/// * `size` - Target resolution (`Display` or `Full`).
 pub async fn fetch_image(
     client: &Client,
     attachment: &Attachment,
@@ -194,8 +170,7 @@ pub async fn save_attachment(
     Ok(Some(file.path().to_path_buf()))
 }
 
-/// The user's downloads directory, used as the save dialog's starting point. Every branch is a
-/// guess, so the path is only returned once it has been confirmed to exist.
+/// Find the user's downloads directory, returning `None` if missing.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn downloads_dir() -> Option<std::path::PathBuf> {
     // Windows has no `HOME`; the equivalent there is `USERPROFILE`.
@@ -216,15 +191,10 @@ fn downloads_dir() -> Option<std::path::PathBuf> {
     directory.is_dir().then_some(directory)
 }
 
-/// Read `XDG_DOWNLOAD_DIR` out of the user-dirs config, which is a file written by `xdg-user-dirs`
-/// rather than an environment variable. On a non-English desktop the directory is created as
-/// `~/Téléchargements`, `~/Descargas` and so on, which a hardcoded `~/Downloads` would never find.
-///
-/// Returns `None` when the config is missing, which means `xdg-user-dirs` never ran and there is no
-/// localized directory to find.
+/// Read `XDG_DOWNLOAD_DIR` from `user-dirs.dirs` for Linux desktop setups.
 ///
 /// # Arguments
-/// * `home` - The user's home directory, used to expand the file's `$HOME` prefix.
+/// * `home` - The user's home directory.
 #[cfg(target_os = "linux")]
 fn xdg_download_dir(home: &std::path::Path) -> Option<std::path::PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
