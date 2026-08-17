@@ -8,13 +8,10 @@ use tracing::error;
 
 use crate::ClientState;
 
-/// Get the DM rooms, including both explicit 1:1 rooms (`m.direct`) and inferred group DMs.
-///
-/// Group DMs are inferred via [`get_orphaned_rooms`] as a fallback for rooms that are
-/// non-space and not linked to a parent space.
+/// Fetch direct message rooms, including explicit 1:1 rooms (`m.direct`) and orphaned rooms.
 ///
 /// # Arguments
-/// * `state` - The client state containing the Matrix client to fetch rooms from.
+/// * `state` - The client state containing the Matrix client.
 pub async fn get_dm_rooms(state: ClientState) -> Result<Vec<Room>, String> {
     // Get the client.
     let state_r = state.read().await;
@@ -36,9 +33,7 @@ pub async fn get_dm_rooms(state: ClientState) -> Result<Vec<Room>, String> {
         if let Ok(deserialized) = direct_rooms.deserialize() {
             match deserialized {
                 AnyGlobalAccountDataEvent::Direct(direct_data) => {
-                    // `m.direct` maps each user to the rooms they are a DM with, so one
-                    // room shows up once per user it is a DM with. Only the distinct
-                    // rooms are wanted here, and the set is what collapses them.
+                    // Collect distinct DM room IDs.
                     let dm_room_ids: HashSet<OwnedRoomId> = direct_data
                         .content
                         .into_iter()
@@ -65,13 +60,10 @@ pub async fn get_dm_rooms(state: ClientState) -> Result<Vec<Room>, String> {
     Ok(dm_rooms)
 }
 
-/// Fetches joined rooms that are not spaces and do not have `m.space.parent` events.
-///
-/// This catches likely group DMs and legacy rooms that might not be represented in
-/// `m.direct` account data.
+/// Fetch joined non-space rooms lacking an `m.space.parent` event.
 ///
 /// # Arguments
-/// * `client` - The Matrix client used for room/state lookups.
+/// * `client` - The Matrix client used for room lookups.
 async fn get_orphaned_rooms(client: &Client) -> Result<Vec<Room>, String> {
     let non_space_rooms = client
         .joined_rooms()

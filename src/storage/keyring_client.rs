@@ -17,13 +17,10 @@ impl KeyringClient {
         KeyringClient { service }
     }
 
-    /// Retrieve the raw password stored in the keyring under `account`.
-    ///
-    /// If no entry exists, a new random password is generated, persisted, and
-    /// returned so callers can be lazy-init the stronghold key on first run.
+    /// Retrieve (or generate) the password stored in the keyring under `account`.
     ///
     /// # Arguments
-    /// * `account` - The keyring account name under which the stronghold encryption key is stored.
+    /// * `account` - The keyring account name.
     pub fn get_or_create_password(&self, account: &str) -> Result<Zeroizing<String>> {
         let entry = Entry::new(&self.service, account)?;
         match entry.get_password() {
@@ -44,9 +41,6 @@ impl KeyringClient {
     /// keyring entry if it does not yet exist.
     pub fn key_provider(&self, account: &str) -> Result<KeyProvider> {
         let password = self.get_or_create_password(account)?;
-        // Cloned out of the `Zeroizing` wrapper because the provider takes the
-        // passphrase by value. The copy that stays behind here is wiped on drop;
-        // the one handed over is stronghold's to protect.
         Ok(KeyProvider::with_passphrase_hashed_blake2b(
             password.to_string(),
         )?)

@@ -38,18 +38,7 @@ impl AttachmentKind {
     }
 }
 
-/// Largest attachment that will be pulled down and decoded for an inline preview.
-///
-/// Past this the row shows a file card with a download button instead, so the bytes
-/// only move if the user asks for them. A preview is fetched because a row scrolled
-/// into view, which is nobody's decision, and this is the size past which that stops
-/// being a reasonable thing to do uninvited.
-///
-/// This is not a memory bound, and must not be read as one. The decision is made from
-/// the size the *sender* declared, and a sender that understates it is believed right
-/// up until the bytes are already in memory. What actually bounds a decode is
-/// `MAX_DECODE_ALLOC` and the downscale, both applied to the real data; what bounds
-/// the transfer is nothing.
+/// Maximum attachment size (8MB) downloaded and decoded for inline preview.
 pub const MAX_PREVIEW_BYTES: u64 = 8 * 1024 * 1024;
 
 /// A media attachment, carrying just enough to fetch and render it later.
@@ -111,10 +100,6 @@ impl Attachment {
 }
 
 /// Upper bound on how many events' attachments stay resolvable at once.
-/// Leaving a room drops its entries outright, so in practice this is only
-/// reached by scrolling a long way back inside one room. A page is 50
-/// messages, so it covers many pages of scrollback even when every message
-/// carries media.
 const ATTACHMENT_CACHE_CAPACITY: usize = 2048;
 
 /// Size the cache is trimmed back to once it overflows. Evicting a batch
@@ -129,14 +114,7 @@ struct CachedAttachment {
     last_used: u64,
 }
 
-/// Attachments by room, then by event id. The UI model cannot carry a
-/// `MediaSource`, so a click or a scroll into view has only a room id and an
-/// event id to go on. This turns those back into something fetchable.
-///
-/// Grouping by room is what lets [`clear_room_attachments`] drop a room's
-/// entries without touching anything else. The LRU cap is the backstop for
-/// the one case that grouping does not cover: a single room scrolled back
-/// far enough to accumulate more entries than it will ever show at once.
+/// In-memory cache mapping (room_id, event_id) to media attachments.
 #[derive(Default)]
 struct AttachmentCache {
     rooms: HashMap<OwnedRoomId, HashMap<OwnedEventId, CachedAttachment>>,
@@ -219,10 +197,7 @@ pub fn get_cached_attachment(room_id: &RoomId, event_id: &EventId) -> Option<Att
     ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().get(room_id, event_id))
 }
 
-/// Forget everything cached for a room. Called when a room is left, and
-/// again when one is opened, since opening refetches the first page and
-/// rebuilds these entries from scratch anyway. Anything still on screen for
-/// that room is on its way out with it.
+/// Clear all cached attachments for a given room.
 pub fn clear_room_attachments(room_id: &RoomId) {
     ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().clear_room(room_id));
 }

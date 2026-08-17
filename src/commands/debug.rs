@@ -1,10 +1,4 @@
-//! Generic dispatcher for the dev-only debug console (Debug console page in the UI).
-//!
-//! `COMMANDS` is the single source of truth for what shows up in the console: each entry
-//! names a command and its positional argument labels. The maximum is 4, since the UI
-//! renders that many input slots. `dispatch` maps a command name + string args onto the real
-//! `commands::*` functions. Adding a new backend command to the console means adding one
-//! `CommandSpec` here and one match arm in `dispatch`. No UI changes are required.
+//! Command dispatcher for the developer debug console in the UI.
 
 use crate::ClientState;
 use crate::account::account_reset_types::AccountResetType;

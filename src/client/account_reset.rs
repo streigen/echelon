@@ -7,6 +7,12 @@ use crate::account::account_reset_types::AccountResetType;
 use super::ClientHandler;
 
 impl ClientHandler {
+    /// Reset the account identity or key backup based on the requested reset type.
+    ///
+    /// # Arguments
+    /// * `account_reset_type` - The method of reset to execute.
+    /// * `password` - Optional password required for identity reset UIAA.
+    /// * `key_backup` - Optional key backup recovery key.
     pub async fn reset_account(
         &self,
         account_reset_type: AccountResetType,
@@ -24,7 +30,6 @@ impl ClientHandler {
                         CrossSigningResetAuthType::Uiaa(uiaa_info) => {
                             debug!("UIAA authentication required for identity reset");
                             if let Some(pwd) = password {
-                                // Create password authentication data
                                 let user_id = client
                                     .user_id()
                                     .ok_or_else(|| anyhow::anyhow!("No user ID available"))?;
@@ -34,12 +39,10 @@ impl ClientHandler {
                                     pwd,
                                 );
 
-                                // Set the session if available
                                 if let Some(session) = &uiaa_info.session {
                                     password_auth.session = Some(session.clone());
                                 }
 
-                                // Perform the reset with password authentication
                                 handle
                                     .reset(Some(AuthData::Password(password_auth)))
                                     .await?;
@@ -52,8 +55,6 @@ impl ClientHandler {
                         }
                         CrossSigningResetAuthType::OAuth(oauth_info) => {
                             debug!("OAuth authentication required: {:?}", oauth_info);
-                            // For OAuth, the user needs to complete authentication via browser
-                            // This typically requires opening a browser and completing the OAuth flow
                             handle.reset(None).await?;
                             debug!("Identity reset initiated with OAuth");
                         }

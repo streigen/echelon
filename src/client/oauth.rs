@@ -23,24 +23,16 @@ impl ClientHandler {
         homeserver: String,
         login: bool,
     ) -> anyhow::Result<Option<ClientHandler>> {
-        // Create and generate an OAuth Handler
         let new_client = self.get_oauth_client(&homeserver).await?;
         let oauth = new_client.oauth();
 
-        // Fetch metadata from homeserver to ensure that it supports OAuth
-        // If it fails, it throws an exception to user.rs::oauth_login which passes it to front-end
         oauth.server_metadata().await?;
 
-        // Make a listener to listen on a random port to receive the GET request
         let (redirect_uri, redirect_handle) = LocalServerBuilder::new().spawn().await?;
 
-        // If user has registered and is logging in
         if login {
             // oauth.restore_registered_client()
-        }
-        // If the user hasn't registered, we register them
-        else {
-            // Setup client metadata
+        } else {
             let url = Url::parse("https://github.com/flaxeneel2/echelon/")?;
             let new_client_url = Localized::new(url, Vec::new());
             let grant_types: Vec<OAuthGrantType> = vec![
@@ -54,7 +46,7 @@ impl ClientHandler {
             let raw_client_metadata = Raw::new(&client_metadata)?;
             oauth.register_client(&raw_client_metadata).await?;
         }
-        // Build authorization data and login, then build the OAuthAuthCodeUrlBuilder
+
         let auth_data = oauth
             .login(redirect_uri.clone(), None, None, None)
             .build()
@@ -62,17 +54,14 @@ impl ClientHandler {
         open::that(auth_data.url.as_str())
             .map_err(|e| anyhow::anyhow!("Failed to open URL in browser: {}", e))?;
 
-        // Wait for redirect
         let query = redirect_handle
             .await
             .ok_or_else(|| anyhow::anyhow!("OAuth redirect was cancelled or timed out"))?;
 
-        // Finish Login, the SDK verifies the csrf token internally
         oauth
             .finish_login(UrlOrQuery::Query(query.to_string()))
             .await?;
 
-        // store the session tokens in stronghold
         let session_tokens = new_client
             .session_tokens()
             .ok_or_else(|| anyhow::anyhow!("Missing session tokens after OAuth login"))?;
@@ -90,7 +79,6 @@ impl ClientHandler {
             refresh_token: session_tokens.refresh_token,
         })?;
 
-        // store the new username
         self.app_state
             .echelon_store
             .add_account(&user_id, &homeserver)?;
