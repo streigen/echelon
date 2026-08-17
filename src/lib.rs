@@ -259,10 +259,10 @@ fn row_index(
             .row_data(index)
             .is_some_and(|row| row.event_id == event_id)
     };
-    if let Some(hint) = hint {
-        if matches(hint) {
-            return Some(hint);
-        }
+    if let Some(hint) = hint
+        && matches(hint)
+    {
+        return Some(hint);
     }
     (0..messages.row_count()).rev().find(|&index| matches(index))
 }

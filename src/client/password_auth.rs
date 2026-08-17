@@ -91,7 +91,9 @@ impl ClientHandler {
             .restore_session(AuthSession::Matrix(MatrixSession {
                 meta: SessionMeta {
                     user_id: OwnedUserId::try_from(session.user_id.as_str())?,
-                    device_id: OwnedDeviceId::try_from(session.device_id.as_str())?,
+                    // Infallible, unlike the user id above: a device id has no grammar
+                    // to violate, so any string is one.
+                    device_id: OwnedDeviceId::from(session.device_id.as_str()),
                 },
                 tokens,
             }))

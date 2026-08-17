@@ -70,7 +70,7 @@ impl SecretService {
     /// # Arguments
     /// * `user_id` - The user ID whose stronghold store should be opened.
     /// * `create_if_missing` - Whether to create the stronghold snapshot and client if
-    ///    they do not already exist. If `false`, this function will return `Ok(None)` if client data not present
+    ///   they do not already exist. If `false`, this function will return `Ok(None)` if client data not present
     ///
     /// ### Returns
     /// If `create_if_missing` is `false`, returns `Ok(None)` if the client data not exist yet.
@@ -116,7 +116,7 @@ impl SecretService {
     ///
     /// # Arguments
     /// * `session` - The session to persist, which must include a user_id and
-    ///    access_token. The device_id and refresh_token are optional but will be persisted if provided.
+    ///   access_token. The device_id and refresh_token are optional but will be persisted if provided.
     ///
     /// ### Returns
     /// An error if the session cannot be persisted for any reason (e.g. stronghold cannot be loaded or committed, etc.).
@@ -160,13 +160,13 @@ impl SecretService {
             user_id: user_id.to_string(),
             device_id: store
                 .get(b"device_id")?
-                .map(|b| String::from_utf8(b))
+                .map(String::from_utf8)
                 .transpose()?
                 .unwrap_or_default(),
             access_token: String::from_utf8(access_bytes)?,
             refresh_token: store
                 .get(b"refresh_token")?
-                .map(|b| String::from_utf8(b))
+                .map(String::from_utf8)
                 .transpose()?,
         }))
     }

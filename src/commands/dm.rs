@@ -1,9 +1,8 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use futures_util::future::join_all;
-use matrix_sdk::{Client, Room, RoomMemberships};
+use matrix_sdk::{Client, Room};
 use ruma::OwnedRoomId;
-use ruma::events::direct::OwnedDirectUserIdentifier;
 use ruma::events::{AnyGlobalAccountDataEvent, GlobalAccountDataEventType, StateEventType};
 use tracing::error;
 
@@ -37,18 +36,15 @@ pub async fn get_dm_rooms(state: ClientState) -> Result<Vec<Room>, String> {
         if let Ok(deserialized) = direct_rooms.deserialize() {
             match deserialized {
                 AnyGlobalAccountDataEvent::Direct(direct_data) => {
-                    let mut dm_room_user_map: HashMap<OwnedRoomId, Vec<OwnedDirectUserIdentifier>> =
-                        HashMap::new();
-                    for (user_id, room_ids) in direct_data.content {
-                        for room_id in room_ids {
-                            // Map each room to related DM users for member rendering.
-                            dm_room_user_map
-                                .entry(room_id)
-                                .or_insert_with(Vec::new)
-                                .push(user_id.clone());
-                        }
-                    }
-                    for (room_id, user_ids) in dm_room_user_map {
+                    // `m.direct` maps each user to the rooms they are a DM with, so one
+                    // room shows up once per user it is a DM with. Only the distinct
+                    // rooms are wanted here, and the set is what collapses them.
+                    let dm_room_ids: HashSet<OwnedRoomId> = direct_data
+                        .content
+                        .into_iter()
+                        .flat_map(|(_user_id, room_ids)| room_ids)
+                        .collect();
+                    for room_id in dm_room_ids {
                         if let Some(room) = client.get_room(&room_id) {
                             dm_rooms.push(room)
                         }

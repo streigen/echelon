@@ -72,7 +72,7 @@ impl ClientHandler {
     ///
     /// # Arguments
     /// * `homeserver_url` - The URL of the homeserver to create a client for OAuth.
-    pub(super) async fn get_oauth_client(&self, new_homeserver: &String) -> Result<Client> {
+    pub(super) async fn get_oauth_client(&self, new_homeserver: &str) -> Result<Client> {
         let homeserver_url: Url = Url::parse(new_homeserver)?;
         let client = Client::new(homeserver_url).await?;
         client.event_cache().subscribe()?;
