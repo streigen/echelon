@@ -211,6 +211,16 @@ thread_local! {
     static MESSAGES: std::rc::Rc<slint::VecModel<Message>> =
         std::rc::Rc::new(slint::VecModel::from(Vec::new()));
 
+    /// Bumped every time the message model is emptied, so a page fetched against the
+    /// rows that were there before cannot be installed over the rows that replaced
+    /// them.
+    ///
+    /// The open room's id does not catch this on its own: reloading the latest page
+    /// throws the model away without changing rooms, and a page already in flight
+    /// would pass a room check and be prepended onto a timeline it does not join up
+    /// with.
+    static MESSAGE_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+
     /// The name this account goes by in the open room, resolved when the channel
     /// is opened so a message being sent can be labelled the instant it is typed
     /// rather than a round trip later.
@@ -307,14 +317,22 @@ fn note_preview_loaded(messages: &slint::VecModel<Message>, event_id: String) {
 /// Messages asked for per fetch, and so the size of one prepended page.
 const MESSAGE_PAGE: u32 = 50;
 
-/// Cap on how many rows the model holds: two pages either side of the viewport.
+/// Cap on how many rows the model holds.
 ///
 /// A row is small next to a decoded preview, but the model is the one thing here
 /// that grows without limit, since scrolling back prepends a page at a time and
 /// nothing ever gave any of it back. Rows are dropped from whichever end the user
 /// has scrolled away from, so what goes is always the furthest thing from the
 /// viewport. See [`trim_messages`].
-const MAX_MESSAGE_ROWS: usize = MESSAGE_PAGE as usize * 4;
+///
+/// Set well clear of what a session of scrolling back reaches, because the two ends
+/// do not cost the same. Trimming the oldest rows only moves the pagination anchor,
+/// but trimming the newest ones cannot be undone a page at a time — coming back down
+/// reloads the latest page whole and drops the scrollback with it. At four pages the
+/// cap was reached after three scroll-ups and that reload sat on the ordinary path;
+/// the memory this gives back was never the memory that mattered, since the decoded
+/// previews are capped on their own by [`MAX_LOADED_PREVIEWS`].
+const MAX_MESSAGE_ROWS: usize = MESSAGE_PAGE as usize * 20;
 
 /// Drop rows past [`MAX_MESSAGE_ROWS`] off one end of the model.
 ///
@@ -385,6 +403,9 @@ fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
 /// * `ui` - The window whose message view to reset.
 fn reset_message_view(ui: &AppWindow) {
     MESSAGES.with(|messages| messages.set_vec(Vec::new()));
+    // Before any fetch this reset goes on to start, so that one carries the new
+    // generation and every page still in flight against the old rows carries the old.
+    MESSAGE_GENERATION.with(|g| g.set(g.get().wrapping_add(1)));
     PREVIEW_WINDOW.with(|s| {
         let mut window = s.borrow_mut();
         window.loaded.clear();
@@ -627,6 +648,11 @@ fn fetch_message_page(
     room_id: String,
     token: Option<String>,
 ) {
+    // Read before the spawn, on the UI thread that owns it, so it names the rows this
+    // page is being fetched against rather than whatever has replaced them by the time
+    // it lands.
+    let generation = MESSAGE_GENERATION.with(|g| g.get());
+
     handle.spawn(async move {
         let result = match ruma::RoomId::parse(&room_id) {
             Ok(parsed) => {
@@ -649,42 +675,81 @@ fn fetch_message_page(
             // Guard against a stale response. If the user switched channels
             // while this fetch was in flight, dropping the result is better
             // than clobbering whatever is now loading for the open channel.
-            if state.get_active_room_id() != room_id.as_str() {
+            //
+            // The generation covers the case the room id cannot: a reload of the
+            // latest page empties the model without leaving the room, so a page still
+            // on its way back would pass the room check and be prepended onto rows it
+            // does not join up with. Both paths reset `loading-more` on their way
+            // through `reset_message_view`, so returning here strands nothing.
+            if state.get_active_room_id() != room_id.as_str()
+                || MESSAGE_GENERATION.with(|g| g.get()) != generation
+            {
                 return;
             }
             let prepend = token.is_some();
             state.set_messages_loading(false);
-            state.set_loading_more(false);
+            if !prepend {
+                // A prepended page holds it past the fetch instead, until the scroll
+                // position has been corrected for the rows it added. See the epoch
+                // handshake below and chat-main's restore-scroll-timer.
+                state.set_loading_more(false);
+            }
 
+            let mut prepended = 0;
             match result {
                 Ok(paginated) => {
-                    let Ok(parsed_room_id) = <&RoomId>::try_from(room_id.as_str()) else {
-                        return;
-                    };
-                    let msgs = stored_messages_to_ui(
-                        parsed_room_id,
-                        paginated.messages,
-                        &paginated.display_names,
-                    );
-                    state.set_next_token(paginated.next_token.unwrap_or_default().into());
-                    MESSAGES.with(|messages| {
-                        if prepend {
-                            // Inserted one at a time, back to front, so the
-                            // rows already on screen keep their components and
-                            // their decoded previews. Rebuilding the model
-                            // instead would throw away the whole scrollback to
-                            // add 50 rows to the top of it.
-                            for msg in msgs.into_iter().rev() {
-                                messages.insert(0, msg);
+                    if let Ok(parsed_room_id) = <&RoomId>::try_from(room_id.as_str()) {
+                        let msgs = stored_messages_to_ui(
+                            parsed_room_id,
+                            paginated.messages,
+                            &paginated.display_names,
+                        );
+                        state.set_next_token(paginated.next_token.unwrap_or_default().into());
+                        MESSAGES.with(|messages| {
+                            if prepend {
+                                prepended = msgs.len() as i32;
+                                // Inserted one at a time, back to front. Not a
+                                // shortcoming to be tidied up later — the scroll
+                                // position depends on it.
+                                //
+                                // Each insert reaches the ListView as its own
+                                // notification of a single row landing at index 0.
+                                // One row is always clear of the rows it has built,
+                                // so it answers by moving its own anchor index up by
+                                // one, and fifty of them move it fifty rows — exactly
+                                // the distance the content moved. The user's rows stay
+                                // put with nothing here having to work out where they
+                                // went.
+                                //
+                                // Handing it the page in one notification instead
+                                // breaks that: fifty rows arriving at once while the
+                                // user sits a few rows from the top straddle the built
+                                // window rather than clearing it, the anchor stays
+                                // where it is, and the content slides out from under
+                                // them by a page. `set_vec` is worse again, throwing
+                                // away every row's component and decoded preview to add
+                                // fifty to the top.
+                                for msg in msgs.into_iter().rev() {
+                                    messages.insert(0, msg);
+                                }
+                            } else {
+                                messages.set_vec(msgs);
                             }
-                        } else {
-                            messages.set_vec(msgs);
-                        }
-                    });
+                        });
+                    }
                 }
                 Err(e) => {
                     eprintln!("Failed to fetch messages: {e}");
                 }
+            }
+
+            // Every way out of the arm above lands here, including the ones that
+            // installed nothing. The UI is waiting on this to release `loading-more`,
+            // so a page that failed or came back empty has to say so as plainly as one
+            // that worked, or scrolling up would never ask again.
+            if prepend {
+                state.set_prepend_count(prepended);
+                state.set_prepend_epoch(state.get_prepend_epoch().wrapping_add(1));
             }
         });
     });

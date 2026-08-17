@@ -110,9 +110,21 @@ export global UiState {
     // Event id to pass as `from` to fetch the next (older) page for the
     // currently open room; "" means there's nothing older left to load.
     in-out property <string> next-token: "";
-    // True while an older-messages fetch is in flight, to stop
-    // load-older-messages from firing repeatedly while scrolled to the top.
+    // True while an older-messages fetch is in flight, and on past it until the
+    // scroll position has been corrected for the page it brought back. Cleared by
+    // chat-main's restore timer rather than by the fetch, so nothing can ask for
+    // another page in the window where the rows have landed but the viewport has
+    // not been moved to account for them yet.
     in-out property <bool> loading-more: false;
+    // How many rows the older page that just landed added, and a counter bumped
+    // every time one lands at all — including when it brought nothing back, so the
+    // UI still learns the fetch is over and can release `loading-more`.
+    //
+    // The count cannot drive the UI on its own: two pages of the same size in a row
+    // leave it unchanged, and a `changed` handler only fires on a change. The epoch
+    // is what chat-main watches, and the count is what it reads once woken.
+    in-out property <int> prepend-count: 0;
+    in-out property <int> prepend-epoch: 0;
     // Set when trimming dropped rows off the newest end of the model, which happens
     // once scrolling back has grown it past its cap. There is no forward pagination
     // to put them back one page at a time, so scrolling to the bottom reloads the
