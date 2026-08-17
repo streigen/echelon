@@ -46,7 +46,9 @@ impl ClientHandler {
                 let uiaa_info = e
                     .as_uiaa_response()
                     .ok_or_else(|| anyhow::anyhow!("Registration failed: {e:?}"))?;
-                debug!("Registration needs challenge-response, replaying with the server's session");
+                debug!(
+                    "Registration needs challenge-response, replaying with the server's session"
+                );
 
                 let token = registration_token.ok_or_else(|| {
                     anyhow::anyhow!("Registration token required for UIAA challenge-response")
@@ -76,9 +78,11 @@ impl ClientHandler {
 
         let user_id = session.user_id.clone();
         self.app_state.secret_service.set_session(&session)?;
-        self.app_state.echelon_store.add_account(&user_id)?;
+        self.app_state
+            .echelon_store
+            .add_account(&user_id, &homeserver)?;
 
-        self.restore_session(user_id, homeserver)
+        self.restore_session(user_id, Some(homeserver))
             .await?
             .ok_or_else(|| anyhow::anyhow!("No client handler after registration"))
     }

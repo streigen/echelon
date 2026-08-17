@@ -1,5 +1,4 @@
 use crate::ClientState;
-use crate::client::ClientHandler;
 use matrix_sdk::Client;
 
 pub mod account;

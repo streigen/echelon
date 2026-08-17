@@ -164,7 +164,7 @@ pub async fn logout(state: ClientState) -> Result<String, String> {
     Ok("logged out".into())
 }
 
-/// Restore a previous session for the given user id and homeserver.
+/// Restore a previous session for the given user id and optional homeserver.
 ///
 /// This attempts to load the session from secure storage and, if successful,
 /// starts the sync loop for that session. It is used for persistence across app restarts.
@@ -174,11 +174,11 @@ pub async fn logout(state: ClientState) -> Result<String, String> {
 ///   [`crate::storage::store::EchelonStore::get_accounts`]. Sessions are stored under
 ///   the id the homeserver reported, not under anything the user typed, so a username
 ///   is not enough to find one.
-/// * `homeserver` - The homeserver the account lives on.
+/// * `homeserver` - Optional homeserver URL override. If omitted, the stored homeserver URL or `.well-known` discovery is used.
 /// * `state` - The client state containing the Matrix client to restore on.
 pub async fn restore_session(
     user_id: String,
-    homeserver: String,
+    homeserver: Option<String>,
     state: ClientState,
 ) -> Result<String, String> {
     debug!("Restoring session for user: {}", user_id);
@@ -209,4 +209,28 @@ pub async fn restore_session(
         Ok(None) => Err("Session restoration failed: No client handler returned".into()),
         Err(e) => Err(format!("Session restoration failed: {}", e)),
     }
+}
+
+/// List all persisted accounts on device.
+pub async fn list_accounts(state: ClientState) -> Result<String, String> {
+    let state_r = state.read().await;
+    let Some(client_handler) = state_r.as_ref() else {
+        return Err("No active client session".to_string());
+    };
+    let accounts_info = client_handler
+        .app_state
+        .echelon_store
+        .get_accounts()
+        .map_err(|e| format!("Failed to get accounts: {e}"))?;
+
+    let last = accounts_info.last.as_deref().unwrap_or("none");
+    let mut lines = vec![
+        format!("Last account: {last}"),
+        format!("Accounts count: {}", accounts_info.accounts.len()),
+    ];
+    for acc in accounts_info.accounts {
+        let hs = acc.homeserver.as_deref().unwrap_or("<unknown/discover>");
+        lines.push(format!(" - {} (homeserver: {})", acc.user_id, hs));
+    }
+    Ok(lines.join("\n"))
 }

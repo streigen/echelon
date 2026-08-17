@@ -45,9 +45,11 @@ impl ClientHandler {
 
         let user_id = session.user_id.clone();
         self.app_state.secret_service.set_session(&session)?;
-        self.app_state.echelon_store.add_account(&user_id)?;
+        self.app_state
+            .echelon_store
+            .add_account(&user_id, &homeserver)?;
 
-        self.restore_session(user_id, homeserver).await
+        self.restore_session(user_id, Some(homeserver)).await
     }
 
     /// Build the client that owns a stored account and restore its session into it.
@@ -58,19 +60,39 @@ impl ClientHandler {
     /// # Arguments
     /// * `user_id` - The full Matrix user id of the account to restore, as stored by
     ///   [`crate::storage::store::EchelonStore`].
-    /// * `homeserver` - The homeserver URL the account lives on.
+    /// * `homeserver` - Optional homeserver URL override. If `None`, the URL recorded in
+    ///   the account list is used, falling back to `.well-known` discovery if none is stored.
     pub async fn restore_session(
         &self,
         user_id: String,
-        homeserver: String,
+        homeserver: Option<String>,
     ) -> anyhow::Result<Option<ClientHandler>> {
+        let homeserver_url = match homeserver {
+            Some(hs) => {
+                let _ = self.app_state.echelon_store.set_homeserver(&user_id, &hs);
+                hs
+            }
+            None => {
+                let account = self.app_state.echelon_store.get_account(&user_id)?;
+                if let Some(hs) = account.and_then(|a| a.homeserver) {
+                    hs
+                } else {
+                    let discovered = self.discover_homeserver(&user_id).await?;
+                    self.app_state
+                        .echelon_store
+                        .set_homeserver(&user_id, &discovered)?;
+                    discovered
+                }
+            }
+        };
+
         let sqlite_pwd = self
             .app_state
             .secret_service
             .get_or_create_sqlite_pwd(&user_id)?;
 
         let new_client = self
-            .get_new_client(&user_id, &homeserver, &sqlite_pwd)
+            .get_new_client(&user_id, &homeserver_url, &sqlite_pwd)
             .await?;
         let mut session = self
             .app_state

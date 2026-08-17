@@ -7,11 +7,60 @@ use std::path::PathBuf;
 use crate::storage::keyring_client::KeyringClient;
 use crate::storage::stronghold_backend::{commit_store, open_store};
 
+/// One account known on-device: the user id the homeserver reported, and the
+/// homeserver URL that account was reached through.
+///
+/// The URL is kept because a user id carries a server *name*, not a URL, and the two
+/// differ on any server that delegates through `.well-known/matrix/client` — the usual
+/// arrangement. Recording the URL that already worked lets a restart rebuild the client
+/// without a discovery round trip, so an offline start still serves the local cache.
+///
+/// `homeserver` is optional because entries written before it was recorded carry only a
+/// user id, and because a delegation can move. Either way the URL is rediscovered from
+/// the server name by [`crate::client::ClientHandler::restore_session`] and written back
+/// here.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(from = "AccountRepr")]
+pub struct Account {
+    pub user_id: String,
+    pub homeserver: Option<String>,
+}
+
+/// Wire form of [`Account`], accepting both the current object and the bare user id
+/// string that older snapshots hold, so an existing account list still loads.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AccountRepr {
+    Legacy(String),
+    Current {
+        user_id: String,
+        homeserver: Option<String>,
+    },
+}
+
+impl From<AccountRepr> for Account {
+    fn from(repr: AccountRepr) -> Self {
+        match repr {
+            AccountRepr::Legacy(user_id) => Account {
+                user_id,
+                homeserver: None,
+            },
+            AccountRepr::Current {
+                user_id,
+                homeserver,
+            } => Account {
+                user_id,
+                homeserver,
+            },
+        }
+    }
+}
+
 /// The list of known accounts persisted on-device.
 #[derive(Serialize, Deserialize, Default)]
 pub struct Accounts {
     pub(crate) last: Option<String>,
-    pub(crate) accounts: Vec<String>,
+    pub(crate) accounts: Vec<Account>,
 }
 
 /// App-level persistent store backed by a Stronghold snapshot.
@@ -111,18 +160,62 @@ impl EchelonStore {
         self.read_accounts(&store)
     }
 
+    /// Look up a single persisted account by user id.
+    ///
+    /// # Arguments
+    /// * `user_id` - The full Matrix user id to look up.
+    pub fn get_account(&self, user_id: &str) -> Result<Option<Account>> {
+        Ok(self
+            .get_accounts()?
+            .accounts
+            .into_iter()
+            .find(|a| a.user_id == user_id))
+    }
+
     /// Add `user_id` to the persisted account list (or move it to front) and
     /// mark it as the most-recently-used account.
     ///
     /// # Arguments
     /// * `user_id` - The user ID to add or move to the front of the accounts list.
-    pub fn add_account(&self, user_id: &str) -> Result<()> {
+    /// * `homeserver` - The homeserver URL the account was reached through.
+    pub fn add_account(&self, user_id: &str, homeserver: &str) -> Result<()> {
         let (stronghold, store, key_provider) = self.open()?;
         let mut accounts = self.read_accounts(&store)?;
 
-        accounts.accounts.retain(|x| x != user_id);
-        accounts.accounts.insert(0, user_id.to_string());
+        accounts.accounts.retain(|x| x.user_id != user_id);
+        accounts.accounts.insert(
+            0,
+            Account {
+                user_id: user_id.to_string(),
+                homeserver: Some(homeserver.to_string()),
+            },
+        );
         accounts.last = Some(user_id.to_string());
+
+        self.write_accounts(&store, &accounts)?;
+        self.commit(&stronghold, &key_provider)
+    }
+
+    /// Record the homeserver URL an account is reached through, leaving its position in
+    /// the list and the most-recently-used marker alone.
+    ///
+    /// Used to fill in an entry that predates the URL being stored, and to write back a
+    /// URL that rediscovery found had moved. Does nothing if the account is unknown.
+    ///
+    /// # Arguments
+    /// * `user_id` - The full Matrix user id of the account to update.
+    /// * `homeserver` - The homeserver URL to record.
+    pub fn set_homeserver(&self, user_id: &str, homeserver: &str) -> Result<()> {
+        let (stronghold, store, key_provider) = self.open()?;
+        let mut accounts = self.read_accounts(&store)?;
+
+        let Some(account) = accounts.accounts.iter_mut().find(|a| a.user_id == user_id) else {
+            return Ok(());
+        };
+        if account.homeserver.as_deref() == Some(homeserver) {
+            return Ok(());
+        }
+        account.homeserver = Some(homeserver.to_string());
 
         self.write_accounts(&store, &accounts)?;
         self.commit(&stronghold, &key_provider)
@@ -140,7 +233,7 @@ impl EchelonStore {
         let mut accounts = self.read_accounts(&store)?;
 
         let before = accounts.accounts.len();
-        accounts.accounts.retain(|x| x != user_id);
+        accounts.accounts.retain(|x| x.user_id != user_id);
 
         if accounts.accounts.len() == before {
             // Nothing changed, user_id was not in the list.
@@ -148,7 +241,7 @@ impl EchelonStore {
         }
 
         if accounts.last.as_deref() == Some(user_id) {
-            accounts.last = accounts.accounts.first().cloned();
+            accounts.last = accounts.accounts.first().map(|a| a.user_id.clone());
         }
 
         self.write_accounts(&store, &accounts)?;
@@ -160,3 +253,37 @@ impl EchelonStore {
         Ok(self.get_accounts()?.last)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_legacy_account_deserialization() {
+        let json = r#""@alice:example.com""#;
+        let account: Account = serde_json::from_str(json).expect("failed to deserialize legacy account");
+        assert_eq!(account.user_id, "@alice:example.com");
+        assert_eq!(account.homeserver, None);
+    }
+
+    #[test]
+    fn test_current_account_deserialization() {
+        let json = r#"{"user_id":"@alice:example.com","homeserver":"https://matrix.example.com"}"#;
+        let account: Account = serde_json::from_str(json).expect("failed to deserialize current account");
+        assert_eq!(account.user_id, "@alice:example.com");
+        assert_eq!(account.homeserver, Some("https://matrix.example.com".to_string()));
+    }
+
+    #[test]
+    fn test_legacy_accounts_list_deserialization() {
+        let json = r#"{"last":"@alice:example.com","accounts":["@alice:example.com","@bob:example.org"]}"#;
+        let accounts: Accounts = serde_json::from_str(json).expect("failed to deserialize legacy accounts list");
+        assert_eq!(accounts.last, Some("@alice:example.com".to_string()));
+        assert_eq!(accounts.accounts.len(), 2);
+        assert_eq!(accounts.accounts[0].user_id, "@alice:example.com");
+        assert_eq!(accounts.accounts[0].homeserver, None);
+        assert_eq!(accounts.accounts[1].user_id, "@bob:example.org");
+        assert_eq!(accounts.accounts[1].homeserver, None);
+    }
+}
+

@@ -6,9 +6,9 @@ use matrix_sdk::utils::local_server::LocalServerBuilder;
 use ruma::serde::Raw;
 use url::Url;
 
+use crate::client::sync_manager::SyncManager;
 use crate::events::client_events::ClientEvents;
 use crate::storage::secret::Session;
-use crate::client::sync_manager::SyncManager;
 
 use super::ClientHandler;
 
@@ -82,13 +82,18 @@ impl ClientHandler {
             .to_string();
         self.app_state.secret_service.set_session(&Session {
             user_id: user_id.clone(),
-            device_id: new_client.device_id().map(|d| d.to_string()).unwrap_or_default(),
+            device_id: new_client
+                .device_id()
+                .map(|d| d.to_string())
+                .unwrap_or_default(),
             access_token: session_tokens.access_token,
             refresh_token: session_tokens.refresh_token,
         })?;
 
         // store the new username
-        self.app_state.echelon_store.add_account(&user_id)?;
+        self.app_state
+            .echelon_store
+            .add_account(&user_id, &homeserver)?;
 
         ClientEvents::register_events(&new_client, self.ui_handle.clone());
 

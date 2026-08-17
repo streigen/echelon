@@ -2,6 +2,8 @@ use anyhow::Result;
 use matrix_sdk::Client;
 use url::Url;
 
+use ruma::OwnedUserId;
+
 use crate::storage::secret::SecretService;
 
 use super::ClientHandler;
@@ -66,6 +68,38 @@ impl ClientHandler {
     /// * `homeserver` - The homeserver URL to authenticate against.
     pub(super) async fn get_auth_client(&self, homeserver: &str) -> Result<Client> {
         Ok(Client::new(Url::parse(homeserver)?).await?)
+    }
+
+    /// Find the homeserver URL that serves an account, starting from its user id.
+    ///
+    /// A user id carries a server *name*, not a URL: `@alice:example.com` says the
+    /// account belongs to `example.com`, and says nothing about where that server's
+    /// client API answers. The mapping is published at
+    /// `https://example.com/.well-known/matrix/client`, and pointing it at a different
+    /// host is the usual arrangement, so the two cannot be used interchangeably.
+    ///
+    /// This runs that lookup, which costs a network round trip and fails on a server
+    /// that publishes nothing (a self-hosted or development server reached by a plain
+    /// URL). It is therefore the fallback, not the normal path: a URL that already
+    /// worked is stored alongside the account and used directly.
+    ///
+    /// The throwaway client built here is store-less and never authenticated; only the
+    /// URL it resolved is kept.
+    ///
+    /// # Arguments
+    /// * `user_id` - The account's full Matrix user id, e.g. `@alice:example.com`.
+    pub(super) async fn discover_homeserver(&self, user_id: &str) -> Result<String> {
+        let user_id = OwnedUserId::try_from(user_id)?;
+        let server_name = user_id.server_name();
+        match Client::builder().server_name(server_name).build().await {
+            Ok(client) => Ok(client.homeserver().to_string()),
+            Err(e) => {
+                tracing::warn!(
+                    "Well-known discovery failed for server {server_name}: {e}, falling back to https://{server_name}"
+                );
+                Ok(format!("https://{server_name}"))
+            }
+        }
     }
 
     /// Log in a user with OAuth2 authentication using their homeserver

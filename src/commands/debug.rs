@@ -42,7 +42,11 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         name: "restore_session",
-        arg_labels: &["user_id (@user:server)", "homeserver"],
+        arg_labels: &["user_id (@user:server)", "homeserver (optional)"],
+    },
+    CommandSpec {
+        name: "list_accounts",
+        arg_labels: &[],
     },
     CommandSpec {
         name: "reset_account",
@@ -92,7 +96,8 @@ pub async fn dispatch(
         "oauth_login" => super::auth::oauth_login(arg(0), state).await,
         "oauth_register" => super::auth::oauth_register(arg(0), state).await,
         "logout" => super::auth::logout(state).await,
-        "restore_session" => super::auth::restore_session(arg(0), arg(1), state).await,
+        "restore_session" => super::auth::restore_session(arg(0), opt(1), state).await,
+        "list_accounts" => super::auth::list_accounts(state).await,
         "reset_account" => {
             let reset_type = match arg(0).as_str() {
                 "IdentityReset" => AccountResetType::IdentityReset,
