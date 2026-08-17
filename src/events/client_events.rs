@@ -3,6 +3,7 @@ use ruma::events::room::message::SyncRoomMessageEvent;
 use slint::ComponentHandle;
 use tracing::{error, trace};
 
+use crate::rooms;
 use crate::rooms::members;
 use crate::rooms::messages::{attachment_of, cache_attachment};
 use crate::{AppWindow, UiState, attachment_to_ui, display_text, format_time_of_day};
@@ -25,6 +26,24 @@ impl ClientEvents {
         ui_handle: slint::Weak<AppWindow>,
     ) {
         trace!("Received message: {:?}", event);
+
+        // This handler is called for every joined room, but only the open room's
+        // messages are ever shown; the rest are dropped on the UI thread below,
+        // since reopening a channel refetches its page anyway. Asking here rather
+        // than there is what makes that drop free. The alternative resolves a
+        // display name first, and that is six reads of the encrypted store
+        // (`get_member` in matrix-sdk-base), paid per message per joined room, for
+        // a row that is about to be thrown away.
+        //
+        // The UI-thread check below stays as the authority, since this mirror is
+        // only as fresh as the last channel switch. Dropping early cannot lose a
+        // message the old order would have kept: the mirror is set in the same UI
+        // callback that starts the open's page fetch, so it is already current
+        // before that fetch reads the event cache, and anything dropped in the
+        // window before it comes back in that page.
+        if !rooms::is_active_room(room.room_id()) {
+            return;
+        }
 
         // Get the content based on event type. The ids stay in their ruma
         // types, since the attachment cache is keyed by them; only the copies

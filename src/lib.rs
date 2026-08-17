@@ -999,6 +999,14 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
 
                 ui.global::<UiState>().set_active_room(room_name);
                 ui.global::<UiState>().set_active_room_id(room_id);
+                // Set in step with the property above, so the sync loop's worker
+                // never sees the two disagree. It is what lets the live message
+                // handler drop another room's message before resolving anything
+                // for it. An id that does not parse clears the mirror rather than
+                // leaving the last room's in place: nothing can be live for a room
+                // this client cannot name, and the page fetch below fails for it
+                // too.
+                rooms::set_active_room(ruma::RoomId::parse(&room_id_str).ok());
             }
 
             resolve_own_display_name(
