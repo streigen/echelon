@@ -14,9 +14,7 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
     let client = super::get_active_client(&client_state).await?;
     let all_joined_rooms = client.joined_rooms();
 
-    // Ordered, because the roots are found by walking this map and they become the
-    // space tabs in that order. A `HashMap` reshuffles them on every run, so the
-    // sidebar's tabs would sit somewhere different each launch.
+    // Use BTreeMap to maintain stable ordering of space tabs.
     let room_map: BTreeMap<OwnedRoomId, Room> = all_joined_rooms
         .into_iter()
         .map(|r| (r.room_id().to_owned(), r))
@@ -75,8 +73,6 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
         }
     }
 
-    // Borrowed, not cloned: cloning copied the whole tree on every call just to
-    // format a log line.
     for k in &hierarchy {
         debug!(
             "Space: {:?} has children {:?}",
@@ -91,8 +87,7 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
     Ok(hierarchy)
 }
 
-/// A room's name, or its id when it has none. Only the log line above needs
-/// this, and a room without a name must not take the process down for it.
+/// Return a room's display name, falling back to its ID if unset.
 fn room_label(room: &Room) -> String {
     room.name().unwrap_or_else(|| room.room_id().to_string())
 }

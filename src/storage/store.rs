@@ -7,18 +7,7 @@ use std::path::PathBuf;
 use crate::storage::keyring_client::KeyringClient;
 use crate::storage::stronghold_backend::{commit_store, open_store};
 
-/// One account known on-device: the user id the homeserver reported, and the
-/// homeserver URL that account was reached through.
-///
-/// The URL is kept because a user id carries a server *name*, not a URL, and the two
-/// differ on any server that delegates through `.well-known/matrix/client` — the usual
-/// arrangement. Recording the URL that already worked lets a restart rebuild the client
-/// without a discovery round trip, so an offline start still serves the local cache.
-///
-/// `homeserver` is optional because entries written before it was recorded carry only a
-/// user id, and because a delegation can move. Either way the URL is rediscovered from
-/// the server name by [`crate::client::ClientHandler::restore_session`] and written back
-/// here.
+/// Represents a Matrix account persisted on-device, including user ID and optional homeserver URL.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(from = "AccountRepr")]
 pub struct Account {

@@ -13,25 +13,11 @@ use crate::ClientState;
 use crate::rooms::members;
 use crate::rooms::messages::{MessageStore, StoredMessage};
 
-/// The event cache subscription belonging to the room the user has open.
-///
-/// A [`RoomEventCacheSubscriber`] is how the SDK is told that a room is being
-/// looked at. Dropping the last one held for a room notifies the SDK's
-/// auto-shrink task, which unloads every chunk of that room's in-memory
-/// timeline but the last one. The persisted copy is left alone, so scrollback
-/// still comes back without a network round trip.
-///
-/// Nothing else in the client ever takes one, so without this the count never
-/// leaves zero, the notification is never sent, and the in-memory timeline of
-/// every room opened this session stays live for the rest of the process.
+/// Event cache subscription for the currently active room.
 static ACTIVE_ROOM_SUBSCRIPTION: Mutex<Option<ActiveRoomSubscription>> = Mutex::const_new(None);
 
 struct ActiveRoomSubscription {
     room_id: OwnedRoomId,
-    /// Never read from. It is held for its `Drop`, which is what asks the SDK
-    /// to shrink the room once it stops being the open one. The updates it
-    /// buffers in the meantime are bounded by the broadcast channel's own
-    /// capacity, so an unread subscriber cannot grow without limit.
     _subscriber: RoomEventCacheSubscriber,
 }
 
@@ -83,10 +69,7 @@ async fn subscribe_active_room(
 pub struct PaginatedMessages {
     pub messages: Vec<StoredMessage>,
     pub next_token: Option<String>,
-    /// Display name for each sender in `messages`, keyed by the same interned string
-    /// [`StoredMessage::sender`] holds, so a row looks its sender up without parsing or allocating
-    /// anything. Resolved here rather than in the UI layer, since names live in the room's member
-    /// state and reading it is async.
+    /// Display name for each sender in `messages`.
     pub display_names: HashMap<Arc<str>, String>,
 }
 
@@ -280,9 +263,6 @@ pub async fn send_message(
 /// * `room` - The room the messages were sent in.
 /// * `messages` - The page whose senders to resolve.
 async fn resolve_display_names(room: &Room, messages: &[StoredMessage]) -> HashMap<Arc<str>, String> {
-    // Collected rather than passed lazily, so no borrow of `messages` is held across the await and
-    // the returned future stays `Send`. Each entry is a handle on the sender string the message
-    // already interned, so this is a refcount bump per message and no copying.
     let senders: Vec<Arc<str>> = messages.iter().map(|m| m.sender.clone()).collect();
     members::display_names(room, senders).await
 }

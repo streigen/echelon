@@ -27,20 +27,7 @@ impl ClientEvents {
     ) {
         trace!("Received message: {:?}", event);
 
-        // This handler is called for every joined room, but only the open room's
-        // messages are ever shown; the rest are dropped on the UI thread below,
-        // since reopening a channel refetches its page anyway. Asking here rather
-        // than there is what makes that drop free. The alternative resolves a
-        // display name first, and that is six reads of the encrypted store
-        // (`get_member` in matrix-sdk-base), paid per message per joined room, for
-        // a row that is about to be thrown away.
-        //
-        // The UI-thread check below stays as the authority, since this mirror is
-        // only as fresh as the last channel switch. Dropping early cannot lose a
-        // message the old order would have kept: the mirror is set in the same UI
-        // callback that starts the open's page fetch, so it is already current
-        // before that fetch reads the event cache, and anything dropped in the
-        // window before it comes back in that page.
+        // Ignore messages for rooms that are not currently active.
         if !rooms::is_active_room(room.room_id()) {
             return;
         }
@@ -78,9 +65,7 @@ impl ClientEvents {
 
         let room_id = room.room_id().to_owned();
         let time = format_time_of_day(origin_server_ts.0.into());
-        // Resolved here rather than on the UI thread, since member state is read asynchronously.
-        // No `sync_members` first: a room receiving live messages is already synced, and a member
-        // this client has never seen falls back to their user id.
+        // Resolve display name asynchronously from room state.
         let sender = members::display_name(&room, &sender).await;
 
         // Emit event to frontend
@@ -106,11 +91,7 @@ impl ClientEvents {
                 transaction_id.as_deref().map_or("", |id| id.as_str()).into(),
             );
 
-            // `ATTACHMENT_CACHE` is a `thread_local!`, so it has to be
-            // written from the UI thread that reads it, not from this
-            // handler's tokio worker. Nothing is downloaded here. The new row
-            // reports its own visibility when it is constructed, and the
-            // preview fetch follows from that like it does for any row.
+            // Cache attachment metadata for retrieval by the UI thread.
             if let Some(attachment) = attachment {
                 cache_attachment(&room_id, &event_id, &attachment);
             }

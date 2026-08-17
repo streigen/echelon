@@ -200,14 +200,7 @@ thread_local! {
     static PREVIEW_WINDOW: std::cell::RefCell<PreviewWindow> =
         std::cell::RefCell::new(PreviewWindow::default());
 
-    /// The one model behind `UiState.messages`, installed once at startup and
-    /// mutated in place from then on.
-    ///
-    /// Replacing the model instead makes Slint tear down and rebuild every row
-    /// in the repeater, which on a long scrollback means thousands of
-    /// components destroyed and recreated for a single arriving message. It is
-    /// a `thread_local` because `Rc` is not `Send`, and every touch happens on
-    /// the UI thread.
+    /// The message model backing `UiState.messages`.
     static MESSAGES: std::rc::Rc<slint::VecModel<Message>> =
         std::rc::Rc::new(slint::VecModel::from(Vec::new()));
 
@@ -317,21 +310,7 @@ fn note_preview_loaded(messages: &slint::VecModel<Message>, event_id: String) {
 /// Messages asked for per fetch, and so the size of one prepended page.
 const MESSAGE_PAGE: u32 = 50;
 
-/// Cap on how many rows the model holds.
-///
-/// A row is small next to a decoded preview, but the model is the one thing here
-/// that grows without limit, since scrolling back prepends a page at a time and
-/// nothing ever gave any of it back. Rows are dropped from whichever end the user
-/// has scrolled away from, so what goes is always the furthest thing from the
-/// viewport. See [`trim_messages`].
-///
-/// Set well clear of what a session of scrolling back reaches, because the two ends
-/// do not cost the same. Trimming the oldest rows only moves the pagination anchor,
-/// but trimming the newest ones cannot be undone a page at a time — coming back down
-/// reloads the latest page whole and drops the scrollback with it. At four pages the
-/// cap was reached after three scroll-ups and that reload sat on the ordinary path;
-/// the memory this gives back was never the memory that mattered, since the decoded
-/// previews are capped on their own by [`MAX_LOADED_PREVIEWS`].
+/// Maximum number of message rows held in the UI model.
 const MAX_MESSAGE_ROWS: usize = MESSAGE_PAGE as usize * 20;
 
 /// Drop rows past [`MAX_MESSAGE_ROWS`] off one end of the model.
@@ -708,27 +687,8 @@ fn fetch_message_page(
                         MESSAGES.with(|messages| {
                             if prepend {
                                 prepended = msgs.len() as i32;
-                                // Inserted one at a time, back to front. Not a
-                                // shortcoming to be tidied up later — the scroll
-                                // position depends on it.
-                                //
-                                // Each insert reaches the ListView as its own
-                                // notification of a single row landing at index 0.
-                                // One row is always clear of the rows it has built,
-                                // so it answers by moving its own anchor index up by
-                                // one, and fifty of them move it fifty rows — exactly
-                                // the distance the content moved. The user's rows stay
-                                // put with nothing here having to work out where they
-                                // went.
-                                //
-                                // Handing it the page in one notification instead
-                                // breaks that: fifty rows arriving at once while the
-                                // user sits a few rows from the top straddle the built
-                                // window rather than clearing it, the anchor stays
-                                // where it is, and the content slides out from under
-                                // them by a page. `set_vec` is worse again, throwing
-                                // away every row's component and decoded preview to add
-                                // fifty to the top.
+                                // Insert items individually from back to front at index 0
+                                // so the UI list view updates its scroll anchor cleanly.
                                 for msg in msgs.into_iter().rev() {
                                     messages.insert(0, msg);
                                 }

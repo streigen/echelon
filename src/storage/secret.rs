@@ -9,10 +9,7 @@ use zeroize::{Zeroizing, ZeroizeOnDrop};
 
 /// All per-user session data stored in the stronghold.
 ///
-/// The tokens are wiped when this is dropped. They are bearer credentials for the
-/// whole account, so a copy left in freed heap is a copy that can be read out of a
-/// core dump or handed to the next allocation. The ids are not secret and are left
-/// alone, since zeroizing them would only cost allocations.
+/// Tokens are zeroized on drop.
 #[derive(ZeroizeOnDrop)]
 pub struct Session {
     #[zeroize(skip)]
@@ -110,17 +107,8 @@ impl SecretService {
 
     /// Persist a full [`Session`].
     ///
-    /// The sqlite password is not touched here. It has to exist before the account's
-    /// store can be opened at all, which is earlier than this, so
-    /// [`Self::get_or_create_sqlite_pwd`] is what creates it.
-    ///
     /// # Arguments
-    /// * `session` - The session to persist, which must include a user_id and
-    ///   access_token. The device_id and refresh_token are optional but will be persisted if provided.
-    ///
-    /// ### Returns
-    /// An error if the session cannot be persisted for any reason (e.g. stronghold cannot be loaded or committed, etc.).
-    /// Returns `Ok(())` on success.
+    /// * `session` - The session to persist.
     pub fn set_session(&self, session: &Session) -> Result<()> {
         let (stronghold, store, key_provider, snapshot_path) =
             self
@@ -171,18 +159,10 @@ impl SecretService {
         }))
     }
 
-    /// Return the sqlite password for `user_id`, generating and persisting one if it
-    /// doesn't exist yet.
-    ///
-    /// This encrypts the sqlite store holding the account's E2EE keys and message
-    /// history, so there is deliberately no way to ask for "the password if there is
-    /// one": a caller that got `None` back could only carry on by opening the store
-    /// unencrypted, which is exactly the outcome this must not allow. The password is
-    /// created on first use and never overwritten, since rotating it would orphan the
-    /// existing database.
+    /// Return the sqlite password for `user_id`, generating and persisting one on first use.
     ///
     /// # Arguments
-    /// * `user_id` - The user ID whose sqlite password should be returned or created
+    /// * `user_id` - The user ID whose sqlite password to fetch or create.
     pub fn get_or_create_sqlite_pwd(&self, user_id: &str) -> Result<Zeroizing<String>> {
         let (stronghold, store, key_provider, snapshot_path) =
             self

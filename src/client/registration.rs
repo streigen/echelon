@@ -9,14 +9,6 @@ use super::ClientHandler;
 impl ClientHandler {
     /// Register a new account and sign into it.
     ///
-    /// Like [`ClientHandler::login`], the request runs on a store-less client: the
-    /// homeserver picks the account's real user id, which can differ from the
-    /// requested username, and that id is what names the store. Once the account
-    /// exists the session is persisted and handed to a real client through
-    /// [`ClientHandler::restore_session`], so a registered account gets the same
-    /// encrypted store and the same persistence as one that logged in. It used to get
-    /// neither.
-    ///
     /// # Arguments
     /// * `username` - The desired username for the new account.
     /// * `password` - The desired password for the new account.

@@ -9,17 +9,12 @@ use crate::storage::secret::SecretService;
 use super::ClientHandler;
 
 impl ClientHandler {
-    /// Build the client that owns an account's on-disk state.
-    ///
-    /// The store is named after the account's real user id rather than anything the
-    /// user typed, so an account is found again whatever URL it was reached through.
-    /// It is always encrypted: the password is created on first use and reread after
-    /// that, and there is no path that opens this store without one.
+    /// Build the persistent client that owns an account's on-disk state.
     ///
     /// # Arguments
-    /// * `user_id` - The account's full Matrix user id, as the homeserver reported it.
-    /// * `new_homeserver` - The homeserver URL to point the client at.
-    /// * `sqlite_pwd` - The store's encryption password, from [`SecretService`].
+    /// * `user_id` - The account's full Matrix user id.
+    /// * `new_homeserver` - The homeserver URL.
+    /// * `sqlite_pwd` - The store's encryption password.
     pub(super) async fn get_new_client(
         &self,
         user_id: &str,
@@ -38,31 +33,13 @@ impl ClientHandler {
             .build()
             .await?;
 
-        // Enable the local event cache so already-synced/persisted room timelines
-        // can be served without a `/messages` network round trip (see
-        // commands::messages::get_messages_from_room_paginated). Must happen
-        // before sync starts so live events get fed into the cache as they arrive.
+        // Subscribe to event cache before sync starts.
         client.event_cache().subscribe()?;
 
         Ok(client)
     }
 
-    /// Build a throwaway, store-less client for running one authentication request.
-    ///
-    /// An account's store is named after its user id, and the user id is only known
-    /// once the homeserver has answered, so the request that establishes it cannot be
-    /// made through the client that will own the store. A store cannot be attached
-    /// after the fact either, since it is fixed when the client is built. The session
-    /// this produces is handed to a real client by
-    /// [`ClientHandler::restore_session`].
-    ///
-    /// Nothing of the account's cryptographic identity may be written from here, or
-    /// it would be written into memory that is about to be dropped while the server
-    /// keeps the public half. Two things currently ensure that: no sync is started,
-    /// so device keys are never uploaded, and the post-login initialization task only
-    /// bootstraps cross-signing when `auto_enable_cross_signing` is set, which the
-    /// default [`matrix_sdk::encryption::EncryptionSettings`] leaves off. Turning that
-    /// on has to be done on the client built by `get_new_client`, never on this one.
+    /// Build an unauthenticated, store-less client for initial auth requests.
     ///
     /// # Arguments
     /// * `homeserver` - The homeserver URL to authenticate against.
@@ -70,24 +47,10 @@ impl ClientHandler {
         Ok(Client::new(Url::parse(homeserver)?).await?)
     }
 
-    /// Find the homeserver URL that serves an account, starting from its user id.
-    ///
-    /// A user id carries a server *name*, not a URL: `@alice:example.com` says the
-    /// account belongs to `example.com`, and says nothing about where that server's
-    /// client API answers. The mapping is published at
-    /// `https://example.com/.well-known/matrix/client`, and pointing it at a different
-    /// host is the usual arrangement, so the two cannot be used interchangeably.
-    ///
-    /// This runs that lookup, which costs a network round trip and fails on a server
-    /// that publishes nothing (a self-hosted or development server reached by a plain
-    /// URL). It is therefore the fallback, not the normal path: a URL that already
-    /// worked is stored alongside the account and used directly.
-    ///
-    /// The throwaway client built here is store-less and never authenticated; only the
-    /// URL it resolved is kept.
+    /// Discover the homeserver URL for a given user ID via `.well-known` lookup.
     ///
     /// # Arguments
-    /// * `user_id` - The account's full Matrix user id, e.g. `@alice:example.com`.
+    /// * `user_id` - The account's full Matrix user ID.
     pub(super) async fn discover_homeserver(&self, user_id: &str) -> Result<String> {
         let user_id = OwnedUserId::try_from(user_id)?;
         let server_name = user_id.server_name();

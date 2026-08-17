@@ -120,17 +120,7 @@ pub async fn fetch_image(
         .await
         .map_err(|e| format!("Failed to download image: {e}"))?;
 
-    // `Attachment::previewable` decided this was worth fetching from the size the
-    // sender declared, which the sender is free to make up. This is the same ceiling
-    // applied to what actually arrived, and it catches both an understated size and a
-    // homeserver that answered a thumbnail request with the original.
-    //
-    // It bounds the decode, not the transfer. `get_media_content` has already
-    // buffered the whole body by the time this runs, with no size limit and no
-    // timeout, and for encrypted media it allocated a second buffer that size again
-    // to decrypt into. Nothing here can bound that: the SDK exposes no streaming or
-    // length-limited download. What holds the process together meanwhile is
-    // `DECODE_PERMITS`, which caps how many of these can be in flight at once.
+    // Enforce max preview size limit on downloaded content.
     if size == ImageSize::Display && bytes.len() as u64 > MAX_PREVIEW_BYTES {
         return Err(format!(
             "Attachment is {} bytes, over the {MAX_PREVIEW_BYTES} byte preview limit",
@@ -345,10 +335,6 @@ fn decode_image(bytes: Vec<u8>, max_edge: u32) -> Result<DecodedImage, String> {
     let decoded = if decoded.width() > max_edge || decoded.height() > max_edge {
         // Preserves the aspect ratio, and only ever shrinks given the guard.
         let scaled = decoded.thumbnail(max_edge, max_edge);
-        // `thumbnail` takes `&self`, so without this the full-size surface is
-        // never moved out of the outer binding and stays live until the
-        // function returns, alongside every buffer below. On a 12MP photo that
-        // is around 36 MB held for no reason.
         drop(decoded);
         scaled
     } else {
