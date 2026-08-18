@@ -108,7 +108,7 @@ fn spawn_image_fetch(
                 commands::media::fetch_image(
                     &client,
                     &attachment,
-                    commands::media::ImageSize::Display,
+                    rooms::messages::ImageSize::Display,
                 )
                 .await
             }
@@ -1470,7 +1470,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                         commands::media::fetch_image(
                             &client,
                             &attachment,
-                            commands::media::ImageSize::Full,
+                            rooms::messages::ImageSize::Full,
                         )
                         .await
                     }

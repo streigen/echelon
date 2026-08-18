@@ -65,24 +65,60 @@ pub struct Attachment {
     pub thumbnail_size: Option<u64>,
 }
 
+/// Which resolution of an attachment to fetch.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ImageSize {
+    /// The cheapest version that still looks right inline in the chat log.
+    Display,
+    /// The original file, used for click to enlarge.
+    Full,
+}
+
+/// Which of an attachment's sources answers a request, and what it costs.
+pub struct SourceChoice<'a> {
+    pub source: &'a MediaSource,
+    /// Bytes this source will pull down, where that is knowable before asking
+    /// for it. `None` when only the homeserver knows, which is the
+    /// `server_scaled` case.
+    pub declared_bytes: Option<u64>,
+    /// Whether the homeserver has to scale this on the way out, so the caller
+    /// asks for a thumbnail of it rather than the file itself.
+    pub server_scaled: bool,
+}
+
 impl Attachment {
-    /// Bytes an inline preview of this attachment would pull down, when that is
-    /// knowable before asking for it.
+    /// Pick the source that answers a request at `size`.
     ///
-    /// `None` means the cost cannot be predicted, which covers the case where the
-    /// homeserver scales the image for us: unencrypted media with no sender
-    /// thumbnail is fetched through the thumbnail endpoint, so the original's size
-    /// says nothing about what crosses the wire. Mirrors the source selection in
-    /// [`crate::commands::media::fetch_image`], and has to keep mirroring it.
-    fn preview_bytes(&self) -> Option<u64> {
-        match (&self.thumbnail_source, &self.source) {
+    /// The one definition of which of an attachment's two sources is used and
+    /// what it weighs. Both the fetch that pulls the bytes down and the check
+    /// that decides whether to offer a preview at all read it from here, so
+    /// they cannot drift apart on what a preview is going to cost.
+    pub fn source_for(&self, size: ImageSize) -> SourceChoice<'_> {
+        match (size, &self.thumbnail_source) {
             // A sender thumbnail is fetched as-is, whatever the original weighs.
-            (Some(_), _) => self.thumbnail_size,
-            // Scaled by the homeserver on the way out.
-            (None, MediaSource::Plain(_)) => None,
-            // The server cannot thumbnail what it cannot decrypt, so this is the
-            // whole file.
-            (None, MediaSource::Encrypted(_)) => self.size,
+            // It is the only small option for encrypted media, since the
+            // homeserver cannot thumbnail content it cannot decrypt.
+            (ImageSize::Display, Some(thumbnail)) => SourceChoice {
+                source: thumbnail,
+                declared_bytes: self.thumbnail_size,
+                server_scaled: false,
+            },
+            // No sender thumbnail, but the server can scale what it can read.
+            // The original's size says nothing about what then crosses the wire.
+            (ImageSize::Display, None) if matches!(self.source, MediaSource::Plain(_)) => {
+                SourceChoice {
+                    source: &self.source,
+                    declared_bytes: None,
+                    server_scaled: true,
+                }
+            }
+            // The whole file: asked for at full resolution, or the only option
+            // left because the server cannot thumbnail what it cannot decrypt.
+            _ => SourceChoice {
+                source: &self.source,
+                declared_bytes: self.size,
+                server_scaled: false,
+            },
         }
     }
 
@@ -93,7 +129,8 @@ impl Attachment {
     pub fn previewable(&self) -> bool {
         self.kind.has_preview()
             && self
-                .preview_bytes()
+                .source_for(ImageSize::Display)
+                .declared_bytes
                 .is_none_or(|bytes| bytes <= MAX_PREVIEW_BYTES)
     }
 }
