@@ -97,11 +97,34 @@ export component MessageRow inherits VerticalLayout {
 
                 // Empty for a bare attachment, where the body is only the file name (see
                 // `display_text` in lib.rs). An empty Text would still take up a line's height.
-                if msg.text != "" : Text {
-                    text: msg.text;
-                    color: rgba(255, 255, 255, 0.85);
-                    font-size: 15px;
-                    wrap: word-wrap;
+                //
+                // The body and the "(edited)" marker sit in one row so the marker trails
+                // the text instead of starting a line of its own. Neither Text stretches;
+                // the filler after them takes the slack, which keeps the marker against
+                // the body rather than against the row's right edge. When the body is
+                // wider than the row the filler collapses and the body wraps as before.
+                if msg.text != "" : HorizontalLayout {
+                    spacing: 6px;
+
+                    Text {
+                        text: msg.text;
+                        color: rgba(255, 255, 255, 0.85);
+                        font-size: 15px;
+                        wrap: word-wrap;
+                        horizontal-stretch: 0;
+                    }
+
+                    if msg.edited : Text {
+                        text: "(edited)";
+                        color: rgba(255, 255, 255, 0.35);
+                        font-size: 11px;
+                        // Bottom, so on a wrapped body it lines up with the last
+                        // line rather than floating beside the middle of the block.
+                        vertical-alignment: bottom;
+                        horizontal-stretch: 0;
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
                 }
 
                 // Decided in Rust by `Attachment::previewable`, which is the kind

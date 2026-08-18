@@ -56,6 +56,10 @@ export struct Message {
     // yet. Drawn dimmed, and either settles into a normal row or is dropped
     // when the send fails.
     pending: bool,
+    // Set once an `m.replace` has been folded into `text`, which puts an
+    // "(edited)" marker after the body. Cleared again by a redaction, since a
+    // deleted message shows nothing of what it used to say.
+    edited: bool,
     // Kind `Empty` when the message carries no media. A Matrix
     // `m.room.message` has exactly one msgtype, so an event never has more
     // than one attachment; several files are several events.

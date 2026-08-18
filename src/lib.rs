@@ -663,6 +663,9 @@ fn message_row(
         attachment: attachment_to_ui(message.attachment.as_ref()),
         // Anything the server has handed back is acknowledged by definition.
         pending: false,
+        // A row starts unedited whatever the event's age: an edit is its own
+        // event, and folding it in is what sets this.
+        edited: false,
     }
 }
 
@@ -697,12 +700,15 @@ fn settle_pending(
     }
 }
 
-/// Replace a row's body, leaving everything else on it alone.
+/// Replace a row's body, leaving everything else on it alone. Every caller is
+/// applying an `m.replace`, so the row is marked edited here rather than at each
+/// call site.
 fn set_row_text(messages: &slint::VecModel<Message>, index: usize, text: &str) {
     let Some(mut row) = messages.row_data(index) else {
         return;
     };
     row.text = text.into();
+    row.edited = true;
     messages.set_row_data(index, row);
 }
 
@@ -718,6 +724,9 @@ fn redact_row(messages: &slint::VecModel<Message>, index: usize) {
 
     row.text = REDACTED_TEXT.into();
     row.attachment = attachment_to_ui(None);
+    // A deleted message shows none of its old bodies, so an "(edited)" marker
+    // on it would point at nothing.
+    row.edited = false;
     messages.set_row_data(index, row);
 
     // The row has stopped holding a pixel buffer, so the queue that stands for
@@ -1369,6 +1378,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     event_id: txn_id.as_str().into(),
                     attachment: attachment_to_ui(None),
                     pending: true,
+                    edited: false,
                 });
             });
 
