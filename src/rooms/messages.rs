@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::collections::HashMap;
 
 use matrix_sdk::deserialized_responses::TimelineEvent;
 use ruma::events::room::MediaSource;
@@ -7,7 +6,7 @@ use ruma::events::room::message::{MessageType, Relation, SyncRoomMessageEvent};
 use ruma::events::room::redaction::SyncRoomRedactionEvent;
 use ruma::events::sticker::{StickerEventContent, SyncStickerEvent};
 use ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent};
-use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId};
+use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId};
 use tracing::warn;
 
 /// What kind of media an [`Attachment`] holds. This drives how the UI
@@ -202,211 +201,139 @@ pub fn clear_room_attachments(room_id: &RoomId) {
     ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().clear_room(room_id));
 }
 
-/// A message as displayed in the UI, after edits/redactions have been
-/// folded into the original event.
+/// A message to add to the list, from an event that creates one rather than
+/// changing one already there.
 #[derive(Debug, Clone)]
-pub struct StoredMessage {
+pub struct NewMessage {
     pub event_id: OwnedEventId,
-    /// Interned per-room via [`MessageStore::intern_sender`]. repeated
-    /// senders share one allocation instead of each message carrying its
-    /// own copy of the same user id.
-    pub sender: Arc<str>,
+    pub sender: OwnedUserId,
     pub body: String,
     pub origin_server_ts: u64,
-    pub edited: bool,
-    pub redacted: bool,
     /// `None` for text-only messages. An `m.room.message` carries exactly one
     /// msgtype, so an event never has more than one attachment; several files
     /// are several events.
     pub attachment: Option<Attachment>,
 }
 
-/// Accumulates timeline events into a deduped, edit/redaction-resolved
-/// set of messages. Fed by both paginated backfill and the live sync
-/// event handler, so both paths share exactly one code path for
-/// dedup/edit/redaction handling.
-#[derive(Default)]
-pub struct MessageStore {
-    /// Insertion-ordered messages, keyed by event id.
-    messages: Vec<StoredMessage>,
-    index: HashMap<OwnedEventId, usize>,
-
-    /// Edits that arrived before their target event
-    pending_edits: HashMap<OwnedEventId, String>, // event_id -> new_body
-    /// Redactions that arrived before their target event.
-    pending_redactions: HashSet<OwnedEventId>,
-
-    /// One shared allocation per distinct sender seen so far.
-    sender_cache: HashMap<OwnedUserId, Arc<str>>,
+/// What one timeline event means for the message list.
+///
+/// Pure data: no container, no state, and nothing about where the list lives.
+/// Both the paginated backfill and the live sync handler classify through
+/// [`effect_of`], so there is exactly one definition of what an edit or a
+/// redaction is, and each applies the answer to the message model itself
+/// rather than to a copy of it.
+#[derive(Debug, Clone)]
+pub enum EventEffect {
+    /// A message that was not in the list before.
+    New(NewMessage),
+    /// Replace the body of the message `target` stands for. The target may not
+    /// be there, since an edit is free to arrive before the event it edits.
+    Edit {
+        target: OwnedEventId,
+        new_body: String,
+    },
+    /// Blank the message `target` stands for. Absent for the same reason as on
+    /// [`EventEffect::Edit`].
+    Redact { target: OwnedEventId },
+    /// Nothing the message list shows: a state event, a reaction, an event
+    /// already redacted when it synced, or one that failed to deserialize.
+    Ignore,
 }
 
-impl MessageStore {
-    pub fn new() -> Self {
-        Self::default()
-    }
+/// Classify a raw event out of the event cache, deserializing it first.
+///
+/// An event that will not deserialize is skipped rather than failing the page
+/// it arrived in, since one unreadable event should not cost the rest.
+pub fn effect_of_raw(event: &TimelineEvent) -> EventEffect {
+    let Ok(deserialized) = event.raw().deserialize() else {
+        warn!("Failed to deserialize timeline event, skipping");
+        return EventEffect::Ignore;
+    };
+    effect_of(deserialized)
+}
 
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            messages: Vec::with_capacity(capacity),
-            index: HashMap::with_capacity(capacity),
-            ..Self::default()
-        }
-    }
+/// Classify a batch of raw events, dropping the ones the message list does not
+/// show. Oldest-first in, oldest-first out, so the result applies in display
+/// order.
+pub fn effects_of<'a>(events: impl IntoIterator<Item = &'a TimelineEvent>) -> Vec<EventEffect> {
+    events
+        .into_iter()
+        .map(effect_of_raw)
+        .filter(|effect| !matches!(effect, EventEffect::Ignore))
+        .collect()
+}
 
-    pub fn messages(&self) -> &[StoredMessage] {
-        &self.messages
-    }
+/// Classify a deserialized timeline event. See [`EventEffect`].
+pub fn effect_of(event: AnySyncTimelineEvent) -> EventEffect {
+    let AnySyncTimelineEvent::MessageLike(message_like) = event else {
+        // State events (topic changes, membership, etc.) aren't rendered as
+        // chat messages.
+        return EventEffect::Ignore;
+    };
 
-    /// Consumes the store, returning the accumulated messages without
-    /// cloning them.
-    pub fn into_messages(self) -> Vec<StoredMessage> {
-        self.messages
+    match message_like {
+        AnySyncMessageLikeEvent::RoomMessage(room_message) => effect_of_room_message(room_message),
+        AnySyncMessageLikeEvent::RoomRedaction(redaction) => effect_of_redaction(redaction),
+        AnySyncMessageLikeEvent::Sticker(sticker) => effect_of_sticker(sticker),
+        // TODO: deal with reactions and stuff later.
+        _ => EventEffect::Ignore,
     }
+}
 
-    /// Feed a single raw timeline event into the store. Safe to call
-    /// with duplicate events (from overlapping pagination/sync) and in
-    /// any order.
-    pub fn apply_raw(&mut self, event: &TimelineEvent) {
-        let raw = event.raw();
-        let Ok(deserialized) = raw.deserialize() else {
-            warn!("Failed to deserialize timeline event, skipping");
-            return;
+/// Classify an `m.room.message` on its own, for the live sync handler, which is
+/// registered per event type and so already has the concrete type in hand.
+/// [`effect_of`] routes here too, so the two paths cannot disagree.
+pub fn effect_of_room_message(event: SyncRoomMessageEvent) -> EventEffect {
+    let SyncRoomMessageEvent::Original(original) = event else {
+        // Already-redacted-at-sync-time events carry no body to show.
+        return EventEffect::Ignore;
+    };
+
+    // Matched by value (not by reference) so the edit's body can move straight
+    // out instead of being cloned out of a borrow.
+    if let Some(Relation::Replacement(replacement)) = original.content.relates_to {
+        return EventEffect::Edit {
+            target: replacement.event_id,
+            new_body: body_of(&replacement.new_content.msgtype),
         };
-        self.apply(deserialized);
     }
 
-    pub fn apply(&mut self, event: AnySyncTimelineEvent) {
-        let AnySyncTimelineEvent::MessageLike(message_like) = event else {
-            // State events (topic changes, membership, etc.) aren't
-            // rendered as chat messages.
-            return;
-        };
+    EventEffect::New(NewMessage {
+        event_id: original.event_id,
+        sender: original.sender,
+        body: body_of(&original.content.msgtype),
+        origin_server_ts: original.origin_server_ts.0.into(),
+        attachment: attachment_of(&original.content.msgtype),
+    })
+}
 
-        match message_like {
-            AnySyncMessageLikeEvent::RoomMessage(room_message) => {
-                self.apply_room_message(room_message)
-            }
-            AnySyncMessageLikeEvent::RoomRedaction(redaction) => self.apply_redaction(redaction),
-            AnySyncMessageLikeEvent::Sticker(sticker) => self.apply_sticker(sticker),
-            // TODO: deal with reactions and stuff later.
-            _ => {}
-        }
-    }
+/// `m.sticker` is its own event type rather than an `m.room.message` msgtype,
+/// so it needs its own arm. It still lands in the same [`NewMessage`] shape as
+/// everything else, carrying a single [`AttachmentKind::Sticker`] attachment.
+fn effect_of_sticker(event: SyncStickerEvent) -> EventEffect {
+    let SyncStickerEvent::Original(original) = event else {
+        return EventEffect::Ignore;
+    };
+    let attachment = attachment_of_sticker(&original.content);
+    EventEffect::New(NewMessage {
+        event_id: original.event_id,
+        sender: original.sender,
+        body: original.content.body,
+        origin_server_ts: original.origin_server_ts.0.into(),
+        attachment: Some(attachment),
+    })
+}
 
-    /// `m.sticker` is its own event type rather than an `m.room.message`
-    /// msgtype, so it needs its own entry point. It still lands in the same
-    /// [`StoredMessage`] shape as everything else, carrying a single
-    /// [`AttachmentKind::Sticker`] attachment.
-    fn apply_sticker(&mut self, event: SyncStickerEvent) {
-        let SyncStickerEvent::Original(original) = event else {
-            return;
-        };
-        let sender = self.intern_sender(&original.sender);
-        let attachment = attachment_of_sticker(&original.content);
-        self.push(StoredMessage {
-            event_id: original.event_id,
-            sender,
-            body: original.content.body,
-            origin_server_ts: original.origin_server_ts.0.into(),
-            edited: false,
-            redacted: false,
-            attachment: Some(attachment),
-        });
-    }
-
-    /// Append a message and settle any edit or redaction that arrived ahead
-    /// of it. Duplicates are ignored, since pagination and sync overlap.
-    fn push(&mut self, message: StoredMessage) {
-        let event_id = message.event_id.clone();
-        if self.index.contains_key(&event_id) {
-            return;
-        }
-
-        let idx = self.messages.len();
-        self.messages.push(message);
-        self.index.insert(event_id.clone(), idx);
-
-        if let Some(new_body) = self.pending_edits.remove(&event_id) {
-            self.messages[idx].body = new_body;
-            self.messages[idx].edited = true;
-        }
-        if self.pending_redactions.remove(&event_id) {
-            self.messages[idx].body.clear();
-            self.messages[idx].attachment = None;
-            self.messages[idx].redacted = true;
-        }
-    }
-
-    fn apply_room_message(&mut self, event: SyncRoomMessageEvent) {
-        let SyncRoomMessageEvent::Original(original) = event else {
-            // Already-redacted-at-sync-time events carry no body to show.
-            return;
-        };
-
-        // Match by value (not by reference) so the edit's body can move
-        // straight into `apply_edit` instead of being cloned out of a
-        // borrow.
-        if let Some(Relation::Replacement(replacement)) = original.content.relates_to {
-            let new_body = body_of(&replacement.new_content.msgtype);
-            self.apply_edit(replacement.event_id, new_body);
-            return;
-        }
-
-        let sender = self.intern_sender(&original.sender);
-        self.push(StoredMessage {
-            event_id: original.event_id,
-            sender,
-            body: body_of(&original.content.msgtype),
-            origin_server_ts: original.origin_server_ts.0.into(),
-            edited: false,
-            redacted: false,
-            attachment: attachment_of(&original.content.msgtype),
-        });
-    }
-
-    fn apply_edit(&mut self, target: OwnedEventId, new_body: String) {
-        if let Some(&idx) = self.index.get(&target) {
-            self.messages[idx].body = new_body;
-            self.messages[idx].edited = true;
-        } else {
-            self.pending_edits.insert(target, new_body);
-        }
-    }
-
-    fn apply_redaction(&mut self, event: SyncRoomRedactionEvent) {
-        // `redacts` moved from a top-level field to `content.redacts` in
-        // room version 11; check both since we don't know the room's
-        // version here.
-        let target = match &event {
-            SyncRoomRedactionEvent::Original(original) => original
-                .redacts
-                .clone()
-                .or_else(|| original.content.redacts.clone()),
-            SyncRoomRedactionEvent::Redacted(_) => None,
-        };
-        let Some(target) = target else {
-            return;
-        };
-
-        if let Some(&idx) = self.index.get(&target) {
-            self.messages[idx].body.clear();
-            self.messages[idx].attachment = None;
-            self.messages[idx].redacted = true;
-        } else {
-            self.pending_redactions.insert(target);
-        }
-    }
-
-    /// Returns a shared handle to `sender`'s interned id, allocating one
-    /// only the first time this sender is seen.
-    fn intern_sender(&mut self, sender: &UserId) -> Arc<str> {
-        if let Some(existing) = self.sender_cache.get(sender) {
-            return existing.clone();
-        }
-        let interned: Arc<str> = Arc::from(sender.as_str());
-        self.sender_cache
-            .insert(sender.to_owned(), interned.clone());
-        interned
+/// Classify an `m.room.redaction` on its own. See [`effect_of_room_message`].
+pub fn effect_of_redaction(event: SyncRoomRedactionEvent) -> EventEffect {
+    let SyncRoomRedactionEvent::Original(original) = event else {
+        return EventEffect::Ignore;
+    };
+    // `redacts` moved from a top-level field to `content.redacts` in room
+    // version 11; check both since we don't know the room's version here.
+    match original.redacts.or(original.content.redacts) {
+        Some(target) => EventEffect::Redact { target },
+        None => EventEffect::Ignore,
     }
 }
 
@@ -421,9 +348,11 @@ fn body_of(msgtype: &MessageType) -> String {
 
 /// Pull the media attachment out of an `m.room.message` msgtype, if it has
 /// one. Stickers are their own timeline event and come in through
-/// [`attachment_of_sticker`] instead. This is `pub(crate)` so the live sync
-/// handler and the paginated fetch path share a single extractor.
-pub(crate) fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
+/// [`attachment_of_sticker`] instead.
+///
+/// Private because every path now reaches it through [`effect_of`], rather than
+/// each extracting attachments for itself.
+fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
     // Each msgtype has a distinct ruma info type and there is no common
     // trait over them, so the fields are read structurally instead.
     macro_rules! visual {

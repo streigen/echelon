@@ -196,6 +196,20 @@ struct PreviewWindow {
     flush_queued: bool,
 }
 
+/// Edits and redactions whose target is not in the model, held until the page
+/// carrying it arrives.
+///
+/// Pagination walks backwards, so a change is almost always seen before the
+/// message it changes: a redaction sits in the newest page while the event it
+/// redacts is three pages older. Without this, that redaction would be dropped
+/// on the floor and the message would keep rendering its original body.
+#[derive(Default)]
+struct PendingChanges {
+    /// Target event id to the body it should take.
+    edits: std::collections::HashMap<ruma::OwnedEventId, String>,
+    redactions: std::collections::HashSet<ruma::OwnedEventId>,
+}
+
 thread_local! {
     static PREVIEW_WINDOW: std::cell::RefCell<PreviewWindow> =
         std::cell::RefCell::new(PreviewWindow::default());
@@ -203,6 +217,21 @@ thread_local! {
     /// The message model backing `UiState.messages`.
     static MESSAGES: std::rc::Rc<slint::VecModel<Message>> =
         std::rc::Rc::new(slint::VecModel::from(Vec::new()));
+
+    /// Event ids that currently have a row in `MESSAGES`, so the dedup every
+    /// insert needs is a hash lookup instead of a walk of the model. Pagination
+    /// and sync overlap, and a page can be fetched again after a trim, so the
+    /// same event does arrive more than once.
+    ///
+    /// Kept in step with the model at every point that adds or removes rows,
+    /// like `PREVIEW_WINDOW` is.
+    static ROW_INDEX: std::cell::RefCell<std::collections::HashSet<ruma::OwnedEventId>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+
+    /// See [`PendingChanges`]. Lives beside the model because the model is what
+    /// its entries will be applied to, and is cleared with it.
+    static PENDING: std::cell::RefCell<PendingChanges> =
+        std::cell::RefCell::new(PendingChanges::default());
 
     /// Bumped every time the message model is emptied, so a page fetched against the
     /// rows that were there before cannot be installed over the rows that replaced
@@ -357,6 +386,13 @@ fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
             window.pending.retain(|id, _| !dropped.contains(id));
         });
 
+        // Dropped ids have to leave the dedup set as well, or the page that
+        // fetches them again would be taken for a duplicate and install nothing.
+        ROW_INDEX.with(|index| {
+            let mut index = index.borrow_mut();
+            index.retain(|id| !dropped.iter().any(|gone| gone == id.as_str()));
+        });
+
         let state = ui.global::<UiState>();
         if drop_oldest {
             // The next page back is anchored on the oldest row still shown, which
@@ -381,7 +417,7 @@ fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
 /// # Arguments
 /// * `ui` - The window whose message view to reset.
 fn reset_message_view(ui: &AppWindow) {
-    MESSAGES.with(|messages| messages.set_vec(Vec::new()));
+    clear_message_rows();
     // Before any fetch this reset goes on to start, so that one carries the new
     // generation and every page still in flight against the old rows carries the old.
     MESSAGE_GENERATION.with(|g| g.set(g.get().wrapping_add(1)));
@@ -514,55 +550,224 @@ fn flush_preview_window(
     });
 }
 
-/// Convert a page of messages into the UI's display shape, caching their
-/// attachments so the media source can be found again when the row is
-/// clicked or scrolled into view. Nothing is downloaded here, since fetching
-/// follows visibility instead.
+/// Stands in for the body of a message that has been deleted.
+const REDACTED_TEXT: &str = "[message deleted]";
+
+/// Where an [`EventEffect::New`] row lands in the model.
+#[derive(Clone, Copy)]
+enum RowPosition {
+    /// The newest end, for a live event.
+    Newest,
+    /// The top, for a page walked newest-first so it ends up oldest-first above
+    /// the rows already shown.
+    Oldest,
+}
+
+/// What [`apply_effect`] did.
+enum Applied {
+    /// A row was added.
+    Inserted,
+    /// An existing row was changed in place.
+    Patched,
+    /// An edit or redaction whose target has no row, held in [`PENDING`].
+    Buffered,
+    /// An event that already has a row, or nothing the list shows.
+    Skipped,
+}
+
+/// Fold one [`EventEffect`] into the message model.
+///
+/// The only place message rows are added or changed. Both the paginated
+/// backfill and the live sync handler come through here, so there is one
+/// implementation of dedup, edit and redaction handling over one container
+/// rather than a copy per path.
 ///
 /// # Arguments
-/// * `room_id` - The room the page belongs to, used as the attachment cache key.
-/// * `messages` - The page to convert.
-/// * `display_names` - Sender display names resolved by the fetch, keyed by the same interned
-///   sender string the messages carry. A sender missing from it falls back to their user id.
-fn stored_messages_to_ui(
+/// * `messages` - The model to fold into.
+/// * `room_id` - The room the effect belongs to, for keying the attachment cache.
+/// * `effect` - What the event means. See [`rooms::messages::effect_of`].
+/// * `names` - Display names for the senders in this batch.
+/// * `position` - Where a new row lands.
+fn apply_effect(
+    messages: &slint::VecModel<Message>,
     room_id: &RoomId,
-    messages: Vec<rooms::messages::StoredMessage>,
-    display_names: &std::collections::HashMap<std::sync::Arc<str>, String>,
-) -> Vec<Message> {
-    messages
-        .into_iter()
-        .map(|m| {
-            let event_id = m.event_id.to_string();
-            // Cached from the store's own typed id, not the string copy the
-            // UI row gets.
-            if let Some(attachment) = &m.attachment {
-                rooms::messages::cache_attachment(room_id, &m.event_id, attachment);
+    effect: rooms::messages::EventEffect,
+    names: &std::collections::HashMap<ruma::OwnedUserId, String>,
+    position: RowPosition,
+) -> Applied {
+    use rooms::messages::EventEffect;
+
+    match effect {
+        EventEffect::New(message) => {
+            // Claiming the id and testing for a duplicate are the same step, so
+            // an event that is already shown cannot be inserted twice.
+            if !ROW_INDEX.with(|index| index.borrow_mut().insert(message.event_id.clone())) {
+                return Applied::Skipped;
+            }
+            // Cached from the typed id, not the string copy the row gets.
+            if let Some(attachment) = &message.attachment {
+                rooms::messages::cache_attachment(room_id, &message.event_id, attachment);
             }
 
-            // Looked up by the sender string the message already holds. Parsing it
-            // into a typed id first would allocate one per row purely to probe the
-            // map with, and throw it away again.
-            let user = display_names
-                .get(m.sender.as_ref())
-                .map_or_else(|| m.sender.as_ref(), String::as_str);
+            let index = match position {
+                RowPosition::Newest => messages.row_count(),
+                RowPosition::Oldest => 0,
+            };
+            messages.insert(index, message_row(&message, names));
+            // A change to this event may have been seen in an earlier, newer
+            // page, before there was a row to put it on.
+            settle_pending(messages, &message.event_id, index);
+            Applied::Inserted
+        }
 
-            Message {
-                user: user.into(),
-                time: format_time_of_day(m.origin_server_ts).into(),
-                text: if m.redacted {
-                    "[message deleted]"
-                } else {
-                    display_text(&m.body, m.attachment.as_ref())
-                }
-                .into(),
-                repliedTo: "".into(),
-                event_id: event_id.into(),
-                attachment: attachment_to_ui(m.attachment.as_ref()),
-                // Anything the server has handed back is acknowledged by definition.
-                pending: false,
-            }
-        })
-        .collect()
+        EventEffect::Edit { target, new_body } => {
+            let Some(index) = row_index(messages, target.as_str(), None) else {
+                PENDING.with(|p| p.borrow_mut().edits.insert(target, new_body));
+                return Applied::Buffered;
+            };
+            set_row_text(messages, index, &new_body);
+            Applied::Patched
+        }
+
+        EventEffect::Redact { target } => {
+            let Some(index) = row_index(messages, target.as_str(), None) else {
+                PENDING.with(|p| p.borrow_mut().redactions.insert(target));
+                return Applied::Buffered;
+            };
+            redact_row(messages, index);
+            Applied::Patched
+        }
+
+        EventEffect::Ignore => Applied::Skipped,
+    }
+}
+
+/// Build the row for a new message. The attachment's `preview` starts empty and
+/// is filled in later by [`spawn_image_fetch`].
+fn message_row(
+    message: &rooms::messages::NewMessage,
+    names: &std::collections::HashMap<ruma::OwnedUserId, String>,
+) -> Message {
+    // Probed with the borrowed id, so a lookup allocates nothing. An unresolved
+    // sender falls back to the raw user id.
+    let user = names
+        .get(&*message.sender)
+        .map_or_else(|| message.sender.as_str(), String::as_str);
+
+    Message {
+        user: user.into(),
+        time: format_time_of_day(message.origin_server_ts).into(),
+        text: display_text(&message.body, message.attachment.as_ref()).into(),
+        repliedTo: "".into(),
+        event_id: message.event_id.as_str().into(),
+        attachment: attachment_to_ui(message.attachment.as_ref()),
+        // Anything the server has handed back is acknowledged by definition.
+        pending: false,
+    }
+}
+
+/// Apply a change that was seen before the row it targets existed.
+///
+/// A redaction wins over an edit: a message edited and then deleted is deleted,
+/// whichever order the two were seen in.
+///
+/// # Arguments
+/// * `messages` - The model holding the row.
+/// * `event_id` - The event whose row has just been inserted.
+/// * `index` - Where that row went, which is exact rather than a hint.
+fn settle_pending(
+    messages: &slint::VecModel<Message>,
+    event_id: &EventId,
+    index: usize,
+) {
+    let (edit, redacted) = PENDING.with(|p| {
+        let mut pending = p.borrow_mut();
+        (
+            pending.edits.remove(event_id),
+            pending.redactions.remove(event_id),
+        )
+    });
+
+    if redacted {
+        redact_row(messages, index);
+        return;
+    }
+    if let Some(new_body) = edit {
+        set_row_text(messages, index, &new_body);
+    }
+}
+
+/// Replace a row's body, leaving everything else on it alone.
+fn set_row_text(messages: &slint::VecModel<Message>, index: usize, text: &str) {
+    let Some(mut row) = messages.row_data(index) else {
+        return;
+    };
+    row.text = text.into();
+    messages.set_row_data(index, row);
+}
+
+/// Blank a deleted message's row in place: the body goes, the attachment goes,
+/// and any decoded preview goes with it. The row itself stays, since the
+/// timeline still has an event there.
+fn redact_row(messages: &slint::VecModel<Message>, index: usize) {
+    let Some(mut row) = messages.row_data(index) else {
+        return;
+    };
+    let had_preview = row.attachment.preview.size().width > 0;
+    let event_id = row.event_id.to_string();
+
+    row.text = REDACTED_TEXT.into();
+    row.attachment = attachment_to_ui(None);
+    messages.set_row_data(index, row);
+
+    // The row has stopped holding a pixel buffer, so the queue that stands for
+    // the live ones has to lose it too. Left in, it would be counted against
+    // the cap and evict a preview that is still on screen.
+    if had_preview {
+        PREVIEW_WINDOW.with(|s| s.borrow_mut().loaded.retain(|id| id != &event_id));
+    }
+}
+
+/// Fold a live event's effect into the open room's rows.
+///
+/// Called on the UI thread by the sync handler, which has already classified the
+/// event and resolved any sender name it needs. This is the live path's entry
+/// into [`apply_effect`]; the paginated one is in `fetch_message_page`.
+///
+/// # Arguments
+/// * `ui_handle` - Weak handle to the window holding the rows.
+/// * `room_id` - The room the event arrived in.
+/// * `effect` - What the event means for the message list.
+/// * `names` - Display name for the event's sender, if it has one.
+pub(crate) fn apply_live_effect(
+    ui_handle: &slint::Weak<AppWindow>,
+    room_id: &RoomId,
+    effect: rooms::messages::EventEffect,
+    names: &std::collections::HashMap<ruma::OwnedUserId, String>,
+) {
+    let Some(ui) = ui_handle.upgrade() else {
+        return;
+    };
+    // The channel can have been switched between the sync handler's own check and
+    // this landing on the UI thread. Rows for a room that is no longer open would
+    // be dropped by the next fetch anyway, so they are not installed at all.
+    if ui.global::<UiState>().get_active_room_id() != room_id.as_str() {
+        return;
+    }
+    MESSAGES.with(|messages| {
+        apply_effect(messages, room_id, effect, names, RowPosition::Newest);
+    });
+}
+
+/// Empty the message rows and the bookkeeping keyed to them.
+///
+/// Split out of [`reset_message_view`] because the latest page installs itself
+/// over whatever was there, and has to start from the same clean state without
+/// touching the generation or the loading flags.
+fn clear_message_rows() {
+    MESSAGES.with(|messages| messages.set_vec(Vec::new()));
+    ROW_INDEX.with(|index| index.borrow_mut().clear());
+    PENDING.with(|pending| *pending.borrow_mut() = PendingChanges::default());
 }
 
 /// Resolve the name this account goes by in `room_id` and hold onto it for the
@@ -676,24 +881,35 @@ fn fetch_message_page(
 
             let mut prepended = 0;
             match result {
-                Ok(paginated) => {
+                Ok(page) => {
                     if let Ok(parsed_room_id) = <&RoomId>::try_from(room_id.as_str()) {
-                        let msgs = stored_messages_to_ui(
-                            parsed_room_id,
-                            paginated.messages,
-                            &paginated.display_names,
-                        );
-                        state.set_next_token(paginated.next_token.unwrap_or_default().into());
+                        state.set_next_token(page.next_token.unwrap_or_default().into());
+                        // The latest page stands for the whole view rather than
+                        // joining onto it. The reset that started this fetch has
+                        // already emptied the model in the paths that go through
+                        // it, so this only guards the ones that do not.
+                        if !prepend {
+                            clear_message_rows();
+                        }
                         MESSAGES.with(|messages| {
-                            if prepend {
-                                prepended = msgs.len() as i32;
-                                // Insert items individually from back to front at index 0
-                                // so the UI list view updates its scroll anchor cleanly.
-                                for msg in msgs.into_iter().rev() {
-                                    messages.insert(0, msg);
+                            // Walked newest-first, with every row inserted at the
+                            // top of the page's span, so the page lands oldest-first
+                            // above the rows already shown. Inserting row by row is
+                            // what lets the list view update its scroll anchor
+                            // cleanly, which a whole-model reset does not.
+                            for effect in page.effects.into_iter().rev() {
+                                if matches!(
+                                    apply_effect(
+                                        messages,
+                                        parsed_room_id,
+                                        effect,
+                                        &page.display_names,
+                                        RowPosition::Oldest,
+                                    ),
+                                    Applied::Inserted
+                                ) {
+                                    prepended += 1;
                                 }
-                            } else {
-                                messages.set_vec(msgs);
                             }
                         });
                     }
@@ -1106,41 +1322,6 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Live message push from the sync loop (see events::ClientEvents::on_message).
-    // Only appends to UiState.messages when the event's room is the one currently open;
-    // messages for other rooms are dropped here (they'll show up via the paginated
-    // fetch next time that channel is opened).
-    ui.on_matrix_message({
-        let ui_handle = ui_handle.clone();
-        move |sender, room_id, body, event_id, time, attachment, transaction_id| {
-            if let Some(ui) = ui_handle.upgrade() {
-                let state = ui.global::<UiState>();
-                if state.get_active_room_id() != room_id {
-                    return;
-                }
-                // A message this client sent already has a row on screen, put up
-                // by `on_send_message` and settled by the send's own response, so
-                // appending this echo would show it twice. The homeserver hands
-                // the transaction id back to the sending device only, which is
-                // what makes it safe to drop on: no one else's message carries
-                // one.
-                if !transaction_id.is_empty() {
-                    return;
-                }
-                let new_msg = Message {
-                    user: sender,
-                    time,
-                    text: body,
-                    repliedTo: slint::SharedString::from(""),
-                    event_id,
-                    attachment,
-                    pending: false,
-                };
-                MESSAGES.with(|messages| messages.push(new_msg));
-            }
-        }
-    });
-
     // Send message callback. The composer only carries the text, so the room is
     // taken from whichever channel is open at the moment of the send.
     //
@@ -1224,6 +1405,13 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                         row.event_id = event_id.as_str().into();
                         row.pending = false;
                         messages.set_row_data(index, row);
+
+                        // The row only takes a real event id here, so this is
+                        // where it joins the dedup set. Without it a later page
+                        // covering this message would install a second row for
+                        // it, and an edit or redaction of it would be buffered
+                        // against a row that is already on screen.
+                        ROW_INDEX.with(|index| index.borrow_mut().insert(event_id.clone()));
                     });
                     if let Err(e) = result {
                         show_toast(&ui, format!("Failed to send message: {e}"), true);

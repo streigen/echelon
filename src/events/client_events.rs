@@ -1,102 +1,87 @@
+use std::collections::HashMap;
+
 use matrix_sdk::Room;
 use ruma::events::room::message::SyncRoomMessageEvent;
-use slint::ComponentHandle;
+use ruma::events::room::redaction::SyncRoomRedactionEvent;
+use ruma::OwnedUserId;
 use tracing::{error, trace};
 
+use crate::AppWindow;
 use crate::rooms;
 use crate::rooms::members;
-use crate::rooms::messages::{attachment_of, cache_attachment};
-use crate::{AppWindow, UiState, attachment_to_ui, display_text, format_time_of_day};
+use crate::rooms::messages::{EventEffect, effect_of_redaction, effect_of_room_message};
 
 pub struct ClientEvents;
 
 impl ClientEvents {
     pub fn register_events(client: &matrix_sdk::Client, ui_handle: slint::Weak<AppWindow>) {
+        // Registered per event type, so a message and a redaction arrive on their
+        // own handlers and are classified by the matching entry point. Both fold
+        // into the model through `apply`, which is the same path the paginated
+        // backfill uses.
+        let message_handle = ui_handle.clone();
         client.add_event_handler(move |event: SyncRoomMessageEvent, room: Room| {
-            let handle = ui_handle.clone();
+            let ui_handle = message_handle.clone();
             async move {
-                Self::on_message(event, room, handle).await;
+                trace!("Received message: {:?}", event);
+
+                // An echo of a message this client sent already has a row on
+                // screen, put up by `on_send_message` and settled by the send's
+                // own response, so appending it would show the message twice.
+                // The homeserver hands the transaction id back to the sending
+                // device only, which is what makes it safe to drop on: no one
+                // else's message carries one.
+                if let SyncRoomMessageEvent::Original(original) = &event
+                    && original.unsigned.transaction_id.is_some()
+                {
+                    return;
+                }
+
+                Self::apply(effect_of_room_message(event), room, ui_handle).await;
+            }
+        });
+
+        client.add_event_handler(move |event: SyncRoomRedactionEvent, room: Room| {
+            let ui_handle = ui_handle.clone();
+            async move {
+                trace!("Received redaction: {:?}", event);
+                Self::apply(effect_of_redaction(event), room, ui_handle).await;
             }
         });
     }
 
-    async fn on_message(
-        event: SyncRoomMessageEvent,
-        room: Room,
-        ui_handle: slint::Weak<AppWindow>,
-    ) {
-        trace!("Received message: {:?}", event);
+    /// Fold one live event into the open room's rows.
+    ///
+    /// # Arguments
+    /// * `effect` - What the event means for the message list.
+    /// * `room` - The room it arrived in.
+    /// * `ui_handle` - Weak handle the rows are reached through.
+    async fn apply(effect: EventEffect, room: Room, ui_handle: slint::Weak<AppWindow>) {
+        if matches!(effect, EventEffect::Ignore) {
+            return;
+        }
 
-        // Ignore messages for rooms that are not currently active.
+        // Events for rooms that are not open are dropped: they are refetched when
+        // the channel is opened anyway, and caching their attachments would make a
+        // busy account pay for every image in every joined room.
         if !rooms::is_active_room(room.room_id()) {
             return;
         }
 
-        // Get the content based on event type. The ids stay in their ruma
-        // types, since the attachment cache is keyed by them; only the copies
-        // handed to the UI are stringified.
-        //
-        // `unsigned.transaction_id` is only set on the device that sent the event, so it is `None`
-        // for everyone else's messages. On our own it identifies the send, which is how the UI
-        // finds the pending row it is already showing for this message instead of adding a second
-        // one.
-        let (sender, body, event_id, origin_server_ts, attachment, transaction_id) = match event {
-            SyncRoomMessageEvent::Original(original) => {
-                let body = original.content.body().to_string();
-                let attachment = attachment_of(&original.content.msgtype);
-                (
-                    original.sender,
-                    body,
-                    original.event_id,
-                    original.origin_server_ts,
-                    attachment,
-                    original.unsigned.transaction_id,
-                )
+        // Resolved here because the UI thread cannot await. Only a new message
+        // needs a name; an edit or a redaction lands on a row that already has one.
+        let names: HashMap<OwnedUserId, String> = match &effect {
+            EventEffect::New(message) => {
+                members::display_names(&room, std::iter::once(&*message.sender)).await
             }
-            SyncRoomMessageEvent::Redacted(redacted) => (
-                redacted.sender,
-                "[Redacted message]".to_string(),
-                redacted.event_id,
-                redacted.origin_server_ts,
-                None,
-                None,
-            ),
+            _ => HashMap::new(),
         };
 
         let room_id = room.room_id().to_owned();
-        let time = format_time_of_day(origin_server_ts.0.into());
-        // Resolve display name asynchronously from room state.
-        let sender = members::display_name(&room, &sender).await;
-
-        // Emit event to frontend
         if let Err(e) = slint::invoke_from_event_loop(move || {
-            let Some(ui) = ui_handle.upgrade() else {
-                return;
-            };
-            // Messages for other rooms are dropped anyway, since they are
-            // refetched when the channel is opened. Bail out before caching
-            // anything, otherwise a busy account pays for every image in
-            // every joined room.
-            if ui.global::<UiState>().get_active_room_id() != room_id.as_str() {
-                return;
-            }
-
-            ui.invoke_matrix_message(
-                sender.into(),
-                room_id.as_str().into(),
-                display_text(&body, attachment.as_ref()).into(),
-                event_id.as_str().into(),
-                time.into(),
-                attachment_to_ui(attachment.as_ref()),
-                transaction_id.as_deref().map_or("", |id| id.as_str()).into(),
-            );
-
-            // Cache attachment metadata for retrieval by the UI thread.
-            if let Some(attachment) = attachment {
-                cache_attachment(&room_id, &event_id, &attachment);
-            }
+            crate::apply_live_effect(&ui_handle, &room_id, effect, &names);
         }) {
-            error!("Failed to emit message event: {}", e);
+            error!("Failed to apply live event: {e}");
         }
     }
 }

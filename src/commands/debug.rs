@@ -123,16 +123,28 @@ pub async fn dispatch(
             let limit = opt(2).and_then(|v| v.parse().ok()).unwrap_or(50);
             super::messages::get_messages_from_room_paginated(state, room_id, opt(1), limit)
                 .await
-                .map(|paginated| {
-                    let lines: Vec<String> = paginated
-                        .messages
+                .map(|page| {
+                    use crate::rooms::messages::EventEffect;
+                    // Every effect is printed, edits and redactions included, so a
+                    // page that folds down to few rows shows why.
+                    let lines: Vec<String> = page
+                        .effects
                         .iter()
-                        .map(|m| format!("[{}] {}: {}", m.origin_server_ts, m.sender, m.body))
+                        .map(|effect| match effect {
+                            EventEffect::New(m) => {
+                                format!("[{}] {}: {}", m.origin_server_ts, m.sender, m.body)
+                            }
+                            EventEffect::Edit { target, new_body } => {
+                                format!("[edit of {target}] {new_body}")
+                            }
+                            EventEffect::Redact { target } => format!("[redacts {target}]"),
+                            EventEffect::Ignore => "[ignored]".to_string(),
+                        })
                         .collect();
                     format!(
-                        "{} messages (next_token: {:?})\n{}",
+                        "{} effects (next_token: {:?})\n{}",
                         lines.len(),
-                        paginated.next_token,
+                        page.next_token,
                         lines.join("\n")
                     )
                 })

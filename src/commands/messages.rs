@@ -1,17 +1,16 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use matrix_sdk::deserialized_responses::TimelineEvent;
 use matrix_sdk::event_cache::{RoomEventCache, RoomEventCacheSubscriber};
 use matrix_sdk::{Room, RoomState};
 use ruma::events::room::message::RoomMessageEventContent;
-use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedTransactionId, RoomId};
+use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomId};
 use tokio::sync::Mutex;
 use tracing::{debug, trace};
 
 use crate::ClientState;
 use crate::rooms::members;
-use crate::rooms::messages::{MessageStore, StoredMessage};
+use crate::rooms::messages::{EventEffect, effects_of};
 
 /// Event cache subscription for the currently active room.
 static ACTIVE_ROOM_SUBSCRIPTION: Mutex<Option<ActiveRoomSubscription>> = Mutex::const_new(None);
@@ -64,13 +63,19 @@ async fn subscribe_active_room(
     Ok(events)
 }
 
-/// One page of resolved, oldest-first messages plus the event id to pass
-/// back as `from` to load the next (older) page.
-pub struct PaginatedMessages {
-    pub messages: Vec<StoredMessage>,
+/// One page of classified, oldest-first events plus the event id to pass back
+/// as `from` to load the next (older) page.
+///
+/// The page carries effects rather than finished rows, so the caller folds them
+/// into the message model itself. Edits and redactions whose target is not in
+/// this page survive as effects and settle whenever the page holding their
+/// target arrives, which a page of finished rows could not express.
+pub struct MessagePage {
+    /// Oldest-first, in the order they must be applied.
+    pub effects: Vec<EventEffect>,
     pub next_token: Option<String>,
-    /// Display name for each sender in `messages`.
-    pub display_names: HashMap<Arc<str>, String>,
+    /// Display name for each sender in `effects`.
+    pub display_names: HashMap<OwnedUserId, String>,
 }
 
 /// Fetch one page of messages for a room, folding edits/redactions into
@@ -88,7 +93,7 @@ pub async fn get_messages_from_room_paginated(
     room_id: OwnedRoomId,
     from: Option<String>,
     limit: u32,
-) -> Result<PaginatedMessages, String> {
+) -> Result<MessagePage, String> {
     let client = super::get_active_client(&client_state).await?;
 
     let room = client
@@ -129,16 +134,21 @@ pub async fn get_messages_from_room_paginated(
 
         // Enough already-loaded events to answer this page, or we've hit the front of what's loaded
         if slice.len() >= limit as usize || start == 0 {
-            if let Some(messages) = messages_from_slice(slice) {
+            let effects = effects_of(slice);
+            // A window that folds down to no messages at all (all redactions,
+            // or edits of events outside it) cannot answer the page, so it
+            // falls through to the fetch below rather than reporting an empty
+            // one and stranding the caller.
+            if let Some(oldest) = oldest_message_id(&effects) {
                 debug!(
-                    "Served {} messages for room {} from the local event cache (no network fetch)",
-                    messages.len(),
+                    "Served {} effects for room {} from the local event cache (no network fetch)",
+                    effects.len(),
                     room_id
                 );
-                let next_token = messages.first().map(|m| m.event_id.to_string());
-                let display_names = resolve_display_names(&room, &messages).await;
-                return Ok(PaginatedMessages {
-                    messages,
+                let next_token = Some(oldest.to_string());
+                let display_names = resolve_display_names(&room, &effects).await;
+                return Ok(MessagePage {
+                    effects,
                     next_token,
                     display_names,
                 });
@@ -161,24 +171,30 @@ pub async fn get_messages_from_room_paginated(
         outcome.reached_start
     );
 
-    // `run_backwards_until` returns events newest-first but we need to feed the store
-    // oldest-first so `into_messages()` comes out in display order.
-    let mut store = MessageStore::with_capacity(outcome.events.len());
-    for event in outcome.events.iter().rev() {
-        store.apply_raw(event);
-    }
+    // `run_backwards_until` returns events newest-first, classified oldest-first
+    // so the effects apply in display order.
+    let effects = effects_of(outcome.events.iter().rev());
 
-    let messages = store.into_messages();
     let next_token = (!outcome.reached_start)
-        .then(|| messages.first().map(|m| m.event_id.to_string()))
+        .then(|| oldest_message_id(&effects).map(ToString::to_string))
         .flatten();
 
-    let display_names = resolve_display_names(&room, &messages).await;
+    let display_names = resolve_display_names(&room, &effects).await;
 
-    Ok(PaginatedMessages {
-        messages,
+    Ok(MessagePage {
+        effects,
         next_token,
         display_names,
+    })
+}
+
+/// Event id of the oldest message in a page, which is the anchor the next
+/// (older) page is fetched from. `None` when the page carries no message of its
+/// own, only changes to messages elsewhere.
+fn oldest_message_id(effects: &[EventEffect]) -> Option<&EventId> {
+    effects.iter().find_map(|effect| match effect {
+        EventEffect::New(message) => Some(&*message.event_id),
+        _ => None,
     })
 }
 
@@ -254,30 +270,24 @@ pub async fn send_message(
     Ok(event_id)
 }
 
-/// Resolve the display name of every sender in a page of messages.
+/// Resolve the display name of every sender in a page.
 ///
-/// Senders whose id does not parse are skipped, which leaves the UI falling back to the raw string
-/// it already holds.
+/// Only [`EventEffect::New`] carries a sender; an edit or a redaction is
+/// labelled by the row it lands on, which already has its name.
 ///
 /// # Arguments
 /// * `room` - The room the messages were sent in.
-/// * `messages` - The page whose senders to resolve.
-async fn resolve_display_names(room: &Room, messages: &[StoredMessage]) -> HashMap<Arc<str>, String> {
-    let senders: Vec<Arc<str>> = messages.iter().map(|m| m.sender.clone()).collect();
-    members::display_names(room, senders).await
-}
-
-/// Resolves a slice of already-loaded, oldest-first cache events into
-/// display-ready messages. Returns `None` if the slice folds down to
-/// nothing displayable (e.g. it's all redactions/edits of events outside
-/// the slice).
-fn messages_from_slice(
-    slice: &[matrix_sdk::deserialized_responses::TimelineEvent],
-) -> Option<Vec<StoredMessage>> {
-    let mut store = MessageStore::with_capacity(slice.len());
-    for event in slice {
-        store.apply_raw(event);
-    }
-    let messages = store.into_messages();
-    (!messages.is_empty()).then_some(messages)
+/// * `effects` - The page whose senders to resolve.
+async fn resolve_display_names(
+    room: &Room,
+    effects: &[EventEffect],
+) -> HashMap<OwnedUserId, String> {
+    members::display_names(
+        room,
+        effects.iter().filter_map(|effect| match effect {
+            EventEffect::New(message) => Some(&*message.sender),
+            _ => None,
+        }),
+    )
+    .await
 }

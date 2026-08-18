@@ -1,8 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use matrix_sdk::Room;
-use ruma::UserId;
+use ruma::{OwnedUserId, UserId};
 use tracing::warn;
 
 /// The name a member goes by in a room, or `None` when the room's state has no member event for
@@ -53,24 +52,27 @@ pub async fn own_display_name(room: &Room) -> String {
 
 /// Resolve the display names of senders in a page of messages.
 ///
+/// Senders are borrowed rather than owned, and deduped before anything is
+/// resolved, so a page of fifty messages from five people allocates five owned
+/// ids for the map keys instead of one per message. `OwnedUserId` is a
+/// `Box<str>` unless ruma is built with `ruma_identifiers_storage = "Arc"`, so
+/// cloning one is an allocation and worth not doing per row.
+///
 /// # Arguments
 /// * `room` - The room the messages were sent in.
-/// * `senders` - The senders to resolve.
-pub async fn display_names<I>(room: &Room, senders: I) -> HashMap<Arc<str>, String>
+/// * `senders` - The senders to resolve, in any order and with repeats.
+pub async fn display_names<'a, I>(room: &Room, senders: I) -> HashMap<OwnedUserId, String>
 where
-    I: IntoIterator<Item = Arc<str>>,
+    I: IntoIterator<Item = &'a UserId>,
 {
-    let senders: HashSet<Arc<str>> = senders.into_iter().collect();
-    let mut names: HashMap<Arc<str>, String> = HashMap::with_capacity(senders.len());
-    let mut missing: Vec<Arc<str>> = Vec::new();
+    let senders: HashSet<&UserId> = senders.into_iter().collect();
+    let mut names: HashMap<OwnedUserId, String> = HashMap::with_capacity(senders.len());
+    let mut missing: Vec<&UserId> = Vec::new();
 
     for sender in senders {
-        let Ok(user_id) = <&UserId>::try_from(sender.as_ref()) else {
-            continue;
-        };
-        match stored_name(room, user_id).await {
+        match stored_name(room, sender).await {
             Some(name) => {
-                names.insert(sender, name);
+                names.insert(sender.to_owned(), name);
             }
             None => missing.push(sender),
         }
@@ -86,11 +88,8 @@ where
     }
 
     for sender in missing {
-        let Ok(user_id) = <&UserId>::try_from(sender.as_ref()) else {
-            continue;
-        };
-        let name = display_name(room, user_id).await;
-        names.insert(sender, name);
+        let name = display_name(room, sender).await;
+        names.insert(sender.to_owned(), name);
     }
     names
 }
