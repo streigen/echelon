@@ -1,67 +1,15 @@
 use std::collections::HashMap;
 
 use matrix_sdk::deserialized_responses::TimelineEvent;
-use matrix_sdk::event_cache::{RoomEventCache, RoomEventCacheSubscriber};
 use matrix_sdk::{Room, RoomState};
 use ruma::events::room::message::RoomMessageEventContent;
-use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedTransactionId, OwnedUserId, RoomId};
-use tokio::sync::Mutex;
+use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedTransactionId, OwnedUserId};
 use tracing::{debug, trace};
 
 use crate::ClientState;
+use crate::client::active_room::subscribe_active_room;
 use crate::rooms::members;
 use crate::rooms::messages::{EventEffect, effects_of};
-
-/// Event cache subscription for the currently active room.
-static ACTIVE_ROOM_SUBSCRIPTION: Mutex<Option<ActiveRoomSubscription>> = Mutex::const_new(None);
-
-struct ActiveRoomSubscription {
-    room_id: OwnedRoomId,
-    _subscriber: RoomEventCacheSubscriber,
-}
-
-/// Take over the active-room subscription for `room_id`, releasing the previous
-/// room's so it shrinks, and return the events already loaded for the new one.
-///
-/// Subscribing hands back the current events anyway, so this stands in for the
-/// [`RoomEventCache::events`] read the caller would otherwise do rather than
-/// adding a second copy of the same list.
-///
-/// # Arguments
-/// * `room_id` - The room being opened.
-/// * `cache` - That room's event cache.
-async fn subscribe_active_room(
-    room_id: &RoomId,
-    cache: &RoomEventCache,
-) -> Result<Vec<TimelineEvent>, String> {
-    let mut active = ACTIVE_ROOM_SUBSCRIPTION.lock().await;
-
-    // Reopening the room that already holds the subscription. Releasing and
-    // retaking it would shrink the very room the user is about to read.
-    if active
-        .as_ref()
-        .is_some_and(|held| &*held.room_id == room_id)
-    {
-        return cache
-            .events()
-            .await
-            .map_err(|e| format!("Failed to read local event cache: {e}"));
-    }
-
-    // Released before the new one is taken, so the room being left shrinks even
-    // if subscribing to the room being opened fails.
-    *active = None;
-
-    let (events, subscriber) = cache
-        .subscribe()
-        .await
-        .map_err(|e| format!("Failed to subscribe to the event cache: {e}"))?;
-    *active = Some(ActiveRoomSubscription {
-        room_id: room_id.to_owned(),
-        _subscriber: subscriber,
-    });
-    Ok(events)
-}
 
 /// One page of classified, oldest-first events plus the event id to pass back
 /// as `from` to load the next (older) page.
@@ -94,7 +42,7 @@ pub async fn get_messages_from_room_paginated(
     from: Option<String>,
     limit: u32,
 ) -> Result<MessagePage, String> {
-    let client = super::get_active_client(&client_state).await?;
+    let (client, active_room) = super::get_active_client_and_room(&client_state).await?;
 
     let room = client
         .get_room(&room_id)
@@ -113,7 +61,7 @@ pub async fn get_messages_from_room_paginated(
     // Paging further back inside the room that already holds it must leave it
     // where it is, since dropping it would unload the scrollback being read.
     let cached = match &anchor {
-        None => subscribe_active_room(&room_id, &cache).await?,
+        None => subscribe_active_room(&active_room, &room_id, &cache).await?,
         Some(_) => cache
             .events()
             .await

@@ -104,6 +104,7 @@ impl ClientHandler {
         Ok(Some(ClientHandler {
             matrix_client: new_client,
             sync_manager: SyncManager::new(),
+            active_room: Default::default(),
             app_state: self.app_state.clone(),
             ui_handle: self.ui_handle.clone(),
         }))

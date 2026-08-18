@@ -102,12 +102,6 @@ impl SyncManager {
             debug!("Sync task stopped");
         }
     }
-
-    /// Check if sync is currently running
-    pub async fn is_syncing(&self) -> bool {
-        let sync_guard = self.sync_handle.read().await;
-        sync_guard.is_some()
-    }
 }
 
 impl Drop for SyncManager {

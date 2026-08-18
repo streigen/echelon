@@ -9,6 +9,7 @@ use crate::storage::secret::Session;
 use crate::AppWindow;
 use sync_manager::SyncManager;
 
+pub(crate) mod active_room;
 mod account_reset;
 mod factory;
 mod oauth;
@@ -16,11 +17,18 @@ mod password_auth;
 mod registration;
 pub mod sync_manager;
 
+use active_room::ActiveRoomSlot;
+
 pub type ClientState = Arc<RwLock<Option<ClientHandler>>>;
 
 pub struct ClientHandler {
     matrix_client: Client,
     sync_manager: SyncManager,
+    /// The open room's event cache subscription, which belongs to
+    /// `matrix_client` and to no other. Dropped with the handler, so logging
+    /// out or switching accounts releases both it and the client it was taken
+    /// against, rather than leaving a dead subscriber pinning them.
+    active_room: ActiveRoomSlot,
     pub(crate) app_state: Arc<AppState>,
     pub(crate) ui_handle: slint::Weak<AppWindow>,
 }
@@ -32,6 +40,7 @@ impl ClientHandler {
         Ok(ClientHandler {
             matrix_client,
             sync_manager: SyncManager::new(),
+            active_room: ActiveRoomSlot::default(),
             app_state,
             ui_handle,
         })
@@ -39,6 +48,14 @@ impl ClientHandler {
 
     pub fn get_client(&self) -> &Client {
         &self.matrix_client
+    }
+
+    /// A handle on the open room's subscription slot.
+    ///
+    /// Handed out rather than borrowed so the caller can drop the client state
+    /// read guard before locking it. See [`ActiveRoomSlot`].
+    pub(crate) fn active_room_slot(&self) -> ActiveRoomSlot {
+        self.active_room.clone()
     }
 
     pub async fn start_sync(&self) {

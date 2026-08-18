@@ -34,7 +34,9 @@ let
     ];
     buildToolsVersions = [ buildToolsVersion ];
     includeSystemImages = true;
-    systemImageTypes = [ "default" ];
+    systemImageTypes = [
+      "default"
+    ];
   };
 
   androidSdk = androidComposition.androidsdk;

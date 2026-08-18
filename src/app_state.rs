@@ -9,6 +9,12 @@ pub struct AppState {
     pub data_dir: PathBuf,
 }
 
+/// The directory this app keeps its data in, per platform.
+///
+/// Exactly one block survives compilation, and it is the function's tail
+/// expression there. Written without `return` for that reason: with the others
+/// stripped, an explicit one is flagged as needless on whichever platform is
+/// being built.
 pub fn app_data_dir(app_id: &str) -> PathBuf {
     #[cfg(target_os = "linux")]
     {
@@ -18,21 +24,23 @@ pub fn app_data_dir(app_id: &str) -> PathBuf {
                 let home = std::env::var("HOME").expect("HOME not set");
                 PathBuf::from(home).join(".local/share")
             });
-        return base.join(app_id);
+        base.join(app_id)
     }
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var("HOME").expect("HOME not set");
-        return PathBuf::from(home).join("Library/Application Support").join(app_id);
+        PathBuf::from(home)
+            .join("Library/Application Support")
+            .join(app_id)
     }
     #[cfg(target_os = "windows")]
     {
         let appdata = std::env::var("APPDATA").expect("APPDATA not set");
-        return PathBuf::from(appdata).join(app_id);
+        PathBuf::from(appdata).join(app_id)
     }
     #[cfg(target_os = "android")]
     {
-        return PathBuf::from("/data/data").join(app_id);
+        PathBuf::from("/data/data").join(app_id)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "android")))]
     {
