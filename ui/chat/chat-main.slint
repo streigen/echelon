@@ -42,6 +42,12 @@ export component ChatMain inherits Rectangle {
     // cleared by whichever fetch fired last, and that belongs to the room being left;
     // carried into the new one it would swallow its first scroll back.
     property <string> open-room-id: UiState.active-room-id;
+    // Older pages in a row that landed no rows at all. A stretch of history the
+    // list does not show is walked without waiting for the user, since nothing
+    // moved for them to scroll, but only so far: a room whose history is mostly
+    // invisible must not fetch page after page unattended.
+    property <int> empty-pages: 0;
+    property <int> max-empty-pages: 5;
 
     // How far beyond the visible area a preview stays decoded, in viewport
     // heights. Rows outside report out and Rust drops their pixel buffers,
@@ -146,15 +152,30 @@ export component ChatMain inherits Rectangle {
 
     changed open-room-id => {
         top-armed = true;
+        empty-pages = 0;
     }
 
     changed prepend-epoch => {
         if UiState.prepend-count > 0 {
+            empty-pages = 0;
             prepend-settle-timer.running = true;
+        } else if UiState.next-token != "" && empty-pages < max-empty-pages {
+            // The page landed no rows but there is history behind it: a run of
+            // events the list does not show, like membership changes, or
+            // redactions of messages older than the page.
+            //
+            // Nothing moved, so no scroll is coming to ask again, and the top
+            // trigger is only reached by a change in viewport-y. Asking straight
+            // from here is what walks past them. `loading-more` stays set, which
+            // is what keeps that trigger from firing a second request alongside
+            // this one.
+            empty-pages += 1;
+            UiState.load-older-messages();
         } else {
-            // Nothing landed — a failed fetch, or one that found no more history.
-            // No rows means no layout to wait on and nothing to trim, so the next
-            // page can be asked for straight away rather than a tick from now.
+            // Nothing landed and nothing worth asking again for: a failed fetch,
+            // the start of the room, or a run of invisible history long enough
+            // that walking it is left to the user's next scroll.
+            empty-pages = 0;
             UiState.loading-more = false;
         }
     }

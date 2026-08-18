@@ -175,8 +175,23 @@ pub async fn get_messages_from_room_paginated(
     // so the effects apply in display order.
     let effects = effects_of(outcome.events.iter().rev());
 
+    // Anchored on the oldest message when the page has one, and on the oldest
+    // raw event when it does not.
+    //
+    // A page can fetch nothing the list shows: a run of membership changes, or
+    // reactions, or redactions of events older than the page. Reporting `None`
+    // for those reads to the caller as the start of the room, so the scroll
+    // stops asking and the scrollback dead-ends short of its actual beginning.
+    // The raw event id keeps the token non-empty, which is what tells the UI
+    // there is more, and it resolves as an anchor next time because the event
+    // is in the cache whether or not it renders.
     let next_token = (!outcome.reached_start)
-        .then(|| oldest_message_id(&effects).map(ToString::to_string))
+        .then(|| {
+            oldest_message_id(&effects)
+                .map(ToString::to_string)
+                // Newest-first, so the oldest event of the page is the last.
+                .or_else(|| oldest_event_id(&outcome.events).map(|id| id.to_string()))
+        })
         .flatten();
 
     let display_names = resolve_display_names(&room, &effects).await;
@@ -186,6 +201,16 @@ pub async fn get_messages_from_room_paginated(
         next_token,
         display_names,
     })
+}
+
+/// Event id of the oldest event in a newest-first batch, whether or not the
+/// message list shows it. The fallback anchor for a page that folded down to no
+/// messages of its own.
+///
+/// An event carries no id only if it failed to deserialize far enough to have
+/// one, in which case the next older event stands in.
+fn oldest_event_id(newest_first: &[TimelineEvent]) -> Option<OwnedEventId> {
+    newest_first.iter().rev().find_map(TimelineEvent::event_id)
 }
 
 /// Event id of the oldest message in a page, which is the anchor the next
