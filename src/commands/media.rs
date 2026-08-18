@@ -260,14 +260,70 @@ pub async fn save_attachment(
         .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
 
     // `suggested_filename` returns a single path component, so it cannot escape `dir`.
-    let path = dir.join(suggested_filename(attachment));
+    let name = suggested_filename(attachment);
     let bytes = fetch_file(client, attachment).await?;
-    std::fs::write(&path, &bytes).map_err(|e| format!("Failed to write file: {e}"))?;
-    Ok(Some(path))
+    write_new_file(&dir, &name, &bytes).map(Some)
+}
+
+/// How many suffixed names to try before giving up on finding a free one.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+const MAX_NAME_ATTEMPTS: u32 = 100;
+
+/// Write `bytes` into `dir` under `name`, or under the first free variant of it.
+///
+/// `create_new` is what makes this safe rather than a check followed by a write: the file is created
+/// only if it did not already exist, so nothing can appear in between the two. This path has no
+/// picker to vet the name, and the name came from the sender, so a file already on disk must never
+/// be replaced by one arriving over the network.
+///
+/// # Arguments
+/// * `dir` - The directory to write into.
+/// * `name` - A single path component, from [`suggested_filename`].
+/// * `bytes` - The contents to write.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn write_new_file(
+    dir: &std::path::Path,
+    name: &str,
+    bytes: &[u8],
+) -> Result<std::path::PathBuf, String> {
+    use std::io::Write;
+
+    // Suffixed before the extension, so a second "photo.jpg" becomes "photo (1).jpg" and stays
+    // openable rather than becoming "photo.jpg (1)".
+    let (stem, extension) = match extension_split(name) {
+        Some(split) => (&name[..split], &name[split..]),
+        None => (name, ""),
+    };
+
+    for attempt in 0..MAX_NAME_ATTEMPTS {
+        let candidate = match attempt {
+            0 => dir.join(name),
+            n => dir.join(format!("{stem} ({n}){extension}")),
+        };
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(mut file) => {
+                return file
+                    .write_all(bytes)
+                    .map(|()| candidate.clone())
+                    .map_err(|e| format!("Failed to write {}: {e}", candidate.display()));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("Failed to create {}: {e}", candidate.display())),
+        }
+    }
+
+    Err(format!(
+        "Could not find a free name for '{name}' after {MAX_NAME_ATTEMPTS} tries"
+    ))
 }
 
 /// The name to save an attachment under, or to seed the save dialog with. Falls back to the kind's
-/// own word when the sender declared nothing usable.
+/// own word when the sender declared nothing usable, and to the declared mime type for an extension
+/// when the name carries none.
 ///
 /// # Arguments
 /// * `attachment` - The attachment being saved.
@@ -279,16 +335,73 @@ fn suggested_filename(attachment: &Attachment) -> String {
         .next()
         .unwrap_or_default()
         .trim();
-    if !declared.is_empty() && declared != "." && declared != ".." {
-        return declared.to_owned();
+
+    let name = if !declared.is_empty() && declared != "." && declared != ".." {
+        declared
+    } else {
+        match attachment.kind {
+            crate::rooms::messages::AttachmentKind::Image => "image",
+            crate::rooms::messages::AttachmentKind::Video => "video",
+            crate::rooms::messages::AttachmentKind::Audio => "audio",
+            _ => "attachment",
+        }
+    };
+
+    // A file with no extension has no handler on the systems that pick one by it, so a name that
+    // came without one is given the type's own. The kind fallbacks above never carry one either.
+    if extension_split(name).is_some() {
+        return name.to_owned();
     }
-    match attachment.kind {
-        crate::rooms::messages::AttachmentKind::Image => "image",
-        crate::rooms::messages::AttachmentKind::Video => "video",
-        crate::rooms::messages::AttachmentKind::Audio => "audio",
-        _ => "attachment",
+    match attachment.mimetype.as_deref().and_then(extension_for) {
+        Some(extension) => format!("{name}.{extension}"),
+        None => name.to_owned(),
     }
-    .to_owned()
+}
+
+/// Byte index of the dot starting `name`'s extension, or `None` if it has none.
+///
+/// A leading dot names a hidden file rather than an extension, so `.bashrc` has none. Indices come
+/// from `char_indices`, so a name that starts with a multi-byte character cannot split mid-character
+/// the way slicing from a fixed offset would.
+fn extension_split(name: &str) -> Option<usize> {
+    let mut chars = name.char_indices();
+    chars.next();
+    chars.filter(|(_, c)| *c == '.').map(|(i, _)| i).next_back()
+}
+
+/// Extension for a declared mime type, without the dot.
+///
+/// A short table rather than a mime database: these are the types a Matrix client actually receives,
+/// and anything unlisted keeps no extension rather than being given a wrong one.
+fn extension_for(mimetype: &str) -> Option<&'static str> {
+    // Parameters such as "; charset=utf-8" are not part of the type itself.
+    let base = mimetype.split(';').next().unwrap_or_default().trim();
+    let normalized = base.to_ascii_lowercase();
+    Some(match normalized.as_str() {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/avif" => "avif",
+        "image/heic" => "heic",
+        "image/bmp" => "bmp",
+        "image/tiff" => "tiff",
+        "image/svg+xml" => "svg",
+        "video/mp4" => "mp4",
+        "video/webm" => "webm",
+        "video/quicktime" => "mov",
+        "video/x-matroska" => "mkv",
+        "audio/mpeg" => "mp3",
+        "audio/ogg" => "ogg",
+        "audio/opus" => "opus",
+        "audio/wav" | "audio/x-wav" => "wav",
+        "audio/flac" | "audio/x-flac" => "flac",
+        "audio/mp4" | "audio/aac" => "m4a",
+        "application/pdf" => "pdf",
+        "application/zip" => "zip",
+        "text/plain" => "txt",
+        _ => return None,
+    })
 }
 
 /// Decode image bytes into RGBA8, downscaled so no edge exceeds `max_edge`.
