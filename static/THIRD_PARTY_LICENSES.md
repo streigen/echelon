@@ -162,6 +162,12 @@ This software uses icons and assets from the following resources:
 
 ---
 
+## Download Icon (Solar Bold Duotone Icons)
+* Source: [download-minimalistic](https://www.svgrepo.com/svg/527693/download-minimalistic)
+* License: CC Attribution License
+
+---
+
 ## Trademark Disclaimer
 
 The logos and brand names included in this software are the property of their respective owners:
