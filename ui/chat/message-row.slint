@@ -95,18 +95,27 @@ export component MessageRow inherits VerticalLayout {
                     Text { text: msg.time; color: #40529F; font-size: 13px; }
                 }
 
-                // Empty for a bare attachment, where the body is only the file name (see
-                // `display_text` in lib.rs). An empty Text would still take up a line's height.
-                //
                 // The body and the "(edited)" marker sit in one row so the marker trails
                 // the text instead of starting a line of its own. Neither Text stretches;
                 // the filler after them takes the slack, which keeps the marker against
                 // the body rather than against the row's right edge. When the body is
-                // wider than the row the filler collapses and the body wraps as before.
-                if msg.text != "" : HorizontalLayout {
+                // wider than the row the filler collapses and the body wraps.
+                //
+                // This layout is unconditional and the `if` sits on the body Text inside
+                // it, which matters for wrapping: a conditional cell whose root is a
+                // layout is measured for height at its own *preferred* (unwrapped) width,
+                // since Slint passes no cross-axis constraint across a repeater boundary.
+                // That gives a wrapping body one line of height and hides the rest. A
+                // conditional whose root is the Text itself falls back to the Text's real
+                // width instead, which is the case that measures correctly. The cost is
+                // the layout's spacing on a row with no body, which is what the `if`
+                // used to save.
+                HorizontalLayout {
                     spacing: 6px;
 
-                    Text {
+                    // Empty for a bare attachment, where the body is only the file name
+                    // (see `display_text` in lib.rs).
+                    if msg.text != "" : Text {
                         text: msg.text;
                         color: rgba(255, 255, 255, 0.85);
                         font-size: 15px;
@@ -114,7 +123,7 @@ export component MessageRow inherits VerticalLayout {
                         horizontal-stretch: 0;
                     }
 
-                    if msg.edited : Text {
+                    if msg.text != "" && msg.edited : Text {
                         text: "(edited)";
                         color: rgba(255, 255, 255, 0.35);
                         font-size: 11px;

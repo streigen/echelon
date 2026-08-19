@@ -9,12 +9,7 @@ pub struct AppState {
     pub data_dir: PathBuf,
 }
 
-/// The directory this app keeps its data in, per platform.
-///
-/// Exactly one block survives compilation, and it is the function's tail
-/// expression there. Written without `return` for that reason: with the others
-/// stripped, an explicit one is flagged as needless on whichever platform is
-/// being built.
+/// Get the app data directory for the current target OS.
 pub fn app_data_dir(app_id: &str) -> PathBuf {
     #[cfg(target_os = "linux")]
     {

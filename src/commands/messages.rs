@@ -11,31 +11,20 @@ use crate::client::active_room::subscribe_active_room;
 use crate::rooms::members;
 use crate::rooms::messages::{EventEffect, effects_of};
 
-/// One page of classified, oldest-first events plus the event id to pass back
-/// as `from` to load the next (older) page.
-///
-/// The page carries effects rather than finished rows, so the caller folds them
-/// into the message model itself. Edits and redactions whose target is not in
-/// this page survive as effects and settle whenever the page holding their
-/// target arrives, which a page of finished rows could not express.
+/// One page of classified events and optional next pagination token.
 pub struct MessagePage {
-    /// Oldest-first, in the order they must be applied.
     pub effects: Vec<EventEffect>,
     pub next_token: Option<String>,
-    /// Display name for each sender in `effects`.
     pub display_names: HashMap<OwnedUserId, String>,
 }
 
-/// Fetch one page of messages for a room, folding edits/redactions into
-/// their targets and deduping by event id.
+/// Fetch one page of messages for a room.
 ///
-/// `from` is the event id of the oldest message the caller has already
-/// shown (typically the last `PaginatedMessages::next_token`), or `None` for
-/// the page with the latest messages.
-///
-/// Backward pagination (`RoomEventCache::pagination`) is cache-aware
-/// it reads from the the sqlite store before hitting network, making the
-/// repeat visits fast.
+/// # Arguments
+/// * `client_state` - The client state containing the Matrix client.
+/// * `room_id` - The room ID to fetch messages for.
+/// * `from` - Optional pagination token for fetching older messages.
+/// * `limit` - Maximum number of events to fetch.
 pub async fn get_messages_from_room_paginated(
     client_state: ClientState,
     room_id: OwnedRoomId,
@@ -151,19 +140,12 @@ pub async fn get_messages_from_room_paginated(
     })
 }
 
-/// Event id of the oldest event in a newest-first batch, whether or not the
-/// message list shows it. The fallback anchor for a page that folded down to no
-/// messages of its own.
-///
-/// An event carries no id only if it failed to deserialize far enough to have
-/// one, in which case the next older event stands in.
+/// Event ID of the oldest event in a batch.
 fn oldest_event_id(newest_first: &[TimelineEvent]) -> Option<OwnedEventId> {
     newest_first.iter().rev().find_map(TimelineEvent::event_id)
 }
 
-/// Event id of the oldest message in a page, which is the anchor the next
-/// (older) page is fetched from. `None` when the page carries no message of its
-/// own, only changes to messages elsewhere.
+/// Event ID of the oldest message in a page.
 fn oldest_message_id(effects: &[EventEffect]) -> Option<&EventId> {
     effects.iter().find_map(|effect| match effect {
         EventEffect::New(message) => Some(&*message.event_id),
@@ -171,15 +153,11 @@ fn oldest_message_id(effects: &[EventEffect]) -> Option<&EventId> {
     })
 }
 
-/// The display name this account has in a room.
-///
-/// Read from the room's stored member state, so it costs no network round trip. The UI resolves it
-/// when a channel is opened and holds onto it, which is what lets a message being sent be labelled
-/// at the moment it is typed, before there is an echoed event with a sender to resolve.
+/// Get the display name this account has in a room.
 ///
 /// # Arguments
-/// * `client_state` - The client state containing the Matrix client to read through.
-/// * `room_id` - The room whose member state carries the name.
+/// * `client_state` - The client state containing the Matrix client.
+/// * `room_id` - The room ID to query.
 pub async fn own_display_name(
     client_state: ClientState,
     room_id: OwnedRoomId,
@@ -195,18 +173,11 @@ pub async fn own_display_name(
 
 /// Send a plain text message to a room.
 ///
-/// The event is handed to the SDK's send queue, so it is retried across reconnects and encrypted
-/// first if the room is. The returned event id is the one the homeserver assigned, which is what the
-/// live sync handler will echo back for this message.
-///
 /// # Arguments
-/// * `client_state` - The client state containing the Matrix client to send with.
-/// * `room_id` - The room to send the message to.
-/// * `body` - The message text. Sent as `m.text`.
-/// * `txn_id` - Caller-chosen transaction id for this send. The homeserver puts it back in the
-///   echoed event's `unsigned.transaction_id`, but only for the device that sent it, which is how
-///   the UI recognises its own message and settles the row it is already showing for it. Must never
-///   be reused, since the homeserver treats a repeat as a retry of the same send.
+/// * `client_state` - The client state containing the Matrix client.
+/// * `room_id` - The target room ID.
+/// * `body` - The text content of the message.
+/// * `txn_id` - Transaction ID for this send.
 pub async fn send_message(
     client_state: ClientState,
     room_id: OwnedRoomId,

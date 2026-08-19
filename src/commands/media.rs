@@ -18,15 +18,6 @@ const MAX_DECODE_ALLOC: u64 = 64 * 1024 * 1024;
 const MAX_DECODE_EDGE: u32 = 16384;
 
 /// Maximum bytes pulled down for a full resolution image.
-///
-/// The decode ceilings above bound the pixels an image expands to, not the
-/// compressed bytes it arrives as. Those land in one `Vec<u8>` before anything
-/// looks at them, so without a ceiling of its own an attachment the sender
-/// declared at any size at all is fetched whole into memory on a click.
-///
-/// Deliberately far above [`crate::rooms::messages::MAX_PREVIEW_BYTES`]: this
-/// is a file the user asked for by name, not one pulled in on their behalf
-/// because it scrolled past.
 const MAX_FULL_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Maximum allowed concurrent image decodes.
@@ -34,10 +25,7 @@ const DECODE_PERMITS: usize = 3;
 
 static DECODE_LIMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(DECODE_PERMITS);
 
-/// A decoded and downscaled image in the one shape that can cross threads.
-/// `slint::Image` is not `Send`, but the `SharedPixelBuffer` behind it is.
-/// Decoding happens on a blocking worker, and [`DecodedImage::into_image`]
-/// wraps that same buffer on the UI thread without copying it again.
+/// A decoded image buffer that can cross threads.
 pub struct DecodedImage(slint::SharedPixelBuffer<slint::Rgba8Pixel>);
 
 impl DecodedImage {
@@ -66,9 +54,6 @@ pub async fn fetch_image(
     attachment: &Attachment,
     size: ImageSize,
 ) -> Result<DecodedImage, String> {
-    // Which source answers this size, and what it weighs, is the attachment's
-    // own business and is decided in one place. All that is left here is how to
-    // ask for it, which is this layer's.
     let choice = attachment.source_for(size);
     let format = if choice.server_scaled {
         MediaFormat::Thumbnail(MediaThumbnailSettings::with_method(
@@ -89,8 +74,6 @@ pub async fn fetch_image(
         ImageSize::Full => MAX_FULL_BYTES,
     };
 
-    // Rejected before the transfer where the sender declared a size at all, so
-    // an oversized attachment costs nothing to turn down.
     if let Some(declared) = choice.declared_bytes
         && declared > byte_limit
     {
@@ -103,9 +86,6 @@ pub async fn fetch_image(
         .await
         .map_err(|e| format!("Failed to download image: {e}"))?;
 
-    // Checked again on what actually arrived. The declared size is sender
-    // controlled, so the pre-check above is an optimisation and this is the
-    // guard.
     if bytes.len() as u64 > byte_limit {
         return Err(over_limit(bytes.len() as u64, byte_limit));
     }
@@ -115,19 +95,11 @@ pub async fn fetch_image(
         ImageSize::Full => FULL_MAX_EDGE,
     };
 
-    // Taken here rather than around the download too. The permit stands for a
-    // CPU bound decode, and holding it across the fetch would let one slow
-    // transfer idle a decode slot, serialising previews behind the network
-    // instead of behind the work they are actually competing for. Bound as
-    // `_permit` rather than `_` so it is held across the decode below instead
-    // of being released on the spot.
     let _permit = DECODE_LIMIT
         .acquire()
         .await
         .map_err(|e| format!("Image decode limiter closed: {e}"))?;
 
-    // Decoding is CPU bound and can take tens of milliseconds on a large
-    // photo. On the async worker threads it would stall the sync loop.
     tokio::task::spawn_blocking(move || decode_image(bytes, max_edge))
         .await
         .map_err(|e| format!("Image decode task failed: {e}"))?

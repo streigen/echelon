@@ -23,7 +23,6 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
     let mut parent_to_children: HashMap<OwnedRoomId, Vec<OwnedRoomId>> = HashMap::new();
     let mut all_children: HashSet<OwnedRoomId> = HashSet::new();
 
-    // parent -> children map
     for (room_id, room) in &room_map {
         if !room.is_space() {
             continue;

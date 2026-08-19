@@ -13,13 +13,11 @@ use crate::ClientState;
 /// # Arguments
 /// * `state` - The client state containing the Matrix client.
 pub async fn get_dm_rooms(state: ClientState) -> Result<Vec<Room>, String> {
-    // Get the client.
     let state_r = state.read().await;
     let Some(client_handler) = state_r.as_ref() else {
         return Err("No active client session".to_string());
     };
     let client = client_handler.get_client();
-    // Final DM room list to return.
     let mut dm_rooms: Vec<Room> = Vec::new();
 
     // Rooms with `m.direct` account data are canonical 1:1 DMs.
@@ -33,7 +31,6 @@ pub async fn get_dm_rooms(state: ClientState) -> Result<Vec<Room>, String> {
         if let Ok(deserialized) = direct_rooms.deserialize() {
             match deserialized {
                 AnyGlobalAccountDataEvent::Direct(direct_data) => {
-                    // Collect distinct DM room IDs.
                     let dm_room_ids: HashSet<OwnedRoomId> = direct_data
                         .content
                         .into_iter()

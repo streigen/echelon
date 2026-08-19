@@ -5,37 +5,21 @@ use matrix_sdk::event_cache::{RoomEventCache, RoomEventCacheSubscriber};
 use ruma::{OwnedRoomId, RoomId};
 use tokio::sync::Mutex;
 
-/// Where a [`ClientHandler`] keeps the open room's subscription.
-///
-/// Behind an `Arc` so a caller can take it out of the handler and drop the
-/// `ClientState` read guard before locking it. Held as a bare field it would
-/// have to stay borrowed across the subscribe below, which blocks login and
-/// logout, both of which write that lock, for the length of a network call.
-///
-/// [`ClientHandler`]: super::ClientHandler
+/// Where a [`ClientHandler`](super::ClientHandler) keeps the open room's subscription.
 pub(crate) type ActiveRoomSlot = Arc<Mutex<Option<ActiveRoomSubscription>>>;
 
 /// A live subscription to one room's event cache.
-///
-/// Keeping this subscribed is what stops the room's loaded events from being
-/// unloaded under the scrollback the user is reading. Only the open room holds
-/// one, so every other room is free to shrink.
 pub(crate) struct ActiveRoomSubscription {
     room_id: OwnedRoomId,
     _subscriber: RoomEventCacheSubscriber,
 }
 
-/// Take over the active-room subscription for `room_id`, releasing the previous
-/// room's so it shrinks, and return the events already loaded for the new one.
-///
-/// Subscribing hands back the current events anyway, so this stands in for the
-/// [`RoomEventCache::events`] read the caller would otherwise do rather than
-/// adding a second copy of the same list.
+/// Subscribe to the active room's event cache and return currently loaded events.
 ///
 /// # Arguments
-/// * `slot` - The client's subscription slot, from `ClientHandler::active_room_slot`.
-/// * `room_id` - The room being opened.
-/// * `cache` - That room's event cache.
+/// * `slot` - The subscription slot.
+/// * `room_id` - The room ID to subscribe to.
+/// * `cache` - The room's event cache.
 pub(crate) async fn subscribe_active_room(
     slot: &Mutex<Option<ActiveRoomSubscription>>,
     room_id: &RoomId,

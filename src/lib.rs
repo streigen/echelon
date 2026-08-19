@@ -61,16 +61,7 @@ pub(crate) fn attachment_to_ui(a: Option<&rooms::messages::Attachment>) -> Messa
     }
 }
 
-/// The text to show above a message's attachment, which for a bare attachment is nothing.
-///
-/// A media event's `body` is the file name unless the sender also sent a caption, in which case a
-/// separate `filename` field carries the name instead (MSC2530, stable since Matrix 1.10). Only a
-/// caption is worth showing, since the file card already displays the name and an image needs no
-/// label at all.
-///
-/// # Arguments
-/// * `body` - The message body from the event.
-/// * `attachment` - The message's attachment, if it has one.
+/// Get display text for a message body and optional attachment.
 pub(crate) fn display_text<'a>(
     body: &'a str,
     attachment: Option<&rooms::messages::Attachment>,
@@ -155,57 +146,24 @@ fn spawn_image_fetch(
     });
 }
 
-/// How long visibility reports are collected before being acted on. This is
-/// long enough that a burst collapses into a single pass over the settled
-/// values. A scroll gesture is one such burst, as is a page of rows all
-/// reporting their pre-layout guess when they are constructed.
+/// Debounce duration for window visibility reports.
 const PREVIEW_WINDOW_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(200);
 
-/// Hard ceiling on how many rows hold a decoded preview at once, and with it
-/// on the process's pixel memory: a display preview is at most 640x640 RGBA,
-/// so this caps them near 38 MB.
-///
-/// The keep band is the first line of defence and evicts on scroll, but it
-/// only fires for rows that exist to report themselves. Under a virtualized
-/// list a row is destroyed while still inside the band, so it never reports
-/// out. This cap is what bounds previews in that case, since it is driven by
-/// loads rather than by visibility.
+/// Maximum loaded previews held in memory.
 const MAX_LOADED_PREVIEWS: usize = 24;
 
-/// UI thread bookkeeping for which rows want their previews decoded. It is
-/// written by the `preview-window-changed` callback and drained by
-/// [`flush_preview_window`].
+/// UI thread bookkeeping for which rows want their previews decoded.
 #[derive(Default)]
 struct PreviewWindow {
-    /// Where each reported event id last said it was, and whether it was inside
-    /// the keep band. This is a map rather than a list so a row that flaps
-    /// during a scroll leaves only its final answer behind.
-    ///
-    /// The index is the row's position at the time it reported, kept as a hint
-    /// so the flush can go straight to the row rather than searching the model
-    /// for it. It is verified before use, since a page can be prepended in the
-    /// time between the report and the flush.
     pending: std::collections::HashMap<String, (usize, bool)>,
-    /// Event ids whose fetch is already running, so a row crossing the
-    /// boundary repeatedly does not stack up duplicate downloads.
     in_flight: std::collections::HashSet<String>,
-    /// Event ids whose row currently holds a decoded preview, least recently
-    /// loaded first. Kept in step with both eviction paths, so its length is
-    /// the real count of live pixel buffers.
     loaded: std::collections::VecDeque<String>,
     flush_queued: bool,
 }
 
-/// Edits and redactions whose target is not in the model, held until the page
-/// carrying it arrives.
-///
-/// Pagination walks backwards, so a change is almost always seen before the
-/// message it changes: a redaction sits in the newest page while the event it
-/// redacts is three pages older. Without this, that redaction would be dropped
-/// on the floor and the message would keep rendering its original body.
+/// Edits and redactions whose target is not in the model yet.
 #[derive(Default)]
 struct PendingChanges {
-    /// Target event id to the body it should take.
     edits: std::collections::HashMap<ruma::OwnedEventId, String>,
     redactions: std::collections::HashSet<ruma::OwnedEventId>,
 }
@@ -218,41 +176,18 @@ thread_local! {
     static MESSAGES: std::rc::Rc<slint::VecModel<Message>> =
         std::rc::Rc::new(slint::VecModel::from(Vec::new()));
 
-    /// Event ids that currently have a row in `MESSAGES`, so the dedup every
-    /// insert needs is a hash lookup instead of a walk of the model. Pagination
-    /// and sync overlap, and a page can be fetched again after a trim, so the
-    /// same event does arrive more than once.
-    ///
-    /// Kept in step with the model at every point that adds or removes rows,
-    /// like `PREVIEW_WINDOW` is.
+    /// Event IDs currently in `MESSAGES` for deduplication.
     static ROW_INDEX: std::cell::RefCell<std::collections::HashSet<ruma::OwnedEventId>> =
         std::cell::RefCell::new(std::collections::HashSet::new());
 
-    /// See [`PendingChanges`]. Lives beside the model because the model is what
-    /// its entries will be applied to, and is cleared with it.
+    /// Pending edits and redactions awaiting target rows.
     static PENDING: std::cell::RefCell<PendingChanges> =
         std::cell::RefCell::new(PendingChanges::default());
 
-    /// Bumped every time the message model is emptied, so a page fetched against the
-    /// rows that were there before cannot be installed over the rows that replaced
-    /// them.
-    ///
-    /// The open room's id does not catch this on its own: reloading the latest page
-    /// throws the model away without changing rooms, and a page already in flight
-    /// would pass a room check and be prepended onto a timeline it does not join up
-    /// with.
+    /// Counter incremented when the message model is reset.
     static MESSAGE_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 
-    /// The name this account goes by in the open room, resolved when the channel
-    /// is opened so a message being sent can be labelled the instant it is typed
-    /// rather than a round trip later.
-    ///
-    /// A display name belongs to a member's state in one room rather than to the
-    /// account, so the same user is free to go by a different name in every room
-    /// they are in. This holds the open room's name only, like `MESSAGES` holds
-    /// the open room's rows, and is cleared alongside them when the channel
-    /// changes so the room being left cannot label a message sent to the next
-    /// one. Empty while a channel is opening, and briefly on the first open.
+    /// Cached own display name for the active room.
     static OWN_DISPLAY_NAME: std::cell::RefCell<slint::SharedString> =
         std::cell::RefCell::new(slint::SharedString::new());
 }
@@ -342,18 +277,7 @@ const MESSAGE_PAGE: u32 = 50;
 /// Maximum number of message rows held in the UI model.
 const MAX_MESSAGE_ROWS: usize = MESSAGE_PAGE as usize * 20;
 
-/// Drop rows past [`MAX_MESSAGE_ROWS`] off one end of the model.
-///
-/// Called from the scroll timers rather than at the moment rows are added, so that
-/// removal always happens on the far side of the viewport and never moves content
-/// under the user. Both ends leave the model consistent with what can be fetched
-/// again: the oldest end is the pagination anchor, which moves with it, while the
-/// newest end has no forward pagination to move, so its loss is recorded and the
-/// latest page is reloaded whole when the user comes back down to it.
-///
-/// # Arguments
-/// * `ui` - The window whose model to trim.
-/// * `drop_oldest` - Trim the oldest rows when true, the newest when false.
+/// Drop oldest or newest message rows exceeding maximum limit.
 fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
     MESSAGES.with(|messages| {
         let overflow = messages.row_count().saturating_sub(MAX_MESSAGE_ROWS);
@@ -576,18 +500,6 @@ enum Applied {
 }
 
 /// Fold one [`EventEffect`] into the message model.
-///
-/// The only place message rows are added or changed. Both the paginated
-/// backfill and the live sync handler come through here, so there is one
-/// implementation of dedup, edit and redaction handling over one container
-/// rather than a copy per path.
-///
-/// # Arguments
-/// * `messages` - The model to fold into.
-/// * `room_id` - The room the effect belongs to, for keying the attachment cache.
-/// * `effect` - What the event means. See [`rooms::messages::effect_of`].
-/// * `names` - Display names for the senders in this batch.
-/// * `position` - Where a new row lands.
 fn apply_effect(
     messages: &slint::VecModel<Message>,
     room_id: &RoomId,
@@ -599,12 +511,9 @@ fn apply_effect(
 
     match effect {
         EventEffect::New(message) => {
-            // Claiming the id and testing for a duplicate are the same step, so
-            // an event that is already shown cannot be inserted twice.
             if !ROW_INDEX.with(|index| index.borrow_mut().insert(message.event_id.clone())) {
                 return Applied::Skipped;
             }
-            // Cached from the typed id, not the string copy the row gets.
             if let Some(attachment) = &message.attachment {
                 rooms::messages::cache_attachment(room_id, &message.event_id, attachment);
             }
@@ -614,8 +523,6 @@ fn apply_effect(
                 RowPosition::Oldest => 0,
             };
             messages.insert(index, message_row(&message, names));
-            // A change to this event may have been seen in an earlier, newer
-            // page, before there was a row to put it on.
             settle_pending(messages, &message.event_id, index);
             Applied::Inserted
         }
@@ -642,14 +549,11 @@ fn apply_effect(
     }
 }
 
-/// Build the row for a new message. The attachment's `preview` starts empty and
-/// is filled in later by [`spawn_image_fetch`].
+/// Build the row for a new message.
 fn message_row(
     message: &rooms::messages::NewMessage,
     names: &std::collections::HashMap<ruma::OwnedUserId, String>,
 ) -> Message {
-    // Probed with the borrowed id, so a lookup allocates nothing. An unresolved
-    // sender falls back to the raw user id.
     let user = names
         .get(&*message.sender)
         .map_or_else(|| message.sender.as_str(), String::as_str);
@@ -661,23 +565,12 @@ fn message_row(
         repliedTo: "".into(),
         event_id: message.event_id.as_str().into(),
         attachment: attachment_to_ui(message.attachment.as_ref()),
-        // Anything the server has handed back is acknowledged by definition.
         pending: false,
-        // A row starts unedited whatever the event's age: an edit is its own
-        // event, and folding it in is what sets this.
         edited: false,
     }
 }
 
-/// Apply a change that was seen before the row it targets existed.
-///
-/// A redaction wins over an edit: a message edited and then deleted is deleted,
-/// whichever order the two were seen in.
-///
-/// # Arguments
-/// * `messages` - The model holding the row.
-/// * `event_id` - The event whose row has just been inserted.
-/// * `index` - Where that row went, which is exact rather than a hint.
+/// Apply a buffered edit or redaction for a newly inserted row.
 fn settle_pending(
     messages: &slint::VecModel<Message>,
     event_id: &EventId,
@@ -700,9 +593,7 @@ fn settle_pending(
     }
 }
 
-/// Replace a row's body, leaving everything else on it alone. Every caller is
-/// applying an `m.replace`, so the row is marked edited here rather than at each
-/// call site.
+/// Replace a row's body and mark it edited.
 fn set_row_text(messages: &slint::VecModel<Message>, index: usize, text: &str) {
     let Some(mut row) = messages.row_data(index) else {
         return;
@@ -712,9 +603,7 @@ fn set_row_text(messages: &slint::VecModel<Message>, index: usize, text: &str) {
     messages.set_row_data(index, row);
 }
 
-/// Blank a deleted message's row in place: the body goes, the attachment goes,
-/// and any decoded preview goes with it. The row itself stays, since the
-/// timeline still has an event there.
+/// Blank a deleted message's row in place.
 fn redact_row(messages: &slint::VecModel<Message>, index: usize) {
     let Some(mut row) = messages.row_data(index) else {
         return;
@@ -724,30 +613,15 @@ fn redact_row(messages: &slint::VecModel<Message>, index: usize) {
 
     row.text = REDACTED_TEXT.into();
     row.attachment = attachment_to_ui(None);
-    // A deleted message shows none of its old bodies, so an "(edited)" marker
-    // on it would point at nothing.
     row.edited = false;
     messages.set_row_data(index, row);
 
-    // The row has stopped holding a pixel buffer, so the queue that stands for
-    // the live ones has to lose it too. Left in, it would be counted against
-    // the cap and evict a preview that is still on screen.
     if had_preview {
         PREVIEW_WINDOW.with(|s| s.borrow_mut().loaded.retain(|id| id != &event_id));
     }
 }
 
 /// Fold a live event's effect into the open room's rows.
-///
-/// Called on the UI thread by the sync handler, which has already classified the
-/// event and resolved any sender name it needs. This is the live path's entry
-/// into [`apply_effect`]; the paginated one is in `fetch_message_page`.
-///
-/// # Arguments
-/// * `ui_handle` - Weak handle to the window holding the rows.
-/// * `room_id` - The room the event arrived in.
-/// * `effect` - What the event means for the message list.
-/// * `names` - Display name for the event's sender, if it has one.
 pub(crate) fn apply_live_effect(
     ui_handle: &slint::Weak<AppWindow>,
     room_id: &RoomId,
@@ -757,9 +631,6 @@ pub(crate) fn apply_live_effect(
     let Some(ui) = ui_handle.upgrade() else {
         return;
     };
-    // The channel can have been switched between the sync handler's own check and
-    // this landing on the UI thread. Rows for a room that is no longer open would
-    // be dropped by the next fetch anyway, so they are not installed at all.
     if ui.global::<UiState>().get_active_room_id() != room_id.as_str() {
         return;
     }
@@ -768,29 +639,14 @@ pub(crate) fn apply_live_effect(
     });
 }
 
-/// Empty the message rows and the bookkeeping keyed to them.
-///
-/// Split out of [`reset_message_view`] because the latest page installs itself
-/// over whatever was there, and has to start from the same clean state without
-/// touching the generation or the loading flags.
+/// Empty the message rows and reset associated indices.
 fn clear_message_rows() {
     MESSAGES.with(|messages| messages.set_vec(Vec::new()));
     ROW_INDEX.with(|index| index.borrow_mut().clear());
     PENDING.with(|pending| *pending.borrow_mut() = PendingChanges::default());
 }
 
-/// Resolve the name this account goes by in `room_id` and hold onto it for the
-/// messages sent from that room, which are labelled before there is an echoed
-/// event to take a sender from.
-///
-/// Reads the room's stored member state, so it is off the network and lands
-/// within a frame or two of the channel opening.
-///
-/// # Arguments
-/// * `handle` - Runtime handle the resolve is spawned on.
-/// * `client_state` - The client state to read through.
-/// * `ui_handle` - Weak handle used to check the room is still open.
-/// * `room_id` - The room whose name for us to resolve.
+/// Resolve the account's display name in `room_id`.
 fn resolve_own_display_name(
     handle: &tokio::runtime::Handle,
     client_state: ClientState,

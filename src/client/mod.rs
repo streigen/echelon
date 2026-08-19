@@ -24,10 +24,7 @@ pub type ClientState = Arc<RwLock<Option<ClientHandler>>>;
 pub struct ClientHandler {
     matrix_client: Client,
     sync_manager: SyncManager,
-    /// The open room's event cache subscription, which belongs to
-    /// `matrix_client` and to no other. Dropped with the handler, so logging
-    /// out or switching accounts releases both it and the client it was taken
-    /// against, rather than leaving a dead subscriber pinning them.
+    /// The open room's event cache subscription slot.
     active_room: ActiveRoomSlot,
     pub(crate) app_state: Arc<AppState>,
     pub(crate) ui_handle: slint::Weak<AppWindow>,

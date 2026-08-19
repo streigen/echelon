@@ -51,11 +51,6 @@ impl ClientEvents {
     }
 
     /// Fold one live event into the open room's rows.
-    ///
-    /// # Arguments
-    /// * `effect` - What the event means for the message list.
-    /// * `room` - The room it arrived in.
-    /// * `ui_handle` - Weak handle the rows are reached through.
     async fn apply(effect: EventEffect, room: Room, ui_handle: slint::Weak<AppWindow>) {
         if matches!(effect, EventEffect::Ignore) {
             return;

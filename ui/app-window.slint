@@ -74,8 +74,6 @@ export component AppWindow inherits Window {
                     input-type: root.show_password ? InputType.text : InputType.password;
                     is-password: true;
                     show-password: root.show_password;
-                    // wait, show-password is a boolean, we can't easily map it if it's not a text field.
-                    // Let's keep it as is, or remove it. I'll revert this chunk actually, let's just do text fields.
                     enabled: !root.loading;
                     accepted => { root.login(root.username, root.password, root.homeserver); }
                 }

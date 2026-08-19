@@ -68,11 +68,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
 ];
 
-/// Run a command by name against the given positional string args.
-///
-/// `args` are matched positionally to each command's `arg_labels`; missing trailing args
-/// are treated as empty strings, and empty strings map to `None` for `Option<String>`
-/// parameters. Results that aren't already `String` are formatted for display.
+/// Run a debug command by name against positional string arguments.
 pub async fn dispatch(
     command: &str,
     args: &[String],

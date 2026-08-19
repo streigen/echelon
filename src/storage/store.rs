@@ -70,17 +70,13 @@ const APP_CLIENT: &str = "echelon-app";
 
 impl EchelonStore {
 
-    /// Create a new [EchelonStore] with the given keyring client, keyring account name, and snapshot directory.
+    /// Create a new [`EchelonStore`].
     ///
     /// # Arguments
-    /// * `keyring` - The [KeyringClient] used to access the OS keyring for the stronghold encryption key.
-    /// * `keyring_account` - The account name under which the stronghold encryption key is stored
-    ///   in the keyring. This will be hashed to create a stable, FS-safe filename for the snapshot.
-    /// * `store_dir` - The directory where the stronghold snapshot file will be stored.
-    ///   The actual filename will be derived from the `keyring_account` by hashing it with blake3 to
-    ///   ensure it's stable and safe for the filesystem
+    /// * `keyring` - The keyring client.
+    /// * `keyring_account` - The account name under which the encryption key is stored.
+    /// * `store_dir` - The directory where the snapshot file will be stored.
     pub fn new(keyring: KeyringClient, keyring_account: String, store_dir: PathBuf) -> Self {
-        // Hash the keyring_account string to get a stable, FS-safe filename.
         let name = blake3::hash(keyring_account.as_bytes()).to_string();
         let snapshot_path = SnapshotPath::from_path(store_dir.join(name));
         EchelonStore { keyring, keyring_account, snapshot_path }
