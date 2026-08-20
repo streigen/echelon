@@ -9,8 +9,7 @@ use ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent};
 use ruma::{EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId};
 use tracing::warn;
 
-/// What kind of media an [`Attachment`] holds. This drives how the UI
-/// renders it.
+/// Kind of media held by an [`Attachment`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachmentKind {
     Image,
@@ -21,17 +20,12 @@ pub enum AttachmentKind {
 }
 
 impl AttachmentKind {
-    /// Whether this kind renders as a raster preview, which decides if the
-    /// fetch and patch path in `lib.rs` applies to it. This is the one place
-    /// a new kind has to be classified. Everything else is kind agnostic.
-    /// `Video` belongs here once there is a play affordance over the still.
+    /// Whether this kind renders inline as a raster preview.
     pub fn has_preview(self) -> bool {
         matches!(self, Self::Image | Self::Sticker)
     }
 
-    /// Whether to offer "save to disk" for this kind. Everything but a sticker is a file the sender
-    /// chose to send and the user may want to keep. A sticker is one image out of a pack (MSC2545),
-    /// has no name of its own, and is added by its pack rather than saved on its own.
+    /// Whether this attachment kind can be saved to disk.
     pub fn is_savable(self) -> bool {
         !matches!(self, Self::Sticker)
     }
@@ -40,71 +34,53 @@ impl AttachmentKind {
 /// Maximum attachment size (8MB) downloaded and decoded for inline preview.
 pub const MAX_PREVIEW_BYTES: u64 = 8 * 1024 * 1024;
 
-/// A media attachment, carrying just enough to fetch and render it later.
-/// One shape covers every kind, so a new kind needs no new field here.
+/// Media attachment details required for fetching and rendering.
 #[derive(Debug, Clone)]
 pub struct Attachment {
     pub kind: AttachmentKind,
-    /// The full-resolution file.
+    /// Full-resolution file source.
     pub source: MediaSource,
-    /// Sender-provided thumbnail. This is preferred for chat display, and it
-    /// is the only small option for encrypted media, since the homeserver
-    /// cannot thumbnail content it cannot decrypt.
+    /// Sender-provided thumbnail source.
     pub thumbnail_source: Option<MediaSource>,
-    /// Declared content type. Kinds without a renderer use it to label
-    /// themselves, and a future file row can use it to pick an icon.
+    /// Declared MIME content type.
     pub mimetype: Option<String>,
-    /// Sender-declared file name, which labels the row for kinds with no preview and seeds the save
-    /// dialog. Sender-controlled, so it is only ever a suggestion.
+    /// Sender-declared file name.
     pub filename: String,
     pub width: Option<u32>,
     pub height: Option<u32>,
-    /// Sender-declared size of the full file, in bytes.
+    /// Sender-declared full file size in bytes.
     pub size: Option<u64>,
-    /// Sender-declared size of `thumbnail_source`, in bytes.
+    /// Sender-declared thumbnail size in bytes.
     pub thumbnail_size: Option<u64>,
 }
 
-/// Which resolution of an attachment to fetch.
+/// Target resolution for fetching an attachment.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ImageSize {
-    /// The cheapest version that still looks right inline in the chat log.
+    /// Inline display resolution.
     Display,
-    /// The original file, used for click to enlarge.
+    /// Original full resolution.
     Full,
 }
 
-/// Which of an attachment's sources answers a request, and what it costs.
+/// Selected media source and its declared byte size.
 pub struct SourceChoice<'a> {
     pub source: &'a MediaSource,
-    /// Bytes this source will pull down, where that is knowable before asking
-    /// for it. `None` when only the homeserver knows, which is the
-    /// `server_scaled` case.
+    /// Bytes this source will pull down, if known ahead of time.
     pub declared_bytes: Option<u64>,
-    /// Whether the homeserver has to scale this on the way out, so the caller
-    /// asks for a thumbnail of it rather than the file itself.
+    /// Whether the homeserver must scale this image on fetch.
     pub server_scaled: bool,
 }
 
 impl Attachment {
     /// Pick the source that answers a request at `size`.
-    ///
-    /// The one definition of which of an attachment's two sources is used and
-    /// what it weighs. Both the fetch that pulls the bytes down and the check
-    /// that decides whether to offer a preview at all read it from here, so
-    /// they cannot drift apart on what a preview is going to cost.
     pub fn source_for(&self, size: ImageSize) -> SourceChoice<'_> {
         match (size, &self.thumbnail_source) {
-            // A sender thumbnail is fetched as-is, whatever the original weighs.
-            // It is the only small option for encrypted media, since the
-            // homeserver cannot thumbnail content it cannot decrypt.
             (ImageSize::Display, Some(thumbnail)) => SourceChoice {
                 source: thumbnail,
                 declared_bytes: self.thumbnail_size,
                 server_scaled: false,
             },
-            // No sender thumbnail, but the server can scale what it can read.
-            // The original's size says nothing about what then crosses the wire.
             (ImageSize::Display, None) if matches!(self.source, MediaSource::Plain(_)) => {
                 SourceChoice {
                     source: &self.source,
@@ -112,8 +88,6 @@ impl Attachment {
                     server_scaled: true,
                 }
             }
-            // The whole file: asked for at full resolution, or the only option
-            // left because the server cannot thumbnail what it cannot decrypt.
             _ => SourceChoice {
                 source: &self.source,
                 declared_bytes: self.size,
@@ -122,10 +96,7 @@ impl Attachment {
         }
     }
 
-    /// Whether to render this attachment inline. False for a kind that has no raster
-    /// to show, and for one whose preview would cost more than [`MAX_PREVIEW_BYTES`]
-    /// to fetch. Those fall back to a file card, which offers the download the user
-    /// can ask for deliberately.
+    /// Whether to render this attachment inline based on preview capability and size limit.
     pub fn previewable(&self) -> bool {
         self.kind.has_preview()
             && self
@@ -135,18 +106,15 @@ impl Attachment {
     }
 }
 
-/// Upper bound on how many events' attachments stay resolvable at once.
+/// Maximum capacity for cached attachments.
 const ATTACHMENT_CACHE_CAPACITY: usize = 2048;
 
-/// Size the cache is trimmed back to once it overflows. Evicting a batch
-/// keeps the victim search off the common insert path, at the cost of the
-/// cache holding a little less than its cap most of the time.
+/// Target capacity when trimming the cache.
 const ATTACHMENT_CACHE_TRIM_TO: usize = ATTACHMENT_CACHE_CAPACITY * 3 / 4;
 
 struct CachedAttachment {
     attachment: Attachment,
-    /// Tick of the most recent insert or lookup, used to pick eviction
-    /// victims. Every access bumps the clock, so these are unique.
+    /// Monotonic tick of last access, used for eviction.
     last_used: u64,
 }
 
@@ -154,12 +122,7 @@ struct CachedAttachment {
 #[derive(Default)]
 struct AttachmentCache {
     rooms: HashMap<OwnedRoomId, HashMap<OwnedEventId, CachedAttachment>>,
-    /// Monotonic counter standing in for a clock. Ordering is all that
-    /// matters here, and a counter cannot go backwards the way a wall clock
-    /// can.
     tick: u64,
-    /// Entry count across every room, kept alongside so the common insert
-    /// does not have to walk the rooms to know whether it overflowed.
     len: usize,
 }
 
@@ -182,8 +145,6 @@ impl AttachmentCache {
     fn get(&mut self, room_id: &RoomId, event_id: &EventId) -> Option<Attachment> {
         self.tick += 1;
         let entry = self.rooms.get_mut(room_id)?.get_mut(event_id)?;
-        // Touching on read is what keeps the rows currently on screen, which
-        // are the ones the preview window looks up, out of the victim set.
         entry.last_used = self.tick;
         Some(entry.attachment.clone())
     }
@@ -194,8 +155,7 @@ impl AttachmentCache {
         }
     }
 
-    /// Drop the least recently used entries until only
-    /// [`ATTACHMENT_CACHE_TRIM_TO`] remain.
+    /// Drop the least recently used entries until [`ATTACHMENT_CACHE_TRIM_TO`] remain.
     fn evict_oldest(&mut self) {
         let victims = self.len - ATTACHMENT_CACHE_TRIM_TO;
         let mut used: Vec<u64> = self
@@ -203,9 +163,6 @@ impl AttachmentCache {
             .values()
             .flat_map(|room| room.values().map(|entry| entry.last_used))
             .collect();
-        // Only the boundary value is needed, not a full ordering, so this
-        // partitions in linear time instead of sorting. Ticks are unique, so
-        // everything below the boundary is exactly the victim set.
         let (_, &mut cutoff, _) = used.select_nth_unstable(victims);
 
         self.rooms.retain(|_, room| {
@@ -217,8 +174,6 @@ impl AttachmentCache {
 }
 
 thread_local! {
-    /// It is a `thread_local` because every access happens inside an
-    /// `invoke_from_event_loop` closure, on the UI thread.
     static ATTACHMENT_CACHE: std::cell::RefCell<AttachmentCache> =
         std::cell::RefCell::new(AttachmentCache::default());
 }
@@ -238,49 +193,34 @@ pub fn clear_room_attachments(room_id: &RoomId) {
     ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().clear_room(room_id));
 }
 
-/// A message to add to the list, from an event that creates one rather than
-/// changing one already there.
+/// A message to add to the timeline.
 #[derive(Debug, Clone)]
 pub struct NewMessage {
     pub event_id: OwnedEventId,
     pub sender: OwnedUserId,
     pub body: String,
     pub origin_server_ts: u64,
-    /// `None` for text-only messages. An `m.room.message` carries exactly one
-    /// msgtype, so an event never has more than one attachment; several files
-    /// are several events.
+    /// Optional media attachment.
     pub attachment: Option<Attachment>,
 }
 
-/// What one timeline event means for the message list.
-///
-/// Pure data: no container, no state, and nothing about where the list lives.
-/// Both the paginated backfill and the live sync handler classify through
-/// [`effect_of`], so there is exactly one definition of what an edit or a
-/// redaction is, and each applies the answer to the message model itself
-/// rather than to a copy of it.
+/// Timeline event classification for message list updates.
 #[derive(Debug, Clone)]
 pub enum EventEffect {
-    /// A message that was not in the list before.
+    /// A new message.
     New(NewMessage),
-    /// Replace the body of the message `target` stands for. The target may not
-    /// be there, since an edit is free to arrive before the event it edits.
+    /// Replace the body of a target message.
     Edit {
         target: OwnedEventId,
         new_body: String,
     },
-    /// Blank the message `target` stands for. Absent for the same reason as on
-    /// [`EventEffect::Edit`].
+    /// Redact a target message.
     Redact { target: OwnedEventId },
-    /// Nothing the message list shows: a state event, a reaction, an event
-    /// already redacted when it synced, or one that failed to deserialize.
+    /// Ignored event (state event, reaction, deserialization failure, etc.).
     Ignore,
 }
 
-/// Classify a raw event out of the event cache, deserializing it first.
-///
-/// An event that will not deserialize is skipped rather than failing the page
-/// it arrived in, since one unreadable event should not cost the rest.
+/// Classify a raw timeline event, deserializing it first.
 pub fn effect_of_raw(event: &TimelineEvent) -> EventEffect {
     let Ok(deserialized) = event.raw().deserialize() else {
         warn!("Failed to deserialize timeline event, skipping");
@@ -289,9 +229,7 @@ pub fn effect_of_raw(event: &TimelineEvent) -> EventEffect {
     effect_of(deserialized)
 }
 
-/// Classify a batch of raw events, dropping the ones the message list does not
-/// show. Oldest-first in, oldest-first out, so the result applies in display
-/// order.
+/// Classify a batch of raw timeline events, dropping ignored events.
 pub fn effects_of<'a>(events: impl IntoIterator<Item = &'a TimelineEvent>) -> Vec<EventEffect> {
     events
         .into_iter()
@@ -300,11 +238,9 @@ pub fn effects_of<'a>(events: impl IntoIterator<Item = &'a TimelineEvent>) -> Ve
         .collect()
 }
 
-/// Classify a deserialized timeline event. See [`EventEffect`].
+/// Classify a deserialized timeline event into an [`EventEffect`].
 pub fn effect_of(event: AnySyncTimelineEvent) -> EventEffect {
     let AnySyncTimelineEvent::MessageLike(message_like) = event else {
-        // State events (topic changes, membership, etc.) aren't rendered as
-        // chat messages.
         return EventEffect::Ignore;
     };
 
@@ -312,22 +248,16 @@ pub fn effect_of(event: AnySyncTimelineEvent) -> EventEffect {
         AnySyncMessageLikeEvent::RoomMessage(room_message) => effect_of_room_message(room_message),
         AnySyncMessageLikeEvent::RoomRedaction(redaction) => effect_of_redaction(redaction),
         AnySyncMessageLikeEvent::Sticker(sticker) => effect_of_sticker(sticker),
-        // TODO: deal with reactions and stuff later.
         _ => EventEffect::Ignore,
     }
 }
 
-/// Classify an `m.room.message` on its own, for the live sync handler, which is
-/// registered per event type and so already has the concrete type in hand.
-/// [`effect_of`] routes here too, so the two paths cannot disagree.
+/// Classify an `m.room.message` event.
 pub fn effect_of_room_message(event: SyncRoomMessageEvent) -> EventEffect {
     let SyncRoomMessageEvent::Original(original) = event else {
-        // Already-redacted-at-sync-time events carry no body to show.
         return EventEffect::Ignore;
     };
 
-    // Matched by value (not by reference) so the edit's body can move straight
-    // out instead of being cloned out of a borrow.
     if let Some(Relation::Replacement(replacement)) = original.content.relates_to {
         return EventEffect::Edit {
             target: replacement.event_id,
@@ -344,9 +274,7 @@ pub fn effect_of_room_message(event: SyncRoomMessageEvent) -> EventEffect {
     })
 }
 
-/// `m.sticker` is its own event type rather than an `m.room.message` msgtype,
-/// so it needs its own arm. It still lands in the same [`NewMessage`] shape as
-/// everything else, carrying a single [`AttachmentKind::Sticker`] attachment.
+/// Classify an `m.sticker` event.
 fn effect_of_sticker(event: SyncStickerEvent) -> EventEffect {
     let SyncStickerEvent::Original(original) = event else {
         return EventEffect::Ignore;
@@ -361,13 +289,12 @@ fn effect_of_sticker(event: SyncStickerEvent) -> EventEffect {
     })
 }
 
-/// Classify an `m.room.redaction` on its own. See [`effect_of_room_message`].
+/// Classify an `m.room.redaction` event.
 pub fn effect_of_redaction(event: SyncRoomRedactionEvent) -> EventEffect {
     let SyncRoomRedactionEvent::Original(original) = event else {
         return EventEffect::Ignore;
     };
-    // `redacts` moved from a top-level field to `content.redacts` in room
-    // version 11; check both since we don't know the room's version here.
+    // `redacts` moved to `content.redacts` in room version 11; check both.
     match original.redacts.or(original.content.redacts) {
         Some(target) => EventEffect::Redact { target },
         None => EventEffect::Ignore,
@@ -383,15 +310,8 @@ fn body_of(msgtype: &MessageType) -> String {
     }
 }
 
-/// Pull the media attachment out of an `m.room.message` msgtype, if it has
-/// one. Stickers are their own timeline event and come in through
-/// [`attachment_of_sticker`] instead.
-///
-/// Private because every path now reaches it through [`effect_of`], rather than
-/// each extracting attachments for itself.
+/// Extract media attachment from an `m.room.message` msgtype, if present.
 fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
-    // Each msgtype has a distinct ruma info type and there is no common
-    // trait over them, so the fields are read structurally instead.
     macro_rules! visual {
         ($kind:expr, $m:expr) => {{
             let info = $m.info.as_deref();
@@ -457,11 +377,7 @@ fn attachment_of(msgtype: &MessageType) -> Option<Attachment> {
     })
 }
 
-/// The same, for the standalone `m.sticker` event. A sticker is an image whose info block is
-/// mandatory rather than optional.
-///
-/// The file name is left empty because `m.sticker` defines `body` as a description of the image and
-/// has no `filename` field to fall back on. Nothing needs one, since stickers are not savable.
+/// Extract media attachment from an `m.sticker` event content.
 fn attachment_of_sticker(content: &StickerEventContent) -> Attachment {
     Attachment {
         kind: AttachmentKind::Sticker,
@@ -481,10 +397,7 @@ fn attachment_of_sticker(content: &StickerEventContent) -> Attachment {
     }
 }
 
-/// Convert a `ruma::UInt` to a `u32`, saturating rather than failing. These
-/// values are only display hints for sizing.
+/// Convert a `ruma::UInt` to a `u32`, saturating at `u32::MAX`.
 fn uint_to_u32(value: ruma::UInt) -> u32 {
     u32::try_from(u64::from(value)).unwrap_or(u32::MAX)
 }
-
-
