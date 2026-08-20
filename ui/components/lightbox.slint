@@ -1,17 +1,13 @@
 import { UiState } from "../app-state.slint";
 
-// Discord-style click-to-enlarge overlay. Only ever instantiated while
-// `UiState.lightbox-visible` is true (see `if` in app-window.slint), so
-// `init` firing once on construction is exactly "opened".
+// Click-to-enlarge media overlay.
 export component Lightbox inherits Rectangle {
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.85);
 
     property <bool> has-size: UiState.lightbox-width > 0 && UiState.lightbox-height > 0;
-    // Largest factor that fits the image in 90% of the window without
-    // upscaling it — whichever axis is tighter wins, which is what keeps
-    // the aspect ratio.
+    // Scale factor keeping aspect ratio within 90% of viewport
     property <float> fit: min(1.0, min(
         root.width * 0.9 / (UiState.lightbox-width * 1px),
         root.height * 0.9 / (UiState.lightbox-height * 1px)));
@@ -27,7 +23,7 @@ export component Lightbox inherits Rectangle {
         }
     }
 
-    // Backdrop — click anywhere outside the image to close.
+    // Backdrop — click outside image to close
     backdrop-ta := TouchArea {
         width: 100%;
         height: 100%;
@@ -40,8 +36,7 @@ export component Lightbox inherits Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
 
-        // Swallow clicks on the image itself so they don't fall through
-        // to the backdrop and close the lightbox.
+        // Prevent image clicks from closing overlay
         TouchArea { width: 100%; height: 100%; }
 
         Image {
@@ -67,9 +62,8 @@ export component Lightbox inherits Rectangle {
         }
     }
 
-    // Controls, top-right. Close comes last so hiding the save button leaves it where it was.
+    // Top-right controls
     HorizontalLayout {
-        // A layout would otherwise stretch to fill the overlay, so it is pinned to its content.
         width: self.preferred-width;
         height: self.preferred-height;
         x: parent.width - self.width - 16px;
@@ -93,8 +87,6 @@ export component Lightbox inherits Rectangle {
                 width: 100%;
                 height: 100%;
                 mouse-cursor: pointer;
-                // Saving writes the original file rather than the downscaled copy on screen, so it
-                // does not have to wait for the decode.
                 clicked => { UiState.save-attachment(UiState.lightbox-event-id); }
             }
         }

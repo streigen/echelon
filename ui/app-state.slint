@@ -1,13 +1,6 @@
-// Global application state singleton.
-// All components read/write shared state here directly,
-// eliminating deep two-way binding chains that cause
-// "long callback/instantiation chain" warnings.
+// Shared application state singleton.
 
-// Mirrors `rooms::messages::AttachmentKind`, converted in lib.rs, plus
-// `Empty` for "this message has no attachment". Slint has no optional type,
-// so the Rust side's `Option<Attachment>` arrives as a default-constructed
-// `MessageAttachment` whose kind is `Empty`. That is why `Empty` is first:
-// a default-constructed struct has to mean "absent".
+// Mirrors Rust AttachmentKind plus Empty for no media.
 export enum AttachmentKind {
     Empty,
     Image,
@@ -17,29 +10,16 @@ export enum AttachmentKind {
     Sticker,
 }
 
-// The media attachment on a message, whatever its kind. Raster kinds use
-// `preview`; the rest carry enough metadata to render their own row without
-// this struct needing per-kind fields.
+// Media attachment details for a message.
 export struct MessageAttachment {
     kind: AttachmentKind,
-    // e.g. "audio/mpeg". Empty when the sender didn't declare one.
-    mimetype: string,
-    // Sender-declared file name, used to label kinds with no preview. Empty for stickers.
-    filename: string,
-    // Whether to offer a save button. Mirrors `AttachmentKind::is_savable` on the Rust side.
-    savable: bool,
-    // Whether to render this inline at all. Mirrors `Attachment::previewable`: false
-    // for kinds with no raster, and for an image whose preview would cost more to
-    // fetch than the limit allows. Both fall back to the file card, which offers a
-    // download instead of pulling the bytes down on its own.
-    previewable: bool,
-    // Natural pixel size from the event (0 if absent), so the box can be
-    // sized before the bytes land and nothing jumps afterwards.
+    mimetype: string,     // MIME content type
+    filename: string,     // Sender-declared file name
+    savable: bool,        // Whether to show a save button
+    previewable: bool,    // Whether to render inline preview
     width: int,
     height: int,
-    // Empty until the fetch patches it in; a zero-sized `preview` on a
-    // previewable kind is what "still loading" means.
-    preview: image,
+    preview: image,       // Decoded preview image
 }
 
 export struct Message {
@@ -47,27 +27,13 @@ export struct Message {
     time: string,
     text: string,
     repliedTo: string,
-    // Identifies which message an in-flight attachment fetch belongs to,
-    // so its result can be patched into the right row once it lands.
-    // A `pending` row has no event id yet and carries the send's transaction
-    // id here instead, which is what lib.rs looks it up by.
-    event-id: string,
-    // A message this client has sent but the homeserver has not acknowledged
-    // yet. Drawn dimmed, and either settles into a normal row or is dropped
-    // when the send fails.
-    pending: bool,
-    // Set once an `m.replace` has been folded into `text`, which puts an
-    // "(edited)" marker after the body. Cleared again by a redaction, since a
-    // deleted message shows nothing of what it used to say.
-    edited: bool,
-    // Kind `Empty` when the message carries no media. A Matrix
-    // `m.room.message` has exactly one msgtype, so an event never has more
-    // than one attachment; several files are several events.
+    event-id: string,     // Event ID or pending transaction ID
+    pending: bool,      // True if message send is unacknowledged
+    edited: bool,       // True if message body was edited
     attachment: MessageAttachment,
 }
 
-// One channel/room, as shown in the sidebar. `id` is the Matrix room id
-// (used to fetch messages); `name` is the display name.
+// Room/channel summary for sidebar.
 export struct RoomData {
     id: string,
     name: string,
@@ -81,25 +47,19 @@ export struct CategoryData {
     collapsed: bool,
 }
 
-// Category list for one space tab (root space). Cached in
-// `UiState.space-channels` (index-aligned with `space-tabs`) so switching
-// tabs doesn't need a backend round trip. Subspaces are folded in here as
-// their own named categories rather than as separate tabs.
+// Space hierarchy categories.
 export struct SpaceChannels {
     categories: [CategoryData],
 }
 
-// One tab in the spaces bar. `id` is the Matrix room id of the space; `abbrev`
-// is a short (<=2 char) label precomputed in Rust for the tab's icon.
+// Spaces bar tab item.
 export struct SpaceTab {
     id: string,
     name: string,
     abbrev: string,
 }
 
-// Describes one backend command for the generic debug console: its name and the
-// (up to 4) positional argument labels it accepts. Populated from Rust at startup
-// from the single source-of-truth command registry (commands::debug::COMMANDS).
+// Debug console command definition.
 export struct DebugCommand {
     name: string,
     arg-labels: [string],
@@ -111,29 +71,11 @@ export global UiState {
     in-out property <string> active-room-id: "";
     in-out property <[Message]> messages;
     in-out property <bool> messages-loading: false;
-    // Event id to pass as `from` to fetch the next (older) page for the
-    // currently open room; "" means there's nothing older left to load.
-    in-out property <string> next-token: "";
-    // True while an older-messages fetch is in flight, and on past it until the
-    // scroll position has been corrected for the page it brought back. Cleared by
-    // chat-main's restore timer rather than by the fetch, so nothing can ask for
-    // another page in the window where the rows have landed but the viewport has
-    // not been moved to account for them yet.
-    in-out property <bool> loading-more: false;
-    // How many rows the older page that just landed added, and a counter bumped
-    // every time one lands at all — including when it brought nothing back, so the
-    // UI still learns the fetch is over and can release `loading-more`.
-    //
-    // The count cannot drive the UI on its own: two pages of the same size in a row
-    // leave it unchanged, and a `changed` handler only fires on a change. The epoch
-    // is what chat-main watches, and the count is what it reads once woken.
+    in-out property <string> next-token: ""; // Token for fetching older messages
+    in-out property <bool> loading-more: false; // True while fetching older messages
     in-out property <int> prepend-count: 0;
     in-out property <int> prepend-epoch: 0;
-    // Set when trimming dropped rows off the newest end of the model, which happens
-    // once scrolling back has grown it past its cap. There is no forward pagination
-    // to put them back one page at a time, so scrolling to the bottom reloads the
-    // latest page instead (see load-latest-messages).
-    in-out property <bool> newer-trimmed: false;
+    in-out property <bool> newer-trimmed: false; // True if newest messages were trimmed
 
     // Layout state
     in-out property <bool> sidebar-collapsed: false;
@@ -144,53 +86,35 @@ export global UiState {
     in-out property <bool> muted: false;
     in-out property <bool> deafened: false;
 
-    // Space state — populated from commands::spaces::get_space_hierarchy.
+    // Space state
     in-out property <[SpaceTab]> space-tabs: [];
-    in-out property <[SpaceChannels]> space-channels: []; // index-aligned with space-tabs
+    in-out property <[SpaceChannels]> space-channels: [];
     in-out property <int> active-space-index: -1;
     in-out property <string> active-space-name: "";
     in-out property <[CategoryData]> categories: [];
 
-    // Click-to-enlarge lightbox (see ui/components/lightbox.slint). Opens at
-    // the attachment's declared size with a loading state; lib.rs patches in
-    // the full-resolution image once it lands.
+    // Click-to-enlarge lightbox state
     in-out property <bool> lightbox-visible: false;
     in-out property <bool> lightbox-loading: false;
     in-out property <image> lightbox-image;
     in-out property <int> lightbox-width: 0;
     in-out property <int> lightbox-height: 0;
-    // Event whose attachment is on screen, passed back by the lightbox's save button.
     in-out property <string> lightbox-event-id: "";
-    // False for stickers, which hides the save control rather than letting it fail on click.
     in-out property <bool> lightbox-savable: false;
 
-    // Transient status line (see ui/components/toast.slint). Non-empty text makes it visible, and
-    // lib.rs clears it on a timer.
+    // Transient toast status line
     in-out property <string> toast-text: "";
     in-out property <bool> toast-error: false;
 
-    // Callbacks to Rust backend
+    // Backend callbacks
     callback space-clicked(int);
     callback channel-clicked(string, string); // room id, room name
     callback send-message(string);
     callback load-older-messages();
-    // Reload the newest page, replacing the model. Fired when the user scrolls back
-    // to the bottom after trimming dropped the rows that used to be there.
-    callback load-latest-messages();
-    // Drop rows past the model's cap, from the oldest end when the argument is true
-    // and from the newest end when it is false. Called from the scroll timers rather
-    // than at the moment rows are added, so rows only ever go away on the side the
-    // user has scrolled away from and the viewport does not shift under them.
-    callback trim-messages(bool);
+    callback load-latest-messages(); // Reload newest page after scrolling back
+    callback trim-messages(bool); // Drop messages exceeding capacity (true = oldest, false = newest)
     callback open-lightbox(string); // event id
     callback close-lightbox();
-    // event id. Opens the platform's save dialog and writes the attachment's original bytes there.
-    callback save-attachment(string);
-    // row index, event id, whether the row is in the preview keep band. Drives both
-    // fetching and eviction; see chat-main.slint's preview-keep-*.
-    //
-    // The index is a hint, not an identity: it saves Rust a scan of the model to find
-    // the row again, and it is checked against the event id before being used, since
-    // a page can be prepended between the report and the moment it is acted on.
-    callback preview-window-changed(int, string, bool);
+    callback save-attachment(string); // event id
+    callback preview-window-changed(int, string, bool); // row index hint, event id, in-keep-window
 }

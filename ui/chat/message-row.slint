@@ -3,31 +3,20 @@ import { Message, MessageAttachment, AttachmentKind } from "../app-state.slint";
 export component MessageRow inherits VerticalLayout {
     in property <Message> msg;
     in property <bool> is-first: false;
-    // This row's position in the model, passed along with every visibility report so
-    // Rust can go straight to the row instead of searching for it.
-    in property <int> index;
+    in property <int> index; // Model index hint for backend
 
-    // Slice of the scroll content, in the same coordinates as this row's `y`,
-    // whose previews are worth keeping decoded. Supplied by chat-main.
+    // Scroll band bounds for preview keep-window
     in property <length> keep-top;
     in property <length> keep-bottom;
 
     callback reply-clicked();
-    // chat-main.slint pairs this with msg.event-id to call
-    // UiState.open-lightbox.
     callback attachment-clicked();
-    // Same, for UiState.save-attachment. Only reachable from kinds with no preview, since
-    // previewable ones offer this inside the lightbox instead.
     callback attachment-save-clicked();
-    // Fires on entering/leaving the keep band, and once at construction.
-    // See `flush_preview_window` in lib.rs.
     callback preview-window-changed(bool);
 
     property <bool> in-keep-window: self.y + self.height >= keep-top && self.y <= keep-bottom;
 
     changed in-keep-window => { root.preview-window-changed(in-keep-window); }
-    // Geometry isn't measured yet here, so this first report is a guess; the
-    // `changed` above corrects it once laid out, within Rust's debounce.
     init => { root.preview-window-changed(in-keep-window); }
 
     padding-bottom: 24px;
@@ -61,9 +50,7 @@ export component MessageRow inherits VerticalLayout {
             spacing: 16px;
             alignment: start;
 
-            // Dims the whole message, avatar included, while the send is
-            // unacknowledged. Applied here rather than per-Text so nothing
-            // added to the row later has to remember to dim itself.
+            // Dim pending unacknowledged message
             opacity: msg.pending ? 0.45 : 1.0;
 
             // Avatar
@@ -95,26 +82,10 @@ export component MessageRow inherits VerticalLayout {
                     Text { text: msg.time; color: #40529F; font-size: 13px; }
                 }
 
-                // The body and the "(edited)" marker sit in one row so the marker trails
-                // the text instead of starting a line of its own. Neither Text stretches;
-                // the filler after them takes the slack, which keeps the marker against
-                // the body rather than against the row's right edge. When the body is
-                // wider than the row the filler collapses and the body wraps.
-                //
-                // This layout is unconditional and the `if` sits on the body Text inside
-                // it, which matters for wrapping: a conditional cell whose root is a
-                // layout is measured for height at its own *preferred* (unwrapped) width,
-                // since Slint passes no cross-axis constraint across a repeater boundary.
-                // That gives a wrapping body one line of height and hides the rest. A
-                // conditional whose root is the Text itself falls back to the Text's real
-                // width instead, which is the case that measures correctly. The cost is
-                // the layout's spacing on a row with no body, which is what the `if`
-                // used to save.
+                // Body text and trailing (edited) marker layout
                 HorizontalLayout {
                     spacing: 6px;
 
-                    // Empty for a bare attachment, where the body is only the file name
-                    // (see `display_text` in lib.rs).
                     if msg.text != "" : Text {
                         text: msg.text;
                         color: rgba(255, 255, 255, 0.85);
@@ -127,8 +98,6 @@ export component MessageRow inherits VerticalLayout {
                         text: "(edited)";
                         color: rgba(255, 255, 255, 0.35);
                         font-size: 11px;
-                        // Bottom, so on a wrapped body it lines up with the last
-                        // line rather than floating beside the middle of the block.
                         vertical-alignment: bottom;
                         horizontal-stretch: 0;
                     }
@@ -136,13 +105,9 @@ export component MessageRow inherits VerticalLayout {
                     Rectangle { horizontal-stretch: 1; }
                 }
 
-                // Decided in Rust by `Attachment::previewable`, which is the kind
-                // question and the size question together.
+                // Inline preview container
                 if msg.attachment.previewable : Rectangle {
                     property <MessageAttachment> att: msg.attachment;
-                    // Sender-declared size when there is one, else a
-                    // placeholder box; capped so a huge image can't take the
-                    // whole row.
                     property <bool> sized: att.width > 0 && att.height > 0;
 
                     width: sized ? min(att.width * 1px, 320px) : 280px;
@@ -180,11 +145,7 @@ export component MessageRow inherits VerticalLayout {
                     }
                 }
 
-                // Everything else with an attachment gets a card with the name, type
-                // and a way to save it: video, audio and file, which have no renderer,
-                // and images too big to be worth pulling down uninvited. Video stays
-                // here rather than in the lightbox until there is a player to hand a
-                // click to.
+                // File attachment card
                 if msg.attachment.kind != AttachmentKind.Empty
                     && !msg.attachment.previewable : Rectangle {
                     property <MessageAttachment> att: msg.attachment;
@@ -194,9 +155,6 @@ export component MessageRow inherits VerticalLayout {
                     background: #1b1e27;
                     border-radius: 8px;
 
-                    // Every column but the text one is fixed width, so the slack goes to the
-                    // text and the save button stays against the card's right edge whatever
-                    // the name's length.
                     card-layout := HorizontalLayout {
                         padding: 12px;
                         spacing: 12px;
@@ -217,8 +175,6 @@ export component MessageRow inherits VerticalLayout {
                             alignment: center;
                             horizontal-stretch: 1;
 
-                            // `elide` drops the minimum width to one ellipsis, so a long
-                            // name shrinks to fit the card instead of widening it.
                             Text {
                                 text: att.filename == "" ? "attachment" : att.filename;
                                 color: rgba(255, 255, 255, 0.85);
@@ -266,42 +222,41 @@ export component MessageRow inherits VerticalLayout {
             }
         }
 
-        // Overlay wrapper prevents reply-btn from expanding row-rect, breaking the implicit layout cycle!
+        // Floating reply button
         Rectangle {
             width: 100%; height: 100%;
             
-            // Floating reply button — shares row-rect.is-hovering
             reply-btn := Rectangle {
                 opacity: row-rect.is-hovering ? 1.0 : 0.0;
                 x: parent.width - 48px;
                 y: (parent.height - self.height) / 2;
-            width: 32px;
-            height: 32px;
-            border-radius: 16px;
-            background: transparent;
-
-            Rectangle {
-                background: #2D1B8E;
+                width: 32px;
+                height: 32px;
                 border-radius: 16px;
-                opacity: reply-ta.has-hover ? 1.0 : 0.0;
-                width: 100%; height: 100%;
-            }
+                background: transparent;
 
-            Image {
-                source: @image-url("../../static/reply.svg");
-                width: 16px;
-                height: 16px;
-                colorize: reply-ta.has-hover ? #FFFFFF : rgba(255, 255, 255, 0.55);
-                x: 8px;
-                y: 8px;
-            }
+                Rectangle {
+                    background: #2D1B8E;
+                    border-radius: 16px;
+                    opacity: reply-ta.has-hover ? 1.0 : 0.0;
+                    width: 100%; height: 100%;
+                }
 
-            reply-ta := TouchArea {
-                width: 100%;
-                height: 100%;
-                mouse-cursor: pointer;
-                clicked => { root.reply-clicked(); }
-            }
+                Image {
+                    source: @image-url("../../static/reply.svg");
+                    width: 16px;
+                    height: 16px;
+                    colorize: reply-ta.has-hover ? #FFFFFF : rgba(255, 255, 255, 0.55);
+                    x: 8px;
+                    y: 8px;
+                }
+
+                reply-ta := TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    mouse-cursor: pointer;
+                    clicked => { root.reply-clicked(); }
+                }
             }
         }
     }

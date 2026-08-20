@@ -8,53 +8,19 @@ import { MessageRow } from "./message-row.slint";
 export component ChatMain inherits Rectangle {
     background: #000000;
 
-    // How close to the bottom (in px, roughly 5 message rows) counts as "still
-    // watching the latest messages" for auto-scroll purposes.
-    property <length> near-bottom-threshold: 220px;
-    // How close to the top counts as "wants older history" and triggers a
-    // backward-pagination fetch.
-    property <length> near-top-threshold: 220px;
-    // Recomputed on every viewport-y change (see `changed viewport-y` below), which
-    // is the user's own scrolling plus the ListView's re-anchoring of itself after a
-    // layout pass. Not on content growth on its own: a taller viewport with the
-    // position left where it was leaves this reading whatever it last read, which is
-    // what lets an arriving message be told apart from one the user has scrolled up
-    // and away from.
+    property <length> near-bottom-threshold: 220px; // Distance from bottom to trigger auto-scroll
+    property <length> near-top-threshold: 220px;    // Distance from top to trigger pagination
     property <bool> near-bottom: true;
     property <int> message-count: UiState.messages.length;
 
-    // Cleared the moment an older-messages fetch is kicked off and set again only
-    // once the user has scrolled back out of the top band. A fetch fires on the
-    // edge, not on the condition: a prepended page leaves the viewport still
-    // inside the band once the ListView has re-anchored, and so does the overscroll
-    // bounce at the end of a fling, and either would otherwise keep asking for
-    // page after page without the user having moved.
     property <bool> top-armed: true;
-    // Bumped by Rust once per landed older page. Watched instead of `loading-more`
-    // so a fetch that came back with nothing is told apart from one that did.
     property <int> prepend-epoch: UiState.prepend-epoch;
-    // Whether auto-scroll-timer is armed. Both timers write viewport-y on the same
-    // 50ms tick and nothing orders them, so the restore stands down when the jump
-    // to the bottom is already scheduled. Reachable when the room is short enough
-    // to be near its top and its bottom at once.
     property <bool> auto-scroll-pending: false;
-    // Watched only to re-arm the top trigger on a channel switch. The latch is left
-    // cleared by whichever fetch fired last, and that belongs to the room being left;
-    // carried into the new one it would swallow its first scroll back.
     property <string> open-room-id: UiState.active-room-id;
-    // Older pages in a row that landed no rows at all. A stretch of history the
-    // list does not show is walked without waiting for the user, since nothing
-    // moved for them to scroll, but only so far: a room whose history is mostly
-    // invisible must not fetch page after page unattended.
     property <int> empty-pages: 0;
     property <int> max-empty-pages: 5;
 
-    // How far beyond the visible area a preview stays decoded, in viewport
-    // heights. Rows outside report out and Rust drops their pixel buffers,
-    // refetching if they scroll back in.
-    property <float> preview-keep-pages: 2;
-    // The band in scroll-content coordinates, the space a row's own `y` is
-    // in. `viewport-y` is negative as you scroll down.
+    property <float> preview-keep-pages: 2; // Extra viewport height margin for decoding previews
     property <length> preview-keep-top:
         -scroll-view.viewport-y - scroll-view.visible-height * preview-keep-pages;
     property <length> preview-keep-bottom: -scroll-view.viewport-y
@@ -69,6 +35,7 @@ export component ChatMain inherits Rectangle {
         return scroll-view.viewport-y > -near-top-threshold;
     }
 
+    // Auto-scroll to latest message
     auto-scroll-timer := Timer {
         interval: 50ms;
         running: false;
@@ -76,73 +43,28 @@ export component ChatMain inherits Rectangle {
             self.running = false;
             auto-scroll-pending = false;
             scroll-view.viewport-y = -100000px;
-            // Pinned to the bottom, so the scrollback above is what the model has too
-            // much of. Trimming it now costs nothing visible: the rows that go are
-            // the ones furthest from the viewport, and the position is already being
-            // driven to the end.
             UiState.trim-messages(true);
         }
     }
 
-    // The ListView usually keeps the user's rows where they were without help, because
-    // the page is prepended a row at a time (see the loop in lib.rs that does it). Each
-    // insert reaches it as its own notification of one row landing at index 0, and a
-    // row that lands clear of the ones it has built is answered by pushing its own
-    // anchor index up by one. Fifty inserts move the anchor fifty rows, exactly the
-    // distance the content moved. Measured: an anchor at row 1.7 of 22 came back as row
-    // 51.7 of 72, viewport-y going from -217px to -6490px on its own.
-    //
-    // "Clear of the ones it has built" is the catch. It holds while the anchor sits at
-    // row 1 or later, and fails at row 0 — the row landing at index 0 is then the
-    // anchor row itself rather than something above it, so the anchor stays where it
-    // is. Every insert in the page fails the same way, all fifty rows arrive above the
-    // viewport without moving it, and the user is left looking at the oldest message
-    // instead of the one they were reading.
-    //
-    // The two cases are told apart by where the viewport ends up. A compensated prepend
-    // leaves it a page further down, nowhere near the top band; an uncompensated one
-    // leaves it exactly where it was, still inside the band the fetch fired from. So
-    // still being near the top once the page has landed is the failure, and a page's
-    // worth of height is what it is short by.
-    //
-    // A page prepended in one notification would fail this way every time, not just at
-    // row 0: fifty rows arriving at once while the user sits a few rows down straddle
-    // the built window rather than clearing it. Batching the prepend would cost the
-    // whole mechanism, whatever else it saved.
+    // Adjust scroll position and trim messages after prepending an older page
     prepend-settle-timer := Timer {
         interval: 50ms;
         running: false;
         triggered => {
             self.running = false;
-            // Not while a jump to the bottom is already scheduled: it drives the
-            // position to the end and trims the other side, and the two would fight.
             if !auto-scroll-pending {
                 if is-near-top() && message-count > 0 {
                     scroll-view.viewport-y -= (scroll-view.viewport-height / message-count)
                         * UiState.prepend-count;
                 }
-                // Deferred to here rather than done as the page lands, so the rows go
-                // once the position they are being measured against has stopped moving.
-                // They come off the far end from the viewport either way, so nothing
-                // the user is looking at moves.
                 UiState.trim-messages(false);
             }
-            // Last, so nothing asks for another page until this one has settled.
-            // Released here rather than by the fetch for that reason.
             UiState.loading-more = false;
         }
     }
 
-    // Rows arriving at the bottom while the user is watching the bottom: follow them
-    // down. Rows arriving at the top are not that, and this cannot tell the two apart
-    // on its own — the model simply got longer either way — so a prepend in progress
-    // is what rules it out.
-    //
-    // `near-bottom` is not enough of a guard by itself. A room whose content is only
-    // a little taller than the viewport is inside the top band and the bottom band at
-    // the same time, so a page of history fetched from what is also the bottom would
-    // be read here as a message to follow, and the jump to the end would throw away
-    // the position the ListView had just kept for the user.
+    // Auto-scroll when new messages arrive if near bottom
     changed message-count => {
         if near-bottom && !UiState.loading-more {
             auto-scroll-pending = true;
@@ -160,21 +82,9 @@ export component ChatMain inherits Rectangle {
             empty-pages = 0;
             prepend-settle-timer.running = true;
         } else if UiState.next-token != "" && empty-pages < max-empty-pages {
-            // The page landed no rows but there is history behind it: a run of
-            // events the list does not show, like membership changes, or
-            // redactions of messages older than the page.
-            //
-            // Nothing moved, so no scroll is coming to ask again, and the top
-            // trigger is only reached by a change in viewport-y. Asking straight
-            // from here is what walks past them. `loading-more` stays set, which
-            // is what keeps that trigger from firing a second request alongside
-            // this one.
             empty-pages += 1;
             UiState.load-older-messages();
         } else {
-            // Nothing landed and nothing worth asking again for: a failed fetch,
-            // the start of the room, or a run of invisible history long enough
-            // that walking it is left to the user's next scroll.
             empty-pages = 0;
             UiState.loading-more = false;
         }
@@ -184,22 +94,11 @@ export component ChatMain inherits Rectangle {
         ChatHeader {}
 
         Rectangle {
-            // A ListView rather than a ScrollView holding a layout, so only
-            // the rows near the viewport are built. A plain `for` materializes
-            // every row, and nothing trims the model, so a long scrollback
-            // otherwise keeps thousands of live component trees and their
-            // shaped text around.
             scroll-view := ListView {
                 height: 100%;
                 width: 100%;
 
-                // Flickable doesn't reclamp viewport-y on its own when the content
-                // it's measured against gets shorter (a row losing its attachment
-                // to an edit, a redaction blanking a row, a trim). Left alone, a
-                // viewport-y that was valid against the old, taller content stays
-                // put and overscrolls past the new, shorter end, leaving blank
-                // space below the last row until the user's next manual scroll
-                // nudges Flickable into reclamping it itself.
+                // Clamp viewport-y when content height shrinks
                 changed viewport-height => {
                     if scroll-view.viewport-height > scroll-view.visible-height
                         && -scroll-view.viewport-y
@@ -220,14 +119,6 @@ export component ChatMain inherits Rectangle {
                         UiState.loading-more = true;
                         UiState.load-older-messages();
                     }
-                    // Back at the bottom after scrolling far enough up that the newest
-                    // rows were trimmed away. There is no page-at-a-time way forward,
-                    // so the latest page is reloaded whole.
-                    //
-                    // Not while an older page is in flight: reloading empties the model,
-                    // and the page still on its way would then be prepended onto the
-                    // rows that replaced it. Those two stretches of history do not meet,
-                    // and the token left behind points back into the wrong one.
                     if near-bottom && UiState.newer-trimmed && !UiState.messages-loading
                         && !UiState.loading-more {
                         UiState.load-latest-messages();

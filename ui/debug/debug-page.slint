@@ -3,9 +3,7 @@ import { CustomInput } from "../components/input-field.slint";
 import { CustomButton } from "../components/button.slint";
 import { DebugCommand } from "../app-state.slint";
 
-// Generic command console: pick any backend command from the registry, fill in its
-// positional args (up to 4, unused ones stay blank), and run it. No per-command UI —
-// adding a command in Rust (commands::debug::COMMANDS) is enough to make it show up here.
+// Debug command console.
 export component DebugPage inherits Rectangle {
     background: #000000;
 

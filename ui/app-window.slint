@@ -18,8 +18,7 @@ export component AppWindow inherits Window {
 
     in-out property <string> username: "";
     in-out property <string> password: "";
-    // Full URL, not a bare server name: this is parsed as one before any request is
-    // made, and "matrix.org" on its own is not a URL.
+    // Default homeserver URL
     in-out property <string> homeserver: "https://matrix.org";
     in-out property <string> error: "";
     in-out property <bool> loading: false;
@@ -31,8 +30,7 @@ export component AppWindow inherits Window {
     callback forgot_password();
     in-out property <string> result: "";
 
-    // Generic debug console (dev-only): command registry is populated from Rust
-    // (commands::debug::COMMANDS) so adding a backend command doesn't require any UI changes.
+    // Debug console state and callback
     callback debug-run-command(string, string, string, string, string);
     in-out property <[DebugCommand]> debug-commands: [];
     in-out property <bool> debug-busy: false;
@@ -205,10 +203,7 @@ export component AppWindow inherits Window {
         run(cmd, a0, a1, a2, a3) => { root.debug-run-command(cmd, a0, a1, a2, a3); }
     }
 
-    // Declared last so it paints on top of whichever page is active.
+    // Overlays
     if UiState.lightbox-visible : Lightbox {}
-
-    // Above the lightbox, since saving is reachable from inside it and the result has to be visible
-    // from there too.
     if UiState.toast-text != "" : Toast {}
 }
