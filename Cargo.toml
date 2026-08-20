@@ -74,8 +74,5 @@ panic = "abort"
 strip = true
 
 
-[profile.release]
-debug = true
-
 [profile.dev.package.scrypt]
 opt-level = 3
