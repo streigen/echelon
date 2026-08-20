@@ -287,7 +287,7 @@ fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
             return;
         }
 
-        let mut dropped = Vec::with_capacity(overflow);
+        let mut dropped = std::collections::HashSet::with_capacity(overflow);
         for _ in 0..overflow {
             let index = if drop_oldest {
                 0
@@ -297,7 +297,7 @@ fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
             let Some(row) = messages.row_data(index) else {
                 break;
             };
-            dropped.push(row.event_id.to_string());
+            dropped.insert(row.event_id.to_string());
             messages.remove(index);
         }
 
