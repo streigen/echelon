@@ -231,7 +231,9 @@ fn row_index(
     {
         return Some(hint);
     }
-    (0..messages.row_count()).rev().find(|&index| matches(index))
+    (0..messages.row_count())
+        .rev()
+        .find(|&index| matches(index))
 }
 
 /// Drop the decoded preview held by `event_id`'s row, if it has one. Clears
@@ -275,7 +277,7 @@ fn note_preview_loaded(messages: &slint::VecModel<Message>, event_id: String) {
 const MESSAGE_PAGE: u32 = 50;
 
 /// Maximum number of message rows held in the UI model.
-const MAX_MESSAGE_ROWS: usize = MESSAGE_PAGE as usize * 20;
+const MAX_MESSAGE_ROWS: usize = MESSAGE_PAGE as usize * 10;
 
 /// Drop oldest or newest message rows exceeding maximum limit.
 fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
@@ -571,11 +573,7 @@ fn message_row(
 }
 
 /// Apply a buffered edit or redaction for a newly inserted row.
-fn settle_pending(
-    messages: &slint::VecModel<Message>,
-    event_id: &EventId,
-    index: usize,
-) {
+fn settle_pending(messages: &slint::VecModel<Message>, event_id: &EventId, index: usize) {
     let (edit, redacted) = PENDING.with(|p| {
         let mut pending = p.borrow_mut();
         (
@@ -1104,8 +1102,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 // could evict them.
                 reset_message_view(&ui);
                 // Belongs to the room being left. The resolve below replaces it.
-                OWN_DISPLAY_NAME
-                    .with(|name| *name.borrow_mut() = slint::SharedString::new());
+                OWN_DISPLAY_NAME.with(|name| *name.borrow_mut() = slint::SharedString::new());
 
                 ui.global::<UiState>().set_active_room(room_name);
                 ui.global::<UiState>().set_active_room_id(room_id);
@@ -1176,7 +1173,13 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             // Clears `newer-trimmed`, which is what stops the scroll handler from
             // asking again before this fetch has landed.
             reset_message_view(&ui);
-            fetch_message_page(&handle, client_state.clone(), ui_handle.clone(), room_id, None);
+            fetch_message_page(
+                &handle,
+                client_state.clone(),
+                ui_handle.clone(),
+                room_id,
+                None,
+            );
         }
     });
 
@@ -1216,7 +1219,11 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let room_id = match ruma::RoomId::parse(active_room_id.as_str()) {
                 Ok(room_id) => room_id,
                 Err(e) => {
-                    show_toast(&ui, format!("Invalid room id '{active_room_id}': {e}"), true);
+                    show_toast(
+                        &ui,
+                        format!("Invalid room id '{active_room_id}': {e}"),
+                        true,
+                    );
                     return;
                 }
             };
