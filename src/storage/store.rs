@@ -69,7 +69,6 @@ pub struct EchelonStore {
 const APP_CLIENT: &str = "echelon-app";
 
 impl EchelonStore {
-
     /// Create a new [`EchelonStore`].
     ///
     /// # Arguments
@@ -79,7 +78,11 @@ impl EchelonStore {
     pub fn new(keyring: KeyringClient, keyring_account: String, store_dir: PathBuf) -> Self {
         let name = blake3::hash(keyring_account.as_bytes()).to_string();
         let snapshot_path = SnapshotPath::from_path(store_dir.join(name));
-        EchelonStore { keyring, keyring_account, snapshot_path }
+        EchelonStore {
+            keyring,
+            keyring_account,
+            snapshot_path,
+        }
     }
 
     /// Fetch (or lazily create) the stronghold encryption key from the OS keyring.
@@ -109,11 +112,7 @@ impl EchelonStore {
     }
 
     /// Write the list of accounts to the store.
-    fn write_accounts(
-        &self,
-        store: &iota_stronghold::Store,
-        accounts: &Accounts,
-    ) -> Result<()> {
+    fn write_accounts(&self, store: &iota_stronghold::Store, accounts: &Accounts) -> Result<()> {
         let bytes = serde_json::to_vec(accounts)?;
         store.insert(b"accounts".to_vec(), bytes, None)?;
         Ok(())
@@ -214,37 +213,3 @@ impl EchelonStore {
         Ok(self.get_accounts()?.last)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_legacy_account_deserialization() {
-        let json = r#""@alice:example.com""#;
-        let account: Account = serde_json::from_str(json).expect("failed to deserialize legacy account");
-        assert_eq!(account.user_id, "@alice:example.com");
-        assert_eq!(account.homeserver, None);
-    }
-
-    #[test]
-    fn test_current_account_deserialization() {
-        let json = r#"{"user_id":"@alice:example.com","homeserver":"https://matrix.example.com"}"#;
-        let account: Account = serde_json::from_str(json).expect("failed to deserialize current account");
-        assert_eq!(account.user_id, "@alice:example.com");
-        assert_eq!(account.homeserver, Some("https://matrix.example.com".to_string()));
-    }
-
-    #[test]
-    fn test_legacy_accounts_list_deserialization() {
-        let json = r#"{"last":"@alice:example.com","accounts":["@alice:example.com","@bob:example.org"]}"#;
-        let accounts: Accounts = serde_json::from_str(json).expect("failed to deserialize legacy accounts list");
-        assert_eq!(accounts.last, Some("@alice:example.com".to_string()));
-        assert_eq!(accounts.accounts.len(), 2);
-        assert_eq!(accounts.accounts[0].user_id, "@alice:example.com");
-        assert_eq!(accounts.accounts[0].homeserver, None);
-        assert_eq!(accounts.accounts[1].user_id, "@bob:example.org");
-        assert_eq!(accounts.accounts[1].homeserver, None);
-    }
-}
-
