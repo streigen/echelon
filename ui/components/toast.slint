@@ -1,0 +1,41 @@
+import { UiState } from "../app-state.slint";
+
+// Transient status line along the bottom of the window, for results like "saved to <path>". Only
+// instantiated while `UiState.toast-text` is non-empty (see the `if` in app-window.slint), and
+// cleared by a timer in lib.rs.
+//
+// Nothing here takes a TouchArea, so the toast never eats a click meant for what it floats over.
+export component Toast inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+
+    Rectangle {
+        // Capped so a long path elides rather than running off both edges of the window.
+        width: min(body.preferred-width, parent.width - 48px);
+        height: body.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 32px;
+
+        border-radius: 8px;
+        border-width: 1px;
+        background: UiState.toast-error ? #3a1c20 : #1b1e27;
+        border-color: UiState.toast-error ? #7a2e37 : rgba(255, 255, 255, 0.12);
+
+        body := HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+
+            Text {
+                text: UiState.toast-text;
+                color: UiState.toast-error ? #ffb4bb : rgba(255, 255, 255, 0.85);
+                font-size: 13px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+}

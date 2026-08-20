@@ -1,31 +1,27 @@
 import "../../static/JetBrainsMono-Regular.ttf";
-import { UiState } from "../app-state.slint";
+import { UiState, RoomData } from "../app-state.slint";
 
-export struct RoomData {
-    name: string,
-    r_type: string, // "text" | "voice"
-    encrypted: bool,
-}
+export { RoomData }
 
 export component RoomItem inherits VerticalLayout {
     in property <RoomData> room;
     in property <[string]> voice-participants;
-    
+
     callback clicked();
-    
-    property <bool> is-active: room.r_type == "text" ? room.name == UiState.active-room : UiState.active-voice-room == room.name;
-    
+
+    property <bool> is-active: room.r_type == "text" ? room.id == UiState.active-room-id : UiState.active-voice-room == room.name;
+
     room-rect := Rectangle {
         background: root.is-active ? #2D1B8E : transparent;
         border-radius: 6px;
-        
+
         HorizontalLayout {
             spacing: 8px;
             alignment: start;
             padding-top: 6px;
             padding-bottom: 6px;
             padding-left: 22px;
-            
+
             Image {
                 source: root.room.r_type == "voice" ? @image-url("../../static/voicechat.svg") : (root.room.encrypted ? @image-url("../../static/encrypted.svg") : @image-url("../../static/unencrypted.svg"));
                 width: 16px;
@@ -39,13 +35,13 @@ export component RoomItem inherits VerticalLayout {
                 font-weight: root.is-active ? 700 : 400;
             }
         }
-        
+
         TouchArea {
             clicked => { root.clicked(); }
             mouse-cursor: pointer;
         }
     }
-    
+
     if root.room.r_type == "voice" && UiState.active-voice-room == root.room.name : VerticalLayout {
         padding-left: 38px;
         spacing: 6px;

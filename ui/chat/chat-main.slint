@@ -1,6 +1,6 @@
 import "../../static/JetBrainsMono-Regular.ttf";
 import { UiState } from "../app-state.slint";
-import { ScrollView } from "std-widgets.slint";
+import { ListView } from "std-widgets.slint";
 import { ChatHeader } from "./chat-header.slint";
 import { ChatComposer } from "./chat-composer.slint";
 import { MessageRow } from "./message-row.slint";
@@ -8,12 +8,85 @@ import { MessageRow } from "./message-row.slint";
 export component ChatMain inherits Rectangle {
     background: #000000;
 
+    property <length> near-bottom-threshold: 220px; // Distance from bottom to trigger auto-scroll
+    property <length> near-top-threshold: 220px;    // Distance from top to trigger pagination
+    property <bool> near-bottom: true;
+    property <int> message-count: UiState.messages.length;
+
+    property <bool> top-armed: true;
+    property <int> prepend-epoch: UiState.prepend-epoch;
+    property <bool> auto-scroll-pending: false;
+    property <string> open-room-id: UiState.active-room-id;
+    property <int> empty-pages: 0;
+    property <int> max-empty-pages: 5;
+
+    property <float> preview-keep-pages: 2; // Extra viewport height margin for decoding previews
+    property <length> preview-keep-top:
+        -scroll-view.viewport-y - scroll-view.visible-height * preview-keep-pages;
+    property <length> preview-keep-bottom: -scroll-view.viewport-y
+        + scroll-view.visible-height * (1 + preview-keep-pages);
+
+    function is-near-bottom() -> bool {
+        return scroll-view.viewport-height + scroll-view.viewport-y
+            <= scroll-view.visible-height + near-bottom-threshold;
+    }
+
+    function is-near-top() -> bool {
+        return scroll-view.viewport-y > -near-top-threshold;
+    }
+
+    // Auto-scroll to latest message
     auto-scroll-timer := Timer {
         interval: 50ms;
         running: false;
         triggered => {
             self.running = false;
+            auto-scroll-pending = false;
             scroll-view.viewport-y = -100000px;
+            UiState.trim-messages(true);
+        }
+    }
+
+    // Adjust scroll position and trim messages after prepending an older page
+    prepend-settle-timer := Timer {
+        interval: 50ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            if !auto-scroll-pending {
+                if is-near-top() && message-count > 0 {
+                    scroll-view.viewport-y -= (scroll-view.viewport-height / message-count)
+                        * UiState.prepend-count;
+                }
+                UiState.trim-messages(false);
+            }
+            UiState.loading-more = false;
+        }
+    }
+
+    // Auto-scroll when new messages arrive if near bottom
+    changed message-count => {
+        if near-bottom && !UiState.loading-more {
+            auto-scroll-pending = true;
+            auto-scroll-timer.running = true;
+        }
+    }
+
+    changed open-room-id => {
+        top-armed = true;
+        empty-pages = 0;
+    }
+
+    changed prepend-epoch => {
+        if UiState.prepend-count > 0 {
+            empty-pages = 0;
+            prepend-settle-timer.running = true;
+        } else if UiState.next-token != "" && empty-pages < max-empty-pages {
+            empty-pages += 1;
+            UiState.load-older-messages();
+        } else {
+            empty-pages = 0;
+            UiState.loading-more = false;
         }
     }
 
@@ -21,16 +94,47 @@ export component ChatMain inherits Rectangle {
         ChatHeader {}
 
         Rectangle {
-            scroll-view := ScrollView {
+            scroll-view := ListView {
                 height: 100%;
                 width: 100%;
-                viewport-width: self.width;
 
-                VerticalLayout {
-                    alignment: start;
-                    for msg[idx] in UiState.messages : MessageRow {
-                        msg: msg;
-                        is-first: idx == 0;
+                // Clamp viewport-y when content height shrinks
+                changed viewport-height => {
+                    if scroll-view.viewport-height > scroll-view.visible-height
+                        && -scroll-view.viewport-y
+                            > scroll-view.viewport-height - scroll-view.visible-height {
+                        scroll-view.viewport-y =
+                            -(scroll-view.viewport-height - scroll-view.visible-height);
+                    }
+                }
+
+                changed viewport-y => {
+                    near-bottom = is-near-bottom();
+                    if !is-near-top() {
+                        top-armed = true;
+                    }
+                    if is-near-top() && top-armed && UiState.next-token != ""
+                        && !UiState.loading-more {
+                        top-armed = false;
+                        UiState.loading-more = true;
+                        UiState.load-older-messages();
+                    }
+                    if near-bottom && UiState.newer-trimmed && !UiState.messages-loading
+                        && !UiState.loading-more {
+                        UiState.load-latest-messages();
+                    }
+                }
+
+                for msg[idx] in UiState.messages : MessageRow {
+                    msg: msg;
+                    index: idx;
+                    is-first: idx == 0;
+                    keep-top: preview-keep-top;
+                    keep-bottom: preview-keep-bottom;
+                    attachment-clicked() => { UiState.open-lightbox(msg.event-id); }
+                    attachment-save-clicked() => { UiState.save-attachment(msg.event-id); }
+                    preview-window-changed(inside) => {
+                        UiState.preview-window-changed(idx, msg.event-id, inside);
                     }
                 }
             }
@@ -38,6 +142,7 @@ export component ChatMain inherits Rectangle {
 
         ChatComposer {
             message-sent => {
+                auto-scroll-pending = true;
                 auto-scroll-timer.running = true;
             }
         }

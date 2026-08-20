@@ -37,10 +37,7 @@ async fn oauth_impl(
 /// # Arguments
 /// * `homeserver` - The URL of the homeserver to log in to.
 /// * `state` - The client state containing the Matrix client to perform the login on.
-pub async fn oauth_login(
-    homeserver: String,
-    state: ClientState,
-) -> Result<String, String> {
+pub async fn oauth_login(homeserver: String, state: ClientState) -> Result<String, String> {
     trace!("Starting OAuth login for homeserver: {}", homeserver);
     oauth_impl(homeserver, state, true).await
 }
@@ -50,10 +47,7 @@ pub async fn oauth_login(
 /// # Arguments
 /// * `homeserver` - The URL of the homeserver to register with.
 /// * `state` - The client state containing the Matrix client to perform the login on.
-pub async fn oauth_register(
-    homeserver: String,
-    state: ClientState,
-) -> Result<String, String> {
+pub async fn oauth_register(homeserver: String, state: ClientState) -> Result<String, String> {
     trace!("Starting OAuth register for homeserver: {}", homeserver);
     oauth_impl(homeserver, state, false).await
 }
@@ -164,23 +158,26 @@ pub async fn logout(state: ClientState) -> Result<String, String> {
     Ok("logged out".into())
 }
 
-/// Restore a previous session for the given username and homeserver.
+/// Restore a previous session for the given user id and optional homeserver.
 ///
 /// This attempts to load the session from secure storage and, if successful,
 /// starts the sync loop for that session. It is used for persistence across app restarts.
 ///
 /// # Arguments
-/// * `username` - The username of the session to restore.
-/// * `homeserver` - The homeserver used to disambiguate sessions.
+/// * `user_id` - The full Matrix user id of the session to restore, as listed by
+///   [`crate::storage::store::EchelonStore::get_accounts`]. Sessions are stored under
+///   the id the homeserver reported, not under anything the user typed, so a username
+///   is not enough to find one.
+/// * `homeserver` - Optional homeserver URL override. If omitted, the stored homeserver URL or `.well-known` discovery is used.
 /// * `state` - The client state containing the Matrix client to restore on.
 pub async fn restore_session(
-    username: String,
-    homeserver: String,
+    user_id: String,
+    homeserver: Option<String>,
     state: ClientState,
 ) -> Result<String, String> {
-    debug!("Restoring session for user: {}", username);
-    if username.trim().is_empty() {
-        return Err("username is required".to_string());
+    debug!("Restoring session for user: {}", user_id);
+    if user_id.trim().is_empty() {
+        return Err("user id is required".to_string());
     }
 
     // Call restore_session in a separate scope so the read lock is dropped before write access.
@@ -189,7 +186,7 @@ pub async fn restore_session(
         let Some(client_handler) = state_r.as_ref() else {
             return Err("No active client session".to_string());
         };
-        client_handler.restore_session(username, homeserver).await
+        client_handler.restore_session(user_id, homeserver).await
     };
 
     match handler {
@@ -206,4 +203,28 @@ pub async fn restore_session(
         Ok(None) => Err("Session restoration failed: No client handler returned".into()),
         Err(e) => Err(format!("Session restoration failed: {}", e)),
     }
+}
+
+/// List all persisted accounts on device.
+pub async fn list_accounts(state: ClientState) -> Result<String, String> {
+    let state_r = state.read().await;
+    let Some(client_handler) = state_r.as_ref() else {
+        return Err("No active client session".to_string());
+    };
+    let accounts_info = client_handler
+        .app_state
+        .echelon_store
+        .get_accounts()
+        .map_err(|e| format!("Failed to get accounts: {e}"))?;
+
+    let last = accounts_info.last.as_deref().unwrap_or("none");
+    let mut lines = vec![
+        format!("Last account: {last}"),
+        format!("Accounts count: {}", accounts_info.accounts.len()),
+    ];
+    for acc in accounts_info.accounts {
+        let hs = acc.homeserver.as_deref().unwrap_or("<unknown/discover>");
+        lines.push(format!(" - {} (homeserver: {})", acc.user_id, hs));
+    }
+    Ok(lines.join("\n"))
 }

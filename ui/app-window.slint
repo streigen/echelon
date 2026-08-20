@@ -3,7 +3,10 @@ import { CustomInput } from "./components/input-field.slint";
 import { CustomButton } from "./components/button.slint";
 import { OAuthIcon } from "./components/oauth-icon.slint";
 import { ChatPage } from "./chat/chat-page.slint";
-import { UiState, Message } from "./app-state.slint";
+import { DebugPage } from "./debug/debug-page.slint";
+import { Lightbox } from "./components/lightbox.slint";
+import { Toast } from "./components/toast.slint";
+import { UiState, Message, MessageAttachment, DebugCommand } from "./app-state.slint";
 export { UiState }
 
 export component AppWindow inherits Window {
@@ -15,7 +18,8 @@ export component AppWindow inherits Window {
 
     in-out property <string> username: "";
     in-out property <string> password: "";
-    in-out property <string> homeserver: "matrix.org";
+    // Default homeserver URL
+    in-out property <string> homeserver: "https://matrix.org";
     in-out property <string> error: "";
     in-out property <bool> loading: false;
     in-out property <bool> show_password: false;
@@ -24,8 +28,13 @@ export component AppWindow inherits Window {
     callback oauth_action(string, string);
     callback open_chat();
     callback forgot_password();
-    callback on-matrix-message(string, string, string, string);
     in-out property <string> result: "";
+
+    // Debug console state and callback
+    callback debug-run-command(string, string, string, string, string);
+    in-out property <[DebugCommand]> debug-commands: [];
+    in-out property <bool> debug-busy: false;
+    in-out property <string> debug-output: "(no commands run yet)";
 
     in-out property <int> active-page: 0;
 
@@ -63,8 +72,6 @@ export component AppWindow inherits Window {
                     input-type: root.show_password ? InputType.text : InputType.password;
                     is-password: true;
                     show-password: root.show_password;
-                    // wait, show-password is a boolean, we can't easily map it if it's not a text field.
-                    // Let's keep it as is, or remove it. I'll revert this chunk actually, let's just do text fields.
                     enabled: !root.loading;
                     accepted => { root.login(root.username, root.password, root.homeserver); }
                 }
@@ -165,9 +172,38 @@ export component AppWindow inherits Window {
                         mouse-cursor: pointer;
                     }
                 }
+
+                Rectangle {
+                    height: 24px;
+                    Text {
+                        text: "→ debug console (dev)";
+                        color: debug-ta.has-hover ? #38BDF8 : rgba(56, 189, 248, 0.45);
+                        font-size: 13px;
+                        letter-spacing: 0.39px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        animate color { duration: 90ms; easing: ease; }
+                    }
+                    debug-ta := TouchArea {
+                        clicked => { root.active-page = 2; }
+                        mouse-cursor: pointer;
+                    }
+                }
             }
         }
     }
 
     if active-page == 1 : ChatPage {}
+
+    if active-page == 2 : DebugPage {
+        commands: root.debug-commands;
+        busy: root.debug-busy;
+        output: root.debug-output;
+        back => { root.active-page = 0; }
+        run(cmd, a0, a1, a2, a3) => { root.debug-run-command(cmd, a0, a1, a2, a3); }
+    }
+
+    // Overlays
+    if UiState.lightbox-visible : Lightbox {}
+    if UiState.toast-text != "" : Toast {}
 }

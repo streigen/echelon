@@ -7,11 +7,49 @@ use std::path::PathBuf;
 use crate::storage::keyring_client::KeyringClient;
 use crate::storage::stronghold_backend::{commit_store, open_store};
 
+/// Represents a Matrix account persisted on-device, including user ID and optional homeserver URL.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(from = "AccountRepr")]
+pub struct Account {
+    pub user_id: String,
+    pub homeserver: Option<String>,
+}
+
+/// Wire form of [`Account`], accepting both the current object and the bare user id
+/// string that older snapshots hold, so an existing account list still loads.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AccountRepr {
+    Legacy(String),
+    Current {
+        user_id: String,
+        homeserver: Option<String>,
+    },
+}
+
+impl From<AccountRepr> for Account {
+    fn from(repr: AccountRepr) -> Self {
+        match repr {
+            AccountRepr::Legacy(user_id) => Account {
+                user_id,
+                homeserver: None,
+            },
+            AccountRepr::Current {
+                user_id,
+                homeserver,
+            } => Account {
+                user_id,
+                homeserver,
+            },
+        }
+    }
+}
+
 /// The list of known accounts persisted on-device.
 #[derive(Serialize, Deserialize, Default)]
 pub struct Accounts {
     pub(crate) last: Option<String>,
-    pub(crate) accounts: Vec<String>,
+    pub(crate) accounts: Vec<Account>,
 }
 
 /// App-level persistent store backed by a Stronghold snapshot.
@@ -31,21 +69,20 @@ pub struct EchelonStore {
 const APP_CLIENT: &str = "echelon-app";
 
 impl EchelonStore {
-
-    /// Create a new [EchelonStore] with the given keyring client, keyring account name, and snapshot directory.
+    /// Create a new [`EchelonStore`].
     ///
     /// # Arguments
-    /// * `keyring` - The [KeyringClient] used to access the OS keyring for the stronghold encryption key.
-    /// * `keyring_account` - The account name under which the stronghold encryption key is stored
-    ///    in the keyring. This will be hashed to create a stable, FS-safe filename for the snapshot.
-    /// * `store_dir` - The directory where the stronghold snapshot file will be stored.
-    ///    The actual filename will be derived from the `keyring_account` by hashing it with blake3 to
-    ///    ensure it's stable and safe for the filesystem
+    /// * `keyring` - The keyring client.
+    /// * `keyring_account` - The account name under which the encryption key is stored.
+    /// * `store_dir` - The directory where the snapshot file will be stored.
     pub fn new(keyring: KeyringClient, keyring_account: String, store_dir: PathBuf) -> Self {
-        // Hash the keyring_account string to get a stable, FS-safe filename.
         let name = blake3::hash(keyring_account.as_bytes()).to_string();
-        let snapshot_path = SnapshotPath::from_path(store_dir.join(format!("{name}")));
-        EchelonStore { keyring, keyring_account, snapshot_path }
+        let snapshot_path = SnapshotPath::from_path(store_dir.join(name));
+        EchelonStore {
+            keyring,
+            keyring_account,
+            snapshot_path,
+        }
     }
 
     /// Fetch (or lazily create) the stronghold encryption key from the OS keyring.
@@ -53,12 +90,7 @@ impl EchelonStore {
         self.keyring.key_provider(&self.keyring_account)
     }
 
-    /// Open (or lazily create) the stronghold and return its Store.
-    ///
-    /// ### Returns
-    ///
-    /// If the snapshot file is missing, it will be created on commit, so this does not return an error in that case.
-    /// Returns an error if the snapshot file exists but cannot be loaded, or if the client cannot be loaded/created.
+    /// Open the stronghold store.
     fn open(&self) -> Result<(Stronghold, iota_stronghold::Store, KeyProvider)> {
         let key_provider = self.key_provider()?;
         let (stronghold, store) = open_store(&key_provider, &self.snapshot_path, APP_CLIENT, true)?
@@ -71,15 +103,7 @@ impl EchelonStore {
         commit_store(stronghold, key_provider, &self.snapshot_path)
     }
 
-    /// Read the list of accounts from the store, returning an empty list if not present.
-    ///
-    /// # Arguments
-    /// * `store` - The stronghold store from which to read the accounts list.
-    ///
-    /// ### Retruns
-    /// Returns an error if the data is present but cannot be deserialized, or if there is an issue reading from the store.
-    /// Returns `Ok(Accounts::default())` if the "accounts" key is not present in the store, which is expected on first run.
-    ///
+    /// Read the list of accounts from the store, returning default if missing.
     fn read_accounts(&self, store: &iota_stronghold::Store) -> Result<Accounts> {
         match store.get(b"accounts")? {
             Some(bytes) => Ok(serde_json::from_slice(&bytes)?),
@@ -88,18 +112,7 @@ impl EchelonStore {
     }
 
     /// Write the list of accounts to the store.
-    ///
-    /// # Arguments
-    /// * `store` - The stronghold store to which to write the accounts list.
-    /// * `accounts` - The list of accounts to persist.
-    ///
-    /// ### Returns
-    /// An error if the accounts cannot be serialized or if there is an issue writing to the store.
-    fn write_accounts(
-        &self,
-        store: &iota_stronghold::Store,
-        accounts: &Accounts,
-    ) -> Result<()> {
+    fn write_accounts(&self, store: &iota_stronghold::Store, accounts: &Accounts) -> Result<()> {
         let bytes = serde_json::to_vec(accounts)?;
         store.insert(b"accounts".to_vec(), bytes, None)?;
         Ok(())
@@ -111,18 +124,58 @@ impl EchelonStore {
         self.read_accounts(&store)
     }
 
+    /// Look up a single persisted account by user id.
+    ///
+    /// # Arguments
+    /// * `user_id` - The full Matrix user id to look up.
+    pub fn get_account(&self, user_id: &str) -> Result<Option<Account>> {
+        Ok(self
+            .get_accounts()?
+            .accounts
+            .into_iter()
+            .find(|a| a.user_id == user_id))
+    }
+
     /// Add `user_id` to the persisted account list (or move it to front) and
     /// mark it as the most-recently-used account.
     ///
     /// # Arguments
     /// * `user_id` - The user ID to add or move to the front of the accounts list.
-    pub fn add_account(&self, user_id: &str) -> Result<()> {
+    /// * `homeserver` - The homeserver URL the account was reached through.
+    pub fn add_account(&self, user_id: &str, homeserver: &str) -> Result<()> {
         let (stronghold, store, key_provider) = self.open()?;
         let mut accounts = self.read_accounts(&store)?;
 
-        accounts.accounts.retain(|x| x != user_id);
-        accounts.accounts.insert(0, user_id.to_string());
+        accounts.accounts.retain(|x| x.user_id != user_id);
+        accounts.accounts.insert(
+            0,
+            Account {
+                user_id: user_id.to_string(),
+                homeserver: Some(homeserver.to_string()),
+            },
+        );
         accounts.last = Some(user_id.to_string());
+
+        self.write_accounts(&store, &accounts)?;
+        self.commit(&stronghold, &key_provider)
+    }
+
+    /// Record the homeserver URL for an account.
+    ///
+    /// # Arguments
+    /// * `user_id` - The full Matrix user ID to update.
+    /// * `homeserver` - The homeserver URL to record.
+    pub fn set_homeserver(&self, user_id: &str, homeserver: &str) -> Result<()> {
+        let (stronghold, store, key_provider) = self.open()?;
+        let mut accounts = self.read_accounts(&store)?;
+
+        let Some(account) = accounts.accounts.iter_mut().find(|a| a.user_id == user_id) else {
+            return Ok(());
+        };
+        if account.homeserver.as_deref() == Some(homeserver) {
+            return Ok(());
+        }
+        account.homeserver = Some(homeserver.to_string());
 
         self.write_accounts(&store, &accounts)?;
         self.commit(&stronghold, &key_provider)
@@ -140,7 +193,7 @@ impl EchelonStore {
         let mut accounts = self.read_accounts(&store)?;
 
         let before = accounts.accounts.len();
-        accounts.accounts.retain(|x| x != user_id);
+        accounts.accounts.retain(|x| x.user_id != user_id);
 
         if accounts.accounts.len() == before {
             // Nothing changed, user_id was not in the list.
@@ -148,7 +201,7 @@ impl EchelonStore {
         }
 
         if accounts.last.as_deref() == Some(user_id) {
-            accounts.last = accounts.accounts.first().cloned();
+            accounts.last = accounts.accounts.first().map(|a| a.user_id.clone());
         }
 
         self.write_accounts(&store, &accounts)?;

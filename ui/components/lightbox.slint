@@ -1,0 +1,120 @@
+import { UiState } from "../app-state.slint";
+
+// Click-to-enlarge media overlay.
+export component Lightbox inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+
+    property <bool> has-size: UiState.lightbox-width > 0 && UiState.lightbox-height > 0;
+    // Scale factor keeping aspect ratio within 90% of viewport
+    property <float> fit: min(1.0, min(
+        root.width * 0.9 / (UiState.lightbox-width * 1px),
+        root.height * 0.9 / (UiState.lightbox-height * 1px)));
+
+    focus-scope := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                UiState.close-lightbox();
+                accept
+            } else {
+                reject
+            }
+        }
+    }
+
+    // Backdrop — click outside image to close
+    backdrop-ta := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { UiState.close-lightbox(); }
+    }
+
+    if has-size : Rectangle {
+        width: UiState.lightbox-width * 1px * fit;
+        height: UiState.lightbox-height * 1px * fit;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+
+        // Prevent image clicks from closing overlay
+        TouchArea { width: 100%; height: 100%; }
+
+        Image {
+            source: UiState.lightbox-image;
+            width: 100%;
+            height: 100%;
+            image-fit: contain;
+        }
+
+        if UiState.lightbox-loading : Rectangle {
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.35);
+            Text {
+                text: "loading…";
+                color: white;
+                font-size: 16px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: 100%;
+                height: 100%;
+            }
+        }
+    }
+
+    // Top-right controls
+    HorizontalLayout {
+        width: self.preferred-width;
+        height: self.preferred-height;
+        x: parent.width - self.width - 16px;
+        y: 16px;
+        spacing: 8px;
+
+        if UiState.lightbox-savable : save-btn := Rectangle {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: save-ta.has-hover ? rgba(255, 255, 255, 0.15) : transparent;
+
+            Image {
+                source: @image-url("../../static/download.svg");
+                width: 18px;
+                height: 18px;
+                colorize: white;
+            }
+
+            save-ta := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: pointer;
+                clicked => { UiState.save-attachment(UiState.lightbox-event-id); }
+            }
+        }
+
+        close-btn := Rectangle {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: close-ta.has-hover ? rgba(255, 255, 255, 0.15) : transparent;
+
+            Text {
+                text: "✕";
+                color: white;
+                font-size: 20px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: 100%;
+                height: 100%;
+            }
+
+            close-ta := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: pointer;
+                clicked => { UiState.close-lightbox(); }
+            }
+        }
+    }
+
+    init => { focus-scope.focus(); }
+}

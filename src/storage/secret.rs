@@ -5,10 +5,16 @@ use blake3;
 use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use rand::distr::{Alphanumeric, SampleString};
 use std::path::PathBuf;
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 /// All per-user session data stored in the stronghold.
+///
+/// Tokens are zeroized on drop.
+#[derive(ZeroizeOnDrop)]
 pub struct Session {
+    #[zeroize(skip)]
     pub user_id: String,
+    #[zeroize(skip)]
     pub device_id: String,
     pub access_token: String,
     pub refresh_token: Option<String>,
@@ -23,12 +29,19 @@ pub struct SecretService {
 
 impl SecretService {
     pub fn new(keyring: KeyringClient, stronghold_path: PathBuf) -> Self {
-        SecretService { keyring, stronghold_path }
+        SecretService {
+            keyring,
+            stronghold_path,
+        }
     }
 
-    /// Generate a random 32-character alphanumeric string.
-    pub fn random_secret() -> String {
-        Alphanumeric.sample_string(&mut rand::rng(), 32)
+    /// Generate a random 32-character alphanumeric string, wiped when dropped.
+    ///
+    /// `rand::rng()` is a CSPRNG, so 32 alphanumeric characters carry ~190 bits of
+    /// entropy. That is the strength of every store password and stronghold key the
+    /// app creates, since the user never picks one.
+    pub fn random_secret() -> Zeroizing<String> {
+        Zeroizing::new(Alphanumeric.sample_string(&mut rand::rng(), 32))
     }
 
     /// Return the blake3 hex hash of `user_id`, used as both the keyring account
@@ -51,24 +64,21 @@ impl SecretService {
 
     /// Open the stronghold store for `user_id`.
     ///
-    /// When `create_if_missing` is `true` the client and snapshot are created on first use;
-    /// otherwise `None` is returned if either does not yet exist.
-    ///
     /// # Arguments
-    /// * `user_id` - The user ID whose stronghold store should be opened.
-    /// * `create_if_missing` - Whether to create the stronghold snapshot and client if
-    ///    they do not already exist. If `false`, this function will return `Ok(None)` if client data not present
-    ///
-    /// ### Returns
-    /// If `create_if_missing` is `false`, returns `Ok(None)` if the client data not exist yet.
-    /// Otherwise, returns a tuple of the opened [`Stronghold`], its [`Store`], the [`KeyProvider`], and the [`SnapshotPath`]
-    /// for the caller to commit changes later.
-    /// Returns an error if the snapshot file exists but cannot be loaded, or if the client cannot be loaded/created.
+    /// * `user_id` - The user ID whose store to open.
+    /// * `create_if_missing` - Whether to create the snapshot and client if missing.
     fn open_store(
         &self,
         user_id: &str,
         create_if_missing: bool,
-    ) -> Result<Option<(Stronghold, iota_stronghold::Store, KeyProvider, SnapshotPath)>> {
+    ) -> Result<
+        Option<(
+            Stronghold,
+            iota_stronghold::Store,
+            KeyProvider,
+            SnapshotPath,
+        )>,
+    > {
         let key_provider = self.key_provider(user_id)?;
         let snapshot_path = self.snapshot_path(user_id);
 
@@ -77,14 +87,6 @@ impl SecretService {
     }
 
     /// Commit changes to disk.
-    ///
-    /// # Arguments
-    /// * `stronghold` - The stronghold instance to commit.
-    /// * `key_provider` - The key provider for encrypting the snapshot.
-    /// * `snapshot_path` - The path where the snapshot should be saved.
-    ///
-    /// ### Returns
-    /// An error if the commit fails for any reason (e.g. snapshot cannot be written, etc.). Returns `Ok(())` on success.
     fn commit(
         &self,
         stronghold: &Stronghold,
@@ -94,25 +96,27 @@ impl SecretService {
         commit_store(stronghold, key_provider, snapshot_path)
     }
 
-
-    /// Persist a full [`Session`] (and lazily create a sqlite password if none exists yet).
-    ///
-    /// # Arguments
-    /// * `session` - The session to persist, which must include a user_id and
-    ///    access_token. The device_id and refresh_token are optional but will be persisted if provided.
-    ///
-    /// ### Returns
-    /// An error if the session cannot be persisted for any reason (e.g. stronghold cannot be loaded or committed, etc.).
-    /// Returns `Ok(())` on success.
+    /// Persist a full [`Session`].
     pub fn set_session(&self, session: &Session) -> Result<()> {
-        let (stronghold, store, key_provider, snapshot_path) =
-            self
-                .open_store(&session.user_id, true)?
-                .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
+        let (stronghold, store, key_provider, snapshot_path) = self
+            .open_store(&session.user_id, true)?
+            .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
 
-        store.insert(b"user_id".to_vec(), session.user_id.as_bytes().to_vec(), None)?;
-        store.insert(b"device_id".to_vec(), session.device_id.as_bytes().to_vec(), None)?;
-        store.insert(b"access_token".to_vec(), session.access_token.as_bytes().to_vec(), None)?;
+        store.insert(
+            b"user_id".to_vec(),
+            session.user_id.as_bytes().to_vec(),
+            None,
+        )?;
+        store.insert(
+            b"device_id".to_vec(),
+            session.device_id.as_bytes().to_vec(),
+            None,
+        )?;
+        store.insert(
+            b"access_token".to_vec(),
+            session.access_token.as_bytes().to_vec(),
+            None,
+        )?;
 
         if let Some(t) = &session.refresh_token {
             store.insert(b"refresh_token".to_vec(), t.as_bytes().to_vec(), None)?;
@@ -120,22 +124,10 @@ impl SecretService {
             let _ = store.delete(b"refresh_token");
         }
 
-        // Generate a sqlite password on first login and never overwrite it.
-        if store.get(b"sqlite_password")?.is_none() {
-            let pwd = Self::random_secret();
-            store.insert(b"sqlite_password".to_vec(), pwd.into_bytes(), None)?;
-        }
-
         self.commit(&stronghold, &key_provider, &snapshot_path)
     }
 
     /// Retrieve the stored [`Session`] for `user_id`, or `None` if not found.
-    ///
-    /// # Arguments
-    /// * `user_id` - The user ID whose session should be returned.
-    ///
-    /// ### Returns
-    /// the stored [`Session`] for `user_id`, or `None` if not found
     pub fn get_session(&self, user_id: &str) -> Result<Option<Session>> {
         let Some((_, store, _, _)) = self.open_store(user_id, false)? else {
             return Ok(None);
@@ -149,56 +141,29 @@ impl SecretService {
             user_id: user_id.to_string(),
             device_id: store
                 .get(b"device_id")?
-                .map(|b| String::from_utf8(b))
+                .map(String::from_utf8)
                 .transpose()?
                 .unwrap_or_default(),
             access_token: String::from_utf8(access_bytes)?,
             refresh_token: store
                 .get(b"refresh_token")?
-                .map(|b| String::from_utf8(b))
+                .map(String::from_utf8)
                 .transpose()?,
         }))
     }
 
-    /// Get the sqlite password for `user_id`, or `None` if no session exists yet. This is used to
-    /// encrypt the sqlite database where the client stores its most sensitive data
-    /// (e.g. seeds, addresses, etc.) and is lazily generated on first login and then
-    /// never overwritten to avoid breaking existing databases.
-    ///
-    /// # Arguments
-    /// * `user_id` - The user ID whose sqlite password should be returned.
-    ///
-    /// ### Returns
-    ///
-    /// the sqlite password for `user_id`, or `None` if no session exists yet.
-    pub fn get_sqlite_pwd(&self, user_id: &str) -> Result<Option<String>> {
-        let Some((_, store, _, _)) = self.open_store(user_id, false)? else {
-            return Ok(None);
-        };
-        store
-            .get(b"sqlite_password")?
-            .map(|b| String::from_utf8(b).map_err(Into::into))
-            .transpose()
-    }
-
-    /// Return the sqlite password for `user_id`, generating and persisting one if it doesn't
-    /// exist yet. Always returns a password (creating the stronghold snapshot if needed).
-    ///
-    /// # Arguments
-    /// * `user_id` - The user ID whose sqlite password should be returned or created
-    ///
-    pub fn get_or_create_sqlite_pwd(&self, user_id: &str) -> Result<String> {
-        let (stronghold, store, key_provider, snapshot_path) =
-            self
-                .open_store(user_id, true)?
-                .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
+    /// Return the sqlite password for `user_id`, generating and persisting one on first use.
+    pub fn get_or_create_sqlite_pwd(&self, user_id: &str) -> Result<Zeroizing<String>> {
+        let (stronghold, store, key_provider, snapshot_path) = self
+            .open_store(user_id, true)?
+            .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
 
         if let Some(bytes) = store.get(b"sqlite_password")? {
-            return Ok(String::from_utf8(bytes)?);
+            return Ok(Zeroizing::new(String::from_utf8(bytes)?));
         }
 
         let pwd = Self::random_secret();
-        store.insert(b"sqlite_password".to_vec(), pwd.clone().into_bytes(), None)?;
+        store.insert(b"sqlite_password".to_vec(), pwd.as_bytes().to_vec(), None)?;
         self.commit(&stronghold, &key_provider, &snapshot_path)?;
         Ok(pwd)
     }

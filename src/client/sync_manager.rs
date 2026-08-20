@@ -46,8 +46,7 @@ impl SyncManager {
         let handle = tokio::spawn(async move {
             debug!("Starting Matrix sync loop...");
 
-            // Upload filter once. server caches it and returns a short ID we reuse every sync.
-            // Falls back to inline filter on error (still applies filtering, just less efficient).
+            // Upload filter to server once, falling back to inline definition if upload fails.
             let filter_id: Option<String> = match client
                 .get_or_upload_filter("echelon_v1", build_sync_filter())
                 .await
@@ -103,17 +102,10 @@ impl SyncManager {
             debug!("Sync task stopped");
         }
     }
-
-    /// Check if sync is currently running
-    pub async fn is_syncing(&self) -> bool {
-        let sync_guard = self.sync_handle.read().await;
-        sync_guard.is_some()
-    }
 }
 
 impl Drop for SyncManager {
     fn drop(&mut self) {
-        // Try to stop sync when the manager is dropped
         if let Some(handle) = self
             .sync_handle
             .try_write()

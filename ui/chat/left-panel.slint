@@ -1,89 +1,38 @@
-import { UiState } from "../app-state.slint";
+import { UiState, RoomData } from "../app-state.slint";
 import { SpacesBar } from "./spaces-bar.slint";
-import { RoomsSidebar, CategoryData } from "./rooms-sidebar.slint";
+import { RoomsSidebar } from "./rooms-sidebar.slint";
 import { UserBar } from "./user-bar.slint";
 
 export component LeftPanel inherits Rectangle {
-    property <string> active-room-space0: "general";
-    property <string> active-room-space1: "mission-control";
-    
-    property <[CategoryData]> space-0: [
-        { name: "ROOMS", collapsed: false, rooms: [
-            { name: "announcements", r_type: "text", encrypted: true },
-            { name: "general", r_type: "text", encrypted: true },
-            { name: "very trustworthy", r_type: "text", encrypted: false },
-            { name: "very trustworthy x2", r_type: "text", encrypted: false },
-        ]},
-        { name: "COOKING", collapsed: false, rooms: [
-            { name: "cookies", r_type: "text", encrypted: false },
-            { name: "creme", r_type: "text", encrypted: true },
-        ]},
-        { name: "VOICE ROOMS", collapsed: false, rooms: [
-            { name: "voice room", r_type: "voice", encrypted: false },
-        ]},
-    ];
-    
-    property <[CategoryData]> space-1: [
-        { name: "SECRET BASE", collapsed: false, rooms: [
-            { name: "mission-control", r_type: "text", encrypted: true },
-            { name: "intel", r_type: "text", encrypted: true },
-        ]},
-        { name: "HANG OUT", collapsed: false, rooms: [
-            { name: "gaming", r_type: "voice", encrypted: false },
-            { name: "chill zone", r_type: "voice", encrypted: false },
-        ]},
-    ];
-
-    property <[CategoryData]> categories;
-    
-    init => {
-        root.categories = root.space-0;
-    }
-    
     in-out property <[string]> voice-participants: ["Clumsy ☆", "Human", "flaxeneel2"];
-    
+
     background: #000000;
     clip: true;
-    
+
     VerticalLayout {
         // TOP SECTION: Spaces Bar + Rooms Sidebar
         HorizontalLayout {
             SpacesBar {
                 space-clicked(idx) => {
-                    UiState.active-space = idx;
-                    root.categories = idx == 0 ? root.space-0 : root.space-1;
-                    UiState.active-room = idx == 0 ? root.active-room-space0 : root.active-room-space1;
-                    UiState.room-switched(UiState.active-room);
+                    UiState.space-clicked(idx);
                 }
             }
             RoomsSidebar {
                 voice-participants: root.voice-participants;
-                categories: root.categories;
+                categories: UiState.categories;
                 toggle-category(idx) => {
-                    if (UiState.active-space == 0) {
-                        root.space-0[idx].collapsed = !root.space-0[idx].collapsed;
-                        root.categories = root.space-0;
-                    } else {
-                        root.space-1[idx].collapsed = !root.space-1[idx].collapsed;
-                        root.categories = root.space-1;
-                    }
+                    UiState.categories[idx].collapsed = !UiState.categories[idx].collapsed;
                 }
-                room-clicked(name, r_type) => {
-                    if r_type == "text" {
-                        if UiState.active-space == 0 {
-                            root.active-room-space0 = name;
-                        } else {
-                            root.active-room-space1 = name;
-                        }
-                        UiState.active-room = name;
-                        UiState.room-switched(name);
+                room-clicked(room) => {
+                    if room.r_type == "text" {
+                        UiState.channel-clicked(room.id, room.name);
                     } else {
-                        UiState.active-voice-room = (UiState.active-voice-room == name) ? "" : name;
+                        UiState.active-voice-room = (UiState.active-voice-room == room.name) ? "" : room.name;
                     }
                 }
             }
         }
-        
+
         // BOTTOM SECTION: User Bar (Extends all the way left)
         UserBar {}
     }

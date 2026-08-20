@@ -1,6 +1,6 @@
 [package]
 name = "echelon"
-version = "0.1.0"
+version = "0.1.5"
 authors = [
   "Siddhant Misra <me@flaxeneel2.net>",
   "Rayyan Parkar <rayyan@streigen.com>",
@@ -20,6 +20,7 @@ slint = { version = "1.17.0", default-features = false, features = ["std", "comp
 keyring-core = "1.0.0"
 serde = { version = "1", features = ["derive"] }
 matrix-sdk = { version = "0.18.0", features = ["anyhow", "e2e-encryption", "markdown", "bundled-sqlite", "local-server"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "sync", "time"] }
 ruma = "0.16.0"
 anyhow = "1.0.102"
@@ -33,10 +34,13 @@ futures-core = "0.3.31"
 blake3 = "1.8.3"
 url = "2"
 open = "5"
+jiff = "0.2"
+zeroize = { version = "1.9", features = ["derive"] }
 
 
 # Desktop specific. install backend-winit for non ios/android builds
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 slint = { version = "1.17.0", features = ["backend-winit"] }
 
 # Android-specific secure storage.
@@ -68,6 +72,7 @@ debug = false
 opt-level = "s"
 panic = "abort"
 strip = true
+
 
 [profile.dev.package.scrypt]
 opt-level = 3

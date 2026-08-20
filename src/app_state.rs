@@ -9,6 +9,7 @@ pub struct AppState {
     pub data_dir: PathBuf,
 }
 
+/// Get the app data directory for the current target OS.
 pub fn app_data_dir(app_id: &str) -> PathBuf {
     #[cfg(target_os = "linux")]
     {
@@ -18,23 +19,30 @@ pub fn app_data_dir(app_id: &str) -> PathBuf {
                 let home = std::env::var("HOME").expect("HOME not set");
                 PathBuf::from(home).join(".local/share")
             });
-        return base.join(app_id);
+        base.join(app_id)
     }
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var("HOME").expect("HOME not set");
-        return PathBuf::from(home).join("Library/Application Support").join(app_id);
+        PathBuf::from(home)
+            .join("Library/Application Support")
+            .join(app_id)
     }
     #[cfg(target_os = "windows")]
     {
         let appdata = std::env::var("APPDATA").expect("APPDATA not set");
-        return PathBuf::from(appdata).join(app_id);
+        PathBuf::from(appdata).join(app_id)
     }
     #[cfg(target_os = "android")]
     {
-        return PathBuf::from("/data/data").join(app_id);
+        PathBuf::from("/data/data").join(app_id)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "android")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "android"
+    )))]
     {
         PathBuf::from(".").join(app_id)
     }

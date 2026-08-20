@@ -1,20 +1,81 @@
-// Global application state singleton.
-// All components read/write shared state here directly,
-// eliminating deep two-way binding chains that cause
-// "long callback/instantiation chain" warnings.
+// Shared application state singleton.
+
+// Mirrors Rust AttachmentKind plus Empty for no media.
+export enum AttachmentKind {
+    Empty,
+    Image,
+    Video,
+    Audio,
+    File,
+    Sticker,
+}
+
+// Media attachment details for a message.
+export struct MessageAttachment {
+    kind: AttachmentKind,
+    mimetype: string,     // MIME content type
+    filename: string,     // Sender-declared file name
+    savable: bool,        // Whether to show a save button
+    previewable: bool,    // Whether to render inline preview
+    width: int,
+    height: int,
+    preview: image,       // Decoded preview image
+}
 
 export struct Message {
     user: string,
     time: string,
     text: string,
     repliedTo: string,
-    image: bool,
+    event-id: string,     // Event ID or pending transaction ID
+    pending: bool,      // True if message send is unacknowledged
+    edited: bool,       // True if message body was edited
+    attachment: MessageAttachment,
+}
+
+// Room/channel summary for sidebar.
+export struct RoomData {
+    id: string,
+    name: string,
+    r-type: string, // "text" | "voice"
+    encrypted: bool,
+}
+
+export struct CategoryData {
+    name: string,
+    rooms: [RoomData],
+    collapsed: bool,
+}
+
+// Space hierarchy categories.
+export struct SpaceChannels {
+    categories: [CategoryData],
+}
+
+// Spaces bar tab item.
+export struct SpaceTab {
+    id: string,
+    name: string,
+    abbrev: string,
+}
+
+// Debug console command definition.
+export struct DebugCommand {
+    name: string,
+    arg-labels: [string],
 }
 
 export global UiState {
     // Chat state
-    in-out property <string> active-room: "general";
+    in-out property <string> active-room: "";
+    in-out property <string> active-room-id: "";
     in-out property <[Message]> messages;
+    in-out property <bool> messages-loading: false;
+    in-out property <string> next-token: ""; // Token for fetching older messages
+    in-out property <bool> loading-more: false; // True while fetching older messages
+    in-out property <int> prepend-count: 0;
+    in-out property <int> prepend-epoch: 0;
+    in-out property <bool> newer-trimmed: false; // True if newest messages were trimmed
 
     // Layout state
     in-out property <bool> sidebar-collapsed: false;
@@ -26,9 +87,34 @@ export global UiState {
     in-out property <bool> deafened: false;
 
     // Space state
-    in-out property <int> active-space: 0;
+    in-out property <[SpaceTab]> space-tabs: [];
+    in-out property <[SpaceChannels]> space-channels: [];
+    in-out property <int> active-space-index: -1;
+    in-out property <string> active-space-name: "";
+    in-out property <[CategoryData]> categories: [];
 
-    // Callbacks to Rust backend
-    callback room-switched(string);
+    // Click-to-enlarge lightbox state
+    in-out property <bool> lightbox-visible: false;
+    in-out property <bool> lightbox-loading: false;
+    in-out property <image> lightbox-image;
+    in-out property <int> lightbox-width: 0;
+    in-out property <int> lightbox-height: 0;
+    in-out property <string> lightbox-event-id: "";
+    in-out property <bool> lightbox-savable: false;
+
+    // Transient toast status line
+    in-out property <string> toast-text: "";
+    in-out property <bool> toast-error: false;
+
+    // Backend callbacks
+    callback space-clicked(int);
+    callback channel-clicked(string, string); // room id, room name
     callback send-message(string);
+    callback load-older-messages();
+    callback load-latest-messages(); // Reload newest page after scrolling back
+    callback trim-messages(bool); // Drop messages exceeding capacity (true = oldest, false = newest)
+    callback open-lightbox(string); // event id
+    callback close-lightbox();
+    callback save-attachment(string); // event id
+    callback preview-window-changed(int, string, bool); // row index hint, event id, in-keep-window
 }

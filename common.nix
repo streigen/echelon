@@ -34,7 +34,9 @@ let
     ];
     buildToolsVersions = [ buildToolsVersion ];
     includeSystemImages = true;
-    systemImageTypes = [ "default" ];
+    systemImageTypes = [
+      "default"
+    ];
   };
 
   androidSdk = androidComposition.androidsdk;
@@ -166,6 +168,7 @@ in
       mold
       clang
       sccache
+      heaptrack
       upx
       android_latest
       android_minimum
