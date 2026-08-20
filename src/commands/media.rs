@@ -110,7 +110,7 @@ fn over_limit(bytes: u64, limit: u64) -> String {
     format!("Attachment is {bytes} bytes, over the {limit} byte limit")
 }
 
-/// Download an attachment's original bytes, undecoded. Used for saving to disk, where the file
+/// Download an attachment's original bytes, raw. Used for saving to disk, where the file
 /// must land byte for byte as the sender uploaded it, so there is no thumbnailing and no kind
 /// restriction.
 ///
