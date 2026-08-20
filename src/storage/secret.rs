@@ -5,7 +5,7 @@ use blake3;
 use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use rand::distr::{Alphanumeric, SampleString};
 use std::path::PathBuf;
-use zeroize::{Zeroizing, ZeroizeOnDrop};
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 /// All per-user session data stored in the stronghold.
 ///
@@ -29,7 +29,10 @@ pub struct SecretService {
 
 impl SecretService {
     pub fn new(keyring: KeyringClient, stronghold_path: PathBuf) -> Self {
-        SecretService { keyring, stronghold_path }
+        SecretService {
+            keyring,
+            stronghold_path,
+        }
     }
 
     /// Generate a random 32-character alphanumeric string, wiped when dropped.
@@ -68,7 +71,14 @@ impl SecretService {
         &self,
         user_id: &str,
         create_if_missing: bool,
-    ) -> Result<Option<(Stronghold, iota_stronghold::Store, KeyProvider, SnapshotPath)>> {
+    ) -> Result<
+        Option<(
+            Stronghold,
+            iota_stronghold::Store,
+            KeyProvider,
+            SnapshotPath,
+        )>,
+    > {
         let key_provider = self.key_provider(user_id)?;
         let snapshot_path = self.snapshot_path(user_id);
 
@@ -88,14 +98,25 @@ impl SecretService {
 
     /// Persist a full [`Session`].
     pub fn set_session(&self, session: &Session) -> Result<()> {
-        let (stronghold, store, key_provider, snapshot_path) =
-            self
-                .open_store(&session.user_id, true)?
-                .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
+        let (stronghold, store, key_provider, snapshot_path) = self
+            .open_store(&session.user_id, true)?
+            .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
 
-        store.insert(b"user_id".to_vec(), session.user_id.as_bytes().to_vec(), None)?;
-        store.insert(b"device_id".to_vec(), session.device_id.as_bytes().to_vec(), None)?;
-        store.insert(b"access_token".to_vec(), session.access_token.as_bytes().to_vec(), None)?;
+        store.insert(
+            b"user_id".to_vec(),
+            session.user_id.as_bytes().to_vec(),
+            None,
+        )?;
+        store.insert(
+            b"device_id".to_vec(),
+            session.device_id.as_bytes().to_vec(),
+            None,
+        )?;
+        store.insert(
+            b"access_token".to_vec(),
+            session.access_token.as_bytes().to_vec(),
+            None,
+        )?;
 
         if let Some(t) = &session.refresh_token {
             store.insert(b"refresh_token".to_vec(), t.as_bytes().to_vec(), None)?;
@@ -133,10 +154,9 @@ impl SecretService {
 
     /// Return the sqlite password for `user_id`, generating and persisting one on first use.
     pub fn get_or_create_sqlite_pwd(&self, user_id: &str) -> Result<Zeroizing<String>> {
-        let (stronghold, store, key_provider, snapshot_path) =
-            self
-                .open_store(user_id, true)?
-                .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
+        let (stronghold, store, key_provider, snapshot_path) = self
+            .open_store(user_id, true)?
+            .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
 
         if let Some(bytes) = store.get(b"sqlite_password")? {
             return Ok(Zeroizing::new(String::from_utf8(bytes)?));

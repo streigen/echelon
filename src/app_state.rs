@@ -37,7 +37,12 @@ pub fn app_data_dir(app_id: &str) -> PathBuf {
     {
         PathBuf::from("/data/data").join(app_id)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "android")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "android"
+    )))]
     {
         PathBuf::from(".").join(app_id)
     }

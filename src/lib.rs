@@ -543,8 +543,11 @@ fn apply_effect(
             }
 
             let Some(index) = row_index(messages, target.as_str(), None) else {
-                PENDING
-                    .with(|p| p.borrow_mut().edits.insert(target, (new_body, new_attachment)));
+                PENDING.with(|p| {
+                    p.borrow_mut()
+                        .edits
+                        .insert(target, (new_body, new_attachment))
+                });
                 return Applied::Buffered;
             };
             apply_edit(messages, index, &new_body, new_attachment.as_ref());

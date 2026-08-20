@@ -4,13 +4,13 @@ use matrix_sdk::Client;
 use tokio::sync::RwLock;
 use url::Url;
 
+use crate::AppWindow;
 use crate::app_state::AppState;
 use crate::storage::secret::Session;
-use crate::AppWindow;
 use sync_manager::SyncManager;
 
-pub(crate) mod active_room;
 mod account_reset;
+pub(crate) mod active_room;
 mod factory;
 mod oauth;
 mod password_auth;
@@ -31,7 +31,10 @@ pub struct ClientHandler {
 }
 
 impl ClientHandler {
-    pub async fn new(app_state: Arc<AppState>, ui_handle: slint::Weak<AppWindow>) -> anyhow::Result<Self> {
+    pub async fn new(
+        app_state: Arc<AppState>,
+        ui_handle: slint::Weak<AppWindow>,
+    ) -> anyhow::Result<Self> {
         let homeserver: Url = Url::parse("https://matrix.org")?;
         let matrix_client = Client::new(homeserver).await?;
         Ok(ClientHandler {
@@ -56,7 +59,9 @@ impl ClientHandler {
     }
 
     pub async fn start_sync(&self) {
-        self.sync_manager.start_sync(self.matrix_client.clone()).await;
+        self.sync_manager
+            .start_sync(self.matrix_client.clone())
+            .await;
     }
 
     pub async fn stop_sync(&self) {

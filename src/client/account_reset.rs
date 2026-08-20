@@ -35,7 +35,9 @@ impl ClientHandler {
                                     .ok_or_else(|| anyhow::anyhow!("No user ID available"))?;
 
                                 let mut password_auth = Password::new(
-                                    UserIdentifier::Matrix(MatrixUserIdentifier::new(user_id.to_string())),
+                                    UserIdentifier::Matrix(MatrixUserIdentifier::new(
+                                        user_id.to_string(),
+                                    )),
                                     pwd,
                                 );
 

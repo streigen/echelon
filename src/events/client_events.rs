@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use matrix_sdk::Room;
+use ruma::OwnedUserId;
 use ruma::events::room::message::SyncRoomMessageEvent;
 use ruma::events::room::redaction::SyncRoomRedactionEvent;
-use ruma::OwnedUserId;
 use tracing::{error, trace};
 
 use crate::AppWindow;

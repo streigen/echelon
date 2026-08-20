@@ -1,5 +1,5 @@
-use crate::account::account_reset_types::AccountResetType;
 use crate::ClientState;
+use crate::account::account_reset_types::AccountResetType;
 
 /// Reset the account identity or key backup.
 ///

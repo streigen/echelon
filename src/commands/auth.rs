@@ -37,10 +37,7 @@ async fn oauth_impl(
 /// # Arguments
 /// * `homeserver` - The URL of the homeserver to log in to.
 /// * `state` - The client state containing the Matrix client to perform the login on.
-pub async fn oauth_login(
-    homeserver: String,
-    state: ClientState,
-) -> Result<String, String> {
+pub async fn oauth_login(homeserver: String, state: ClientState) -> Result<String, String> {
     trace!("Starting OAuth login for homeserver: {}", homeserver);
     oauth_impl(homeserver, state, true).await
 }
@@ -50,10 +47,7 @@ pub async fn oauth_login(
 /// # Arguments
 /// * `homeserver` - The URL of the homeserver to register with.
 /// * `state` - The client state containing the Matrix client to perform the login on.
-pub async fn oauth_register(
-    homeserver: String,
-    state: ClientState,
-) -> Result<String, String> {
+pub async fn oauth_register(homeserver: String, state: ClientState) -> Result<String, String> {
     trace!("Starting OAuth register for homeserver: {}", homeserver);
     oauth_impl(homeserver, state, false).await
 }

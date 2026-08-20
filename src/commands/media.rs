@@ -1,11 +1,11 @@
 use std::io::Cursor;
 
+use crate::rooms::messages::{Attachment, ImageSize, MAX_PREVIEW_BYTES};
 use image::{ColorType, ImageDecoder};
 use matrix_sdk::Client;
 use matrix_sdk::media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings};
 use ruma::UInt;
 use ruma::api::client::media::get_content_thumbnail::v3::Method;
-use crate::rooms::messages::{Attachment, ImageSize, MAX_PREVIEW_BYTES};
 
 /// Maximum edge resolution for in-chat image thumbnails.
 const DISPLAY_MAX_EDGE: u32 = 640;
