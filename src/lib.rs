@@ -902,9 +902,13 @@ fn apply_space_categories(ui: &AppWindow, idx: usize) {
 /// Formats a millisecond Matrix timestamp (always UTC per the Matrix spec) as
 /// a "HH:MM" time-of-day string in the system's local timezone.
 fn format_time_of_day(origin_server_ts_ms: u64) -> String {
-    chrono::DateTime::from_timestamp_millis(origin_server_ts_ms as i64)
-        .map(|dt| dt.with_timezone(&chrono::Local).format("%H:%M").to_string())
-        .unwrap_or_else(|| "--:--".to_string())
+    jiff::Timestamp::from_millisecond(origin_server_ts_ms as i64)
+        .map(|ts| {
+            ts.to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|_| "--:--".to_string())
 }
 
 #[cfg(target_os = "android")]
@@ -1228,7 +1232,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     // The homeserver stamps the event itself, but has not been
                     // asked yet. Both are shown to the minute, so the local
                     // clock reads the same as the stamp that replaces it.
-                    time: format_time_of_day(chrono::Utc::now().timestamp_millis() as u64).into(),
+                    time: format_time_of_day(jiff::Timestamp::now().as_millisecond() as u64).into(),
                     text: msg_text.clone(),
                     repliedTo: slint::SharedString::from(""),
                     event_id: txn_id.as_str().into(),
