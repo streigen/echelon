@@ -164,7 +164,10 @@ struct PreviewWindow {
 /// Edits and redactions whose target is not in the model yet.
 #[derive(Default)]
 struct PendingChanges {
-    edits: std::collections::HashMap<ruma::OwnedEventId, String>,
+    edits: std::collections::HashMap<
+        ruma::OwnedEventId,
+        (String, Option<rooms::messages::Attachment>),
+    >,
     redactions: std::collections::HashSet<ruma::OwnedEventId>,
 }
 
@@ -529,12 +532,22 @@ fn apply_effect(
             Applied::Inserted
         }
 
-        EventEffect::Edit { target, new_body } => {
+        EventEffect::Edit {
+            target,
+            new_body,
+            new_attachment,
+        } => {
+            match &new_attachment {
+                Some(attachment) => rooms::messages::cache_attachment(room_id, &target, attachment),
+                None => rooms::messages::uncache_attachment(room_id, &target),
+            }
+
             let Some(index) = row_index(messages, target.as_str(), None) else {
-                PENDING.with(|p| p.borrow_mut().edits.insert(target, new_body));
+                PENDING
+                    .with(|p| p.borrow_mut().edits.insert(target, (new_body, new_attachment)));
                 return Applied::Buffered;
             };
-            set_row_text(messages, index, &new_body);
+            apply_edit(messages, index, &new_body, new_attachment.as_ref());
             Applied::Patched
         }
 
@@ -586,19 +599,33 @@ fn settle_pending(messages: &slint::VecModel<Message>, event_id: &EventId, index
         redact_row(messages, index);
         return;
     }
-    if let Some(new_body) = edit {
-        set_row_text(messages, index, &new_body);
+    if let Some((new_body, new_attachment)) = edit {
+        apply_edit(messages, index, &new_body, new_attachment.as_ref());
     }
 }
 
-/// Replace a row's body and mark it edited.
-fn set_row_text(messages: &slint::VecModel<Message>, index: usize, text: &str) {
+/// Replace a row's body and attachment with an edit's new content.
+fn apply_edit(
+    messages: &slint::VecModel<Message>,
+    index: usize,
+    new_body: &str,
+    new_attachment: Option<&rooms::messages::Attachment>,
+) {
     let Some(mut row) = messages.row_data(index) else {
         return;
     };
-    row.text = text.into();
+    let had_preview = row.attachment.preview.size().width > 0;
+    let event_id = row.event_id.to_string();
+
+    row.text = display_text(new_body, new_attachment).into();
+    row.attachment = attachment_to_ui(new_attachment);
     row.edited = true;
     messages.set_row_data(index, row);
+
+    // Evict old preview pixels if attachment changed.
+    if had_preview {
+        PREVIEW_WINDOW.with(|s| s.borrow_mut().loaded.retain(|id| id != &event_id));
+    }
 }
 
 /// Blank a deleted message's row in place.

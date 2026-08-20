@@ -149,6 +149,15 @@ impl AttachmentCache {
         Some(entry.attachment.clone())
     }
 
+    fn remove(&mut self, room_id: &RoomId, event_id: &EventId) {
+        let Some(room) = self.rooms.get_mut(room_id) else {
+            return;
+        };
+        if room.remove(event_id).is_some() {
+            self.len -= 1;
+        }
+    }
+
     fn clear_room(&mut self, room_id: &RoomId) {
         if let Some(room) = self.rooms.remove(room_id) {
             self.len -= room.len();
@@ -183,6 +192,11 @@ pub fn cache_attachment(room_id: &RoomId, event_id: &EventId, attachment: &Attac
     ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().insert(room_id, event_id, attachment));
 }
 
+/// Remove an event's attachment from the cache.
+pub fn uncache_attachment(room_id: &RoomId, event_id: &EventId) {
+    ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().remove(room_id, event_id));
+}
+
 /// Look up an attachment cached by [`cache_attachment`].
 pub fn get_cached_attachment(room_id: &RoomId, event_id: &EventId) -> Option<Attachment> {
     ATTACHMENT_CACHE.with(|cache| cache.borrow_mut().get(room_id, event_id))
@@ -209,10 +223,11 @@ pub struct NewMessage {
 pub enum EventEffect {
     /// A new message.
     New(NewMessage),
-    /// Replace the body of a target message.
+    /// Replace the body and attachment of a target message.
     Edit {
         target: OwnedEventId,
         new_body: String,
+        new_attachment: Option<Attachment>,
     },
     /// Redact a target message.
     Redact { target: OwnedEventId },
@@ -262,6 +277,7 @@ pub fn effect_of_room_message(event: SyncRoomMessageEvent) -> EventEffect {
         return EventEffect::Edit {
             target: replacement.event_id,
             new_body: body_of(&replacement.new_content.msgtype),
+            new_attachment: attachment_of(&replacement.new_content.msgtype),
         };
     }
 

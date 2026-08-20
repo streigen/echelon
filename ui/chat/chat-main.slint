@@ -193,6 +193,22 @@ export component ChatMain inherits Rectangle {
                 height: 100%;
                 width: 100%;
 
+                // Flickable doesn't reclamp viewport-y on its own when the content
+                // it's measured against gets shorter (a row losing its attachment
+                // to an edit, a redaction blanking a row, a trim). Left alone, a
+                // viewport-y that was valid against the old, taller content stays
+                // put and overscrolls past the new, shorter end, leaving blank
+                // space below the last row until the user's next manual scroll
+                // nudges Flickable into reclamping it itself.
+                changed viewport-height => {
+                    if scroll-view.viewport-height > scroll-view.visible-height
+                        && -scroll-view.viewport-y
+                            > scroll-view.viewport-height - scroll-view.visible-height {
+                        scroll-view.viewport-y =
+                            -(scroll-view.viewport-height - scroll-view.visible-height);
+                    }
+                }
+
                 changed viewport-y => {
                     near-bottom = is-near-bottom();
                     if !is-near-top() {

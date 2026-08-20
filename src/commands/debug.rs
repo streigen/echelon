@@ -130,7 +130,9 @@ pub async fn dispatch(
                             EventEffect::New(m) => {
                                 format!("[{}] {}: {}", m.origin_server_ts, m.sender, m.body)
                             }
-                            EventEffect::Edit { target, new_body } => {
+                            EventEffect::Edit {
+                                target, new_body, ..
+                            } => {
                                 format!("[edit of {target}] {new_body}")
                             }
                             EventEffect::Redact { target } => format!("[redacts {target}]"),
