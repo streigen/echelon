@@ -64,10 +64,10 @@ pub async fn get_space_hierarchy(client_state: ClientState) -> Result<Vec<SpaceR
     }
 
     let mut hierarchy = Vec::new();
-    let mut visited = HashSet::new();
+    let mut path = HashSet::new();
 
     for root_id in roots {
-        if let Some(node) = build_tree(&root_id, &room_map, &parent_to_children, &mut visited) {
+        if let Some(node) = build_tree(&root_id, &room_map, &parent_to_children, &mut path) {
             hierarchy.push(node);
         }
     }
@@ -91,28 +91,34 @@ fn room_label(room: &Room) -> String {
     room.name().unwrap_or_else(|| room.room_id().to_string())
 }
 
+/// `path` holds only the current root-to-here chain, not every room seen so far. A
+/// room reachable through two different parents (a legitimate DAG shape for spaces)
+/// is thus emitted under each parent instead of being dropped after its first
+/// occurrence; this check only guards against real cycles (a room nested under
+/// itself). Backtracks by removing `current_id` before returning, so the same set
+/// is reused across sibling and root traversals with no cloning.
 fn build_tree(
     current_id: &OwnedRoomId,
     room_map: &BTreeMap<OwnedRoomId, Room>,
     parent_to_children: &HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
-    visited: &mut HashSet<OwnedRoomId>,
+    path: &mut HashSet<OwnedRoomId>,
 ) -> Option<SpaceRoom> {
-    if visited.contains(current_id) {
+    if !path.insert(current_id.clone()) {
         return None;
     }
-
-    visited.insert(current_id.clone());
 
     let room = room_map.get(current_id)?.clone();
     let mut children_nodes = Vec::new();
 
     if let Some(children_ids) = parent_to_children.get(current_id) {
         for child_id in children_ids {
-            if let Some(child_node) = build_tree(child_id, room_map, parent_to_children, visited) {
+            if let Some(child_node) = build_tree(child_id, room_map, parent_to_children, path) {
                 children_nodes.push(child_node);
             }
         }
     }
+
+    path.remove(current_id);
 
     Some(SpaceRoom {
         room,
