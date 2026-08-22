@@ -167,4 +167,24 @@ impl SecretService {
         self.commit(&stronghold, &key_provider, &snapshot_path)?;
         Ok(pwd)
     }
+
+    /// Permanently remove all stored secrets for `user_id`: the stronghold
+    /// snapshot file on disk and its OS-keyring encryption key.
+    ///
+    /// # Arguments
+    /// * `user_id` - The full Matrix user id whose stored secrets to delete.
+    pub fn delete_session(&self, user_id: &str) -> Result<()> {
+        let path = self.snapshot_path(user_id).as_path().to_path_buf();
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to delete stronghold snapshot at {path:?}: {e}"
+                ));
+            }
+        }
+
+        self.keyring.delete_password(&Self::user_id_hash(user_id))
+    }
 }

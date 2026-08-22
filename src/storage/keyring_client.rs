@@ -45,4 +45,21 @@ impl KeyringClient {
             password.to_string(),
         )?)
     }
+
+    /// Delete the keyring entry for `account`, if any.
+    ///
+    /// # Arguments
+    /// * `account` - The keyring account name.
+    pub fn delete_password(&self, account: &str) -> Result<()> {
+        let entry = Entry::new(&self.service, account)?;
+        match entry.delete_credential() {
+            Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+            Err(e) => {
+                error!("Failed to delete password from keyring (account={account:?}): {e:?}");
+                Err(anyhow::anyhow!(
+                    "Failed to delete password from keyring: {e}"
+                ))
+            }
+        }
+    }
 }

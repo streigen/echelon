@@ -140,14 +140,41 @@ pub async fn login(
     }
 }
 
+/// Log out the currently active user session.
+///
+/// Revokes the session on the homeserver, removes the account entry and stored
+/// session secrets, stops the sync task, and clears the client state.
+///
+/// # Arguments
+/// * `state` - The client state containing the Matrix client to perform the logout on.
 pub async fn logout(state: ClientState) -> Result<String, String> {
     debug!("Logging out user...");
 
-    // Stop the sync task before clearing the client state.
-    {
+    // Revoke the session on the homeserver and stop sync in a separate scope.
+    let user_id = {
+        let state_r = state.read().await;
+        let Some(handler) = state_r.as_ref() else {
+            return Err("No active client session".to_string());
+        };
+
+        if let Err(e) = handler.revoke_session().await {
+            debug!("Failed to revoke session on homeserver (continuing with local logout): {e}");
+        }
+        handler.stop_sync().await;
+
+        handler.get_client().user_id().map(|id| id.to_string())
+    };
+
+    // Remove the stored account entry and session secrets.
+    if let Some(user_id) = &user_id {
         let state_r = state.read().await;
         if let Some(handler) = state_r.as_ref() {
-            handler.stop_sync().await;
+            if let Err(e) = handler.app_state.echelon_store.remove_account(user_id) {
+                debug!("Failed to remove account from store: {e}");
+            }
+            if let Err(e) = handler.app_state.secret_service.delete_session(user_id) {
+                debug!("Failed to delete stored session secrets: {e}");
+            }
         }
     }
 

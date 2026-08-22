@@ -67,6 +67,17 @@ impl ClientHandler {
     pub async fn stop_sync(&self) {
         self.sync_manager.stop_sync().await;
     }
+
+    /// Invalidate this session on the homeserver.
+    ///
+    /// [`Client::logout`] picks the right endpoint (`/logout` for a password
+    /// session, OAuth token revocation for an OAuth one) based on which
+    /// authentication API the client is currently using, so callers don't
+    /// need to track that themselves.
+    pub async fn revoke_session(&self) -> anyhow::Result<()> {
+        self.matrix_client.logout().await?;
+        Ok(())
+    }
 }
 
 /// Read the session an authentication request just established off the client it was
