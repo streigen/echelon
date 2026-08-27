@@ -17,6 +17,13 @@ mod password_auth;
 mod registration;
 pub mod sync_manager;
 
+/// Test fixture that assembles a handler around a caller-supplied client. Lives
+/// here rather than with the other fixtures because the handler's fields are
+/// private to this module, and only a module inside it can set them.
+#[cfg(test)]
+#[path = "../../tests/unit/common/client_handler.rs"]
+mod test_handler;
+
 use active_room::ActiveRoomSlot;
 
 pub type ClientState = Arc<RwLock<Option<ClientHandler>>>;
@@ -44,32 +51,6 @@ impl ClientHandler {
             app_state,
             ui_handle,
         })
-    }
-
-    /// Assemble a handler around an already-built client.
-    ///
-    /// Test-only seam. [`ClientHandler::new`] builds its own client against a
-    /// fixed homeserver, which leaves no way to point a handler at a test
-    /// server, and the fields it sets are private.
-    ///
-    /// # Arguments
-    /// * `matrix_client` - The client the handler should own.
-    /// * `app_state` - The store and secret service the handler reads through.
-    /// * `ui_handle` - Weak handle to the window; [`slint::Weak::default`] for a
-    ///   test with no window.
-    #[cfg(test)]
-    pub(crate) fn from_parts(
-        matrix_client: Client,
-        app_state: Arc<AppState>,
-        ui_handle: slint::Weak<AppWindow>,
-    ) -> Self {
-        ClientHandler {
-            matrix_client,
-            sync_manager: SyncManager::new(),
-            active_room: ActiveRoomSlot::default(),
-            app_state,
-            ui_handle,
-        }
     }
 
     pub fn get_client(&self) -> &Client {

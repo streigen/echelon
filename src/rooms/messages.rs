@@ -417,3 +417,7 @@ fn attachment_of_sticker(content: &StickerEventContent) -> Attachment {
 fn uint_to_u32(value: ruma::UInt) -> u32 {
     u32::try_from(u64::from(value)).unwrap_or(u32::MAX)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/rooms/messages.rs"]
+mod tests;
