@@ -6,10 +6,12 @@
 #![allow(dead_code)]
 
 use std::io::Cursor;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 use image::{DynamicImage, ImageFormat, RgbImage, RgbaImage};
+use matrix_sdk::Client;
 use matrix_sdk::deserialized_responses::TimelineEvent;
+use matrix_sdk::test_utils::mocks::MatrixMockServer;
 use ruma::OwnedMxcUri;
 use ruma::events::AnySyncTimelineEvent;
 use ruma::events::room::{
@@ -18,7 +20,10 @@ use ruma::events::room::{
 use ruma::serde::Raw;
 use serde_json::Value;
 use tempfile::TempDir;
+use tokio::sync::RwLock;
 
+use crate::ClientState;
+use crate::app_state::AppState;
 use crate::rooms::messages::{Attachment, AttachmentKind};
 use crate::storage::keyring_client::KeyringClient;
 use crate::storage::secret::SecretService;
@@ -99,6 +104,88 @@ pub fn reopen_secret_service(dir: &TempDir, name: &str) -> SecretService {
         KeyringClient::new(format!("echelon-test-{name}")),
         dir.path().to_path_buf(),
     )
+}
+
+/// An [`AppState`] whose store and secrets live under `dir`.
+///
+/// Neither of them touches the keyring until something is read or written, so
+/// building this is just paths and a hash.
+///
+/// # Arguments
+/// * `dir` - The directory to keep snapshots and account databases in.
+/// * `name` - A label unique to the calling test.
+pub fn temp_app_state(dir: &std::path::Path, name: &str) -> Arc<AppState> {
+    install_mock_keyring();
+    Arc::new(AppState {
+        secret_service: SecretService::new(
+            KeyringClient::new(format!("echelon-test-{name}")),
+            dir.to_path_buf(),
+        ),
+        echelon_store: EchelonStore::new(
+            KeyringClient::new(format!("echelon-test-{name}")),
+            format!("account-{name}"),
+            dir.to_path_buf(),
+        ),
+        data_dir: dir.to_path_buf(),
+    })
+}
+
+/// A client state with nobody signed in.
+///
+/// Every command checks this first, so it is what the guard cases run against.
+pub fn empty_state() -> ClientState {
+    Arc::new(RwLock::new(None))
+}
+
+/// A signed-in session against a mock homeserver.
+///
+/// Holds the temp directory so the account database and snapshots outlive the
+/// test that built it.
+pub struct MockSession {
+    /// The homeserver the client talks to. Endpoints are mocked on this.
+    pub server: MatrixMockServer,
+    /// The client the handler owns, for arranging rooms and state directly.
+    pub client: Client,
+    /// The state the commands are called with.
+    pub state: ClientState,
+    /// The store and secrets the handler reads through.
+    pub app_state: Arc<AppState>,
+    _dir: TempDir,
+}
+
+/// Stand up a mock homeserver with a signed-in client wired into a client state.
+///
+/// The session is the default one `MockClientBuilder` provides, so the account
+/// is `@example:localhost` on device `DEVICEID`. The event cache is subscribed
+/// here because the real client does it at build time, and the pagination
+/// commands depend on it.
+///
+/// # Arguments
+/// * `name` - A label unique to the calling test, keeping its keyring entry and
+///   its on-disk state apart from every other test's.
+pub async fn mock_session(name: &str) -> MockSession {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    client
+        .event_cache()
+        .subscribe()
+        .expect("subscribing to the event cache should succeed");
+
+    let app_state = temp_app_state(dir.path(), name);
+    let handler = crate::client::test_handler::handler_from_parts(
+        client.clone(),
+        app_state.clone(),
+        slint::Weak::default(),
+    );
+
+    MockSession {
+        server,
+        client,
+        state: Arc::new(RwLock::new(Some(handler))),
+        app_state,
+        _dir: dir,
+    }
 }
 
 /// An unencrypted media source pointing at `uri`.
@@ -186,6 +273,67 @@ fn encode_png(image: DynamicImage) -> Vec<u8> {
         .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
         .expect("encoding a PNG fixture should succeed");
     bytes
+}
+
+/// Parse raw state event JSON for a sync response.
+///
+/// # Arguments
+/// * `event_type` - The event's `type`.
+/// * `state_key` - The event's state key.
+/// * `content` - The event's content object.
+pub fn state_event(
+    event_type: &str,
+    state_key: &str,
+    content: Value,
+) -> Raw<ruma::events::AnySyncStateEvent> {
+    Raw::new(&serde_json::json!({
+        "type": event_type,
+        "state_key": state_key,
+        "event_id": format!("${event_type}-{state_key}"),
+        "sender": "@example:localhost",
+        "origin_server_ts": 1_700_000_000_000u64,
+        "content": content,
+    }))
+    .expect("state event fixture should serialize")
+    .cast_unchecked()
+}
+
+/// The `m.room.create` event that marks a room as a space.
+///
+/// A room is a space by virtue of its create event, so a test room only counts
+/// as one if it is synced carrying this.
+pub fn space_create_event() -> Raw<ruma::events::AnySyncStateEvent> {
+    state_event(
+        "m.room.create",
+        "",
+        serde_json::json!({
+            "creator": "@example:localhost",
+            "room_version": "9",
+            "type": "m.space",
+        }),
+    )
+}
+
+/// An `m.space.child` event pointing a space at `child_room_id`.
+///
+/// # Arguments
+/// * `child_room_id` - The room the edge points to.
+/// * `via` - Servers through which the child can be reached. An edge with none
+///   is not a valid child link.
+pub fn space_child_event(child_room_id: &str, via: &[&str]) -> Raw<ruma::events::AnySyncStateEvent> {
+    state_event("m.space.child", child_room_id, serde_json::json!({"via": via}))
+}
+
+/// An `m.space.parent` event pointing a room at `parent_room_id`.
+///
+/// # Arguments
+/// * `parent_room_id` - The space the room claims as its parent.
+pub fn space_parent_event(parent_room_id: &str) -> Raw<ruma::events::AnySyncStateEvent> {
+    state_event(
+        "m.space.parent",
+        parent_room_id,
+        serde_json::json!({"via": ["example.org"]}),
+    )
 }
 
 /// Wrap raw event JSON as an unencrypted timeline event.

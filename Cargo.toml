@@ -66,6 +66,12 @@ zbus-secret-service-keyring-store = { version = "1.0.0", features = ["rt-async-i
 [dev-dependencies]
 tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
+# `testing` brings in `matrix_sdk::test_utils::mocks::MatrixMockServer`, which
+# stands up a wiremock server speaking Matrix. Features unify only for the test
+# build, so the shipped binary does not gain it.
+matrix-sdk = { version = "0.18.0", features = ["testing"] }
+matrix-sdk-test = "0.18.0"
+wiremock = "0.6"
 
 [build-dependencies]
 slint-build = "1.17.0"

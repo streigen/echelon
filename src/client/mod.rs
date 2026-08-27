@@ -22,7 +22,7 @@ pub mod sync_manager;
 /// private to this module, and only a module inside it can set them.
 #[cfg(test)]
 #[path = "../../tests/unit/common/client_handler.rs"]
-mod test_handler;
+pub(crate) mod test_handler;
 
 use active_room::ActiveRoomSlot;
 
