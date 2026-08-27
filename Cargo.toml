@@ -61,6 +61,12 @@ windows-native-keyring-store = { version = "1.1.0" }
 zbus-secret-service-keyring-store = { version = "1.0.0", features = ["rt-async-io-crypto-rust"] }
 
 
+# Test-only. `tokio/macros` supplies `#[tokio::test]`; feature unification adds it
+# to the test build alone, so the shipped binary is unchanged.
+[dev-dependencies]
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+
 [build-dependencies]
 slint-build = "1.17.0"
 

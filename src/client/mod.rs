@@ -46,6 +46,32 @@ impl ClientHandler {
         })
     }
 
+    /// Assemble a handler around an already-built client.
+    ///
+    /// Test-only seam. [`ClientHandler::new`] builds its own client against a
+    /// fixed homeserver, which leaves no way to point a handler at a test
+    /// server, and the fields it sets are private.
+    ///
+    /// # Arguments
+    /// * `matrix_client` - The client the handler should own.
+    /// * `app_state` - The store and secret service the handler reads through.
+    /// * `ui_handle` - Weak handle to the window; [`slint::Weak::default`] for a
+    ///   test with no window.
+    #[cfg(test)]
+    pub(crate) fn from_parts(
+        matrix_client: Client,
+        app_state: Arc<AppState>,
+        ui_handle: slint::Weak<AppWindow>,
+    ) -> Self {
+        ClientHandler {
+            matrix_client,
+            sync_manager: SyncManager::new(),
+            active_room: ActiveRoomSlot::default(),
+            app_state,
+            ui_handle,
+        }
+    }
+
     pub fn get_client(&self) -> &Client {
         &self.matrix_client
     }

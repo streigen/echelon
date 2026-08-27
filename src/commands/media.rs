@@ -196,7 +196,21 @@ fn xdg_download_dir(home: &std::path::Path) -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| home.join(".config"));
     let contents = std::fs::read_to_string(config.join("user-dirs.dirs")).ok()?;
+    parse_xdg_download_dir(&contents, home)
+}
 
+/// Pull `XDG_DOWNLOAD_DIR` out of the contents of a `user-dirs.dirs` file.
+///
+/// Split from [`xdg_download_dir`] so the parsing is reachable without a real
+/// config file, and so it does not depend on `XDG_CONFIG_HOME`, which decides
+/// where that file is looked for and would otherwise have to be set to test any
+/// of this.
+///
+/// # Arguments
+/// * `contents` - The text of a `user-dirs.dirs` file.
+/// * `home` - The user's home directory, used to expand `$HOME`.
+#[cfg(target_os = "linux")]
+fn parse_xdg_download_dir(contents: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
     for line in contents.lines() {
         let Some(value) = line.trim().strip_prefix("XDG_DOWNLOAD_DIR=") else {
             continue;
@@ -238,7 +252,7 @@ pub async fn save_attachment(
 }
 
 /// How many suffixed names to try before giving up on finding a free one.
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(any(target_os = "android", target_os = "ios", test))]
 const MAX_NAME_ATTEMPTS: u32 = 100;
 
 /// Write `bytes` into `dir` under `name`, or under the first free variant of it.
@@ -252,7 +266,10 @@ const MAX_NAME_ATTEMPTS: u32 = 100;
 /// * `dir` - The directory to write into.
 /// * `name` - A single path component, from [`suggested_filename`].
 /// * `bytes` - The contents to write.
-#[cfg(any(target_os = "android", target_os = "ios"))]
+///
+/// Compiled for tests on every platform, so the desktop CI covers the naming
+/// and the create-new behaviour that only mobile calls into.
+#[cfg(any(target_os = "android", target_os = "ios", test))]
 fn write_new_file(
     dir: &std::path::Path,
     name: &str,
@@ -429,3 +446,7 @@ fn decode_image(bytes: Vec<u8>, max_edge: u32) -> Result<DecodedImage, String> {
         height,
     )))
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/commands/media.rs"]
+mod tests;
