@@ -213,3 +213,7 @@ impl EchelonStore {
         Ok(self.get_accounts()?.last)
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/storage/store.rs"]
+mod tests;

@@ -188,3 +188,7 @@ impl SecretService {
         self.keyring.delete_password(&Self::user_id_hash(user_id))
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/storage/secret.rs"]
+mod tests;

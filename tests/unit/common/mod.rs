@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 use std::io::Cursor;
+use std::sync::Once;
 
 use image::{DynamicImage, ImageFormat, RgbImage, RgbaImage};
 use matrix_sdk::deserialized_responses::TimelineEvent;
@@ -16,8 +17,89 @@ use ruma::events::room::{
 };
 use ruma::serde::Raw;
 use serde_json::Value;
+use tempfile::TempDir;
 
 use crate::rooms::messages::{Attachment, AttachmentKind};
+use crate::storage::keyring_client::KeyringClient;
+use crate::storage::secret::SecretService;
+use crate::storage::store::EchelonStore;
+
+/// Point `keyring-core` at its in-memory store, once per test process.
+///
+/// Every suite that touches stored secrets must call this before building
+/// anything that reads the keyring. Without it the tests would create entries in
+/// whatever credential store the machine running them happens to have, which
+/// means prompting on some desktops and failing outright on a headless runner.
+///
+/// The mock store is process-wide and keeps no persistence, so tests isolate
+/// themselves by using distinct service names rather than by clearing it.
+pub fn install_mock_keyring() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        keyring_core::set_default_store(
+            keyring_core::mock::Store::new().expect("the mock store should build"),
+        );
+    });
+}
+
+/// An [`EchelonStore`] over a fresh directory, keyed under `name`.
+///
+/// The returned [`TempDir`] owns the snapshot file, so a test must hold it for
+/// as long as it uses the store.
+///
+/// # Arguments
+/// * `name` - A label unique to the calling test, keeping its keyring entry and
+///   its snapshot apart from every other test's.
+pub fn temp_store(name: &str) -> (TempDir, EchelonStore) {
+    install_mock_keyring();
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let store = EchelonStore::new(
+        KeyringClient::new(format!("echelon-test-{name}")),
+        format!("account-{name}"),
+        dir.path().to_path_buf(),
+    );
+    (dir, store)
+}
+
+/// A second [`EchelonStore`] over an existing directory, as a later run of the
+/// app would open it.
+///
+/// # Arguments
+/// * `dir` - The directory a previous store wrote its snapshot into.
+/// * `name` - The same label that store was built with.
+pub fn reopen_store(dir: &TempDir, name: &str) -> EchelonStore {
+    EchelonStore::new(
+        KeyringClient::new(format!("echelon-test-{name}")),
+        format!("account-{name}"),
+        dir.path().to_path_buf(),
+    )
+}
+
+/// A [`SecretService`] over a fresh directory.
+///
+/// # Arguments
+/// * `name` - A label unique to the calling test.
+pub fn temp_secret_service(name: &str) -> (TempDir, SecretService) {
+    install_mock_keyring();
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let secrets = SecretService::new(
+        KeyringClient::new(format!("echelon-test-{name}")),
+        dir.path().to_path_buf(),
+    );
+    (dir, secrets)
+}
+
+/// A second [`SecretService`] over an existing directory.
+///
+/// # Arguments
+/// * `dir` - The directory a previous service wrote its snapshots into.
+/// * `name` - The same label that service was built with.
+pub fn reopen_secret_service(dir: &TempDir, name: &str) -> SecretService {
+    SecretService::new(
+        KeyringClient::new(format!("echelon-test-{name}")),
+        dir.path().to_path_buf(),
+    )
+}
 
 /// An unencrypted media source pointing at `uri`.
 ///
