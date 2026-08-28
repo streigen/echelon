@@ -5,32 +5,10 @@ on:
  - push
 
 jobs:
-  build-windows:
-    runs-on: hetz
-    container:
-      image: git.flaxeneel2.net/streigen/build-environments/build-environment-windows:142c69403e
-    steps:
-      - name: setup ssh
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
-          chmod 400 ~/.ssh/config
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
-      - name: Build Windows
-        run: cargo xwin build --target x86_64-pc-windows-msvc
-        env:
-          RUSTFLAGS: "-C link-arg=/FORCE:MULTIPLE -C link-arg=/ignore:4006 -C link-arg=/NODEFAULTLIB:libucrt.lib -C link-arg=/NODEFAULTLIB:libvcruntime.lib -C link-arg=/NODEFAULTLIB:libcmt.lib -C link-arg=ucrt.lib -C link-arg=vcruntime.lib"
-      - name: Upload artifacts
-        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
-        with:
-          name: windows-x86_64
-          retention-days: 7
-          path: target/x86_64-pc-windows-msvc/debug/echelon.exe
-  build-linux:
+  # Runs on every push, master included. Pull requests skip this: the branch push
+  # that produced the commit already ran it.
+  test:
+    if: github.event_name == 'push'
     runs-on: hetz
     container:
       image: git.flaxeneel2.net/streigen/build-environments/build-environment-linux:142c69403e
@@ -45,19 +23,20 @@ jobs:
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
-      - name: Build Linux
-        run: cargo build
-      - name: Upload Artifacts
-        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
-        with:
-          name: linux-x86_64
-          retention-days: 7
-          path: target/debug/echelon
+      - name: Run tests
+        run: cargo test
 
-  build-android:
+  # The build jobs gate pull requests (debug) and produce the shipped artifacts on
+  # master (release). Any other push only runs `test` above.
+  build-windows:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
     runs-on: hetz
     container:
-      image: git.flaxeneel2.net/streigen/build-environments/build-environment-android:142c69403e
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-windows:142c69403e
+    env:
+      # Empty on a pull request, so cargo falls back to the dev profile.
+      CARGO_PROFILE_ARG: ${{ github.ref == 'refs/heads/master' && '--release' || '' }}
+      BUILD_TYPE: ${{ github.ref == 'refs/heads/master' && 'release' || 'debug' }}
     steps:
       - name: setup ssh
         run: |
@@ -69,6 +48,68 @@ jobs:
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+      - name: Build Windows
+        # $CARGO_PROFILE_ARG is intentionally unquoted so an empty value expands to
+        # no argument at all.
+        run: cargo xwin build --target x86_64-pc-windows-msvc $CARGO_PROFILE_ARG
+        env:
+          RUSTFLAGS: "-C link-arg=/FORCE:MULTIPLE -C link-arg=/ignore:4006 -C link-arg=/NODEFAULTLIB:libucrt.lib -C link-arg=/NODEFAULTLIB:libvcruntime.lib -C link-arg=/NODEFAULTLIB:libcmt.lib -C link-arg=ucrt.lib -C link-arg=vcruntime.lib"
+      - name: Upload artifacts
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: windows-x86_64-${{ env.BUILD_TYPE }}
+          retention-days: 7
+          path: target/x86_64-pc-windows-msvc/${{ env.BUILD_TYPE }}/echelon.exe
+
+  build-linux:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
+    runs-on: hetz
+    container:
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-linux:142c69403e
+    env:
+      CARGO_PROFILE_ARG: ${{ github.ref == 'refs/heads/master' && '--release' || '' }}
+      BUILD_TYPE: ${{ github.ref == 'refs/heads/master' && 'release' || 'debug' }}
+    steps:
+      - name: setup ssh
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
+          chmod 400 ~/.ssh/config
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+      - name: Build Linux
+        run: cargo build $CARGO_PROFILE_ARG
+      - name: Upload Artifacts
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: linux-x86_64-${{ env.BUILD_TYPE }}
+          retention-days: 7
+          path: target/${{ env.BUILD_TYPE }}/echelon
+
+  build-android:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
+    runs-on: hetz
+    container:
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-android:142c69403e
+    env:
+      CARGO_PROFILE_ARG: ${{ github.ref == 'refs/heads/master' && '--release' || '' }}
+      BUILD_TYPE: ${{ github.ref == 'refs/heads/master' && 'release' || 'debug' }}
+    steps:
+      - name: setup ssh
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
+          chmod 400 ~/.ssh/config
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+      # The release build type signs with this keystore too, so it is needed for
+      # both profiles.
       - name: Write android debug keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
@@ -77,15 +118,14 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
           chmod 400 ~/.android/debug.keystore
       - name: Build Android
-        run: bash scripts/android-build.sh
+        run: bash scripts/android-build.sh $CARGO_PROFILE_ARG
         env:
           CARGO_PROFILE_DEV_DEBUG: 1
       - name: Upload Artifacts
         uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
-          name: android-arm64-x86_64
+          name: android-arm64-x86_64-${{ env.BUILD_TYPE }}
           retention-days: 7
           path: |
-            android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-            android/app/build/outputs/apk/debug/app-x86_64-debug.apk
-
+            android/app/build/outputs/apk/${{ env.BUILD_TYPE }}/app-arm64-v8a-${{ env.BUILD_TYPE }}.apk
+            android/app/build/outputs/apk/${{ env.BUILD_TYPE }}/app-x86_64-${{ env.BUILD_TYPE }}.apk
