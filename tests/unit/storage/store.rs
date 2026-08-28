@@ -310,25 +310,7 @@ mod persistence {
 mod legacy_snapshots {
     use super::*;
 
-    /// Overwrite the account list with raw JSON, as an older build would have
-    /// left it.
-    ///
-    /// # Arguments
-    /// * `store` - The store to write into.
-    /// * `json` - The account list as it should appear on disk.
-    fn seed_raw(store: &EchelonStore, json: serde_json::Value) {
-        let (stronghold, inner, key_provider) = store.open().expect("opening should succeed");
-        inner
-            .insert(
-                b"accounts".to_vec(),
-                serde_json::to_vec(&json).expect("the fixture should serialize"),
-                None,
-            )
-            .expect("writing should succeed");
-        store
-            .commit(&stronghold, &key_provider)
-            .expect("committing should succeed");
-    }
+    use super::super::test_seed::seed_raw_accounts as seed_raw;
 
     #[test]
     fn an_account_list_of_bare_user_ids_still_loads() {

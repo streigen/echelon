@@ -214,6 +214,13 @@ impl EchelonStore {
     }
 }
 
+/// Test fixture that writes an account list as raw JSON. Lives here rather than
+/// with the other fixtures because opening and committing a snapshot are private
+/// to this module.
+#[cfg(test)]
+#[path = "../../tests/unit/common/store_seed.rs"]
+pub(crate) mod test_seed;
+
 #[cfg(test)]
 #[path = "../../tests/unit/storage/store.rs"]
 mod tests;

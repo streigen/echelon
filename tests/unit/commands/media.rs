@@ -550,6 +550,278 @@ mod write_new_file {
     }
 }
 
+mod fetching {
+    use super::*;
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, ResponseTemplate};
+
+    /// An image attachment whose full file lives at a known URI.
+    ///
+    /// # Arguments
+    /// * `size` - The size the sender declared for the full file, if any.
+    fn declared(size: Option<u64>) -> Attachment {
+        Attachment {
+            size,
+            ..image_attachment()
+        }
+    }
+
+    /// The error from a fetch that is expected to fail.
+    ///
+    /// `DecodedImage` wraps a pixel buffer and is not `Debug`, so the `Result`
+    /// helper that would report an unexpected success is unavailable.
+    ///
+    /// # Arguments
+    /// * `result` - The outcome to unwrap.
+    fn expect_error(result: Result<DecodedImage, String>) -> String {
+        match result {
+            Ok(image) => panic!(
+                "expected the fetch to fail, got a {}x{} image",
+                image.width(),
+                image.height()
+            ),
+            Err(error) => error,
+        }
+    }
+
+    /// Serve `bytes` from the scaling endpoint, expecting exactly `calls` hits.
+    ///
+    /// Mounted by hand rather than through `mock_authed_media_thumbnail`, whose
+    /// prebuilt response is a fixed blob that is not a decodable image.
+    ///
+    /// # Arguments
+    /// * `session` - The session whose server to mount on.
+    /// * `bytes` - The body to return.
+    /// * `calls` - How many requests the endpoint should receive.
+    async fn mount_thumbnail(session: &MockSession, bytes: Vec<u8>, calls: u64) {
+        Mock::given(method("GET"))
+            .and(path_regex("^/_matrix/client/v1/media/thumbnail/"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(bytes, "image/png"))
+            .expect(calls)
+            .mount(&session.server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn refuses_an_oversized_declared_thumbnail_without_downloading() {
+        // The point of checking the declared size is to not pay for the transfer
+        // at all, so the test is as much about the absent request as the error.
+        let session = mock_session("media-declared-too-big").await;
+        mount_thumbnail(&session, rgba_png(4, 4), 0).await;
+        let attachment = Attachment {
+            thumbnail_source: Some(plain_source("mxc://example.org/thumb")),
+            thumbnail_size: Some(MAX_PREVIEW_BYTES + 1),
+            ..image_attachment()
+        };
+
+        let error =
+            expect_error(fetch_image(&session.client, &attachment, ImageSize::Display).await);
+
+        assert_eq!(error, over_limit(MAX_PREVIEW_BYTES + 1, MAX_PREVIEW_BYTES));
+        session.server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn refuses_an_oversized_declared_file_without_downloading() {
+        let session = mock_session("media-declared-full-too-big").await;
+        session
+            .server
+            .mock_authed_media_download()
+            .ok_bytes(b"never read".to_vec())
+            .expect(0)
+            .mount()
+            .await;
+
+        let error = expect_error(
+            fetch_image(
+                &session.client,
+                &declared(Some(MAX_FULL_BYTES + 1)),
+                ImageSize::Full,
+            )
+            .await,
+        );
+
+        assert_eq!(error, over_limit(MAX_FULL_BYTES + 1, MAX_FULL_BYTES));
+        session.server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn a_server_scaled_preview_has_no_declared_size_to_check() {
+        // The common preview path declares nothing, because the size of what the
+        // homeserver will return is not knowable in advance. The guard that
+        // catches an oversized preview there is the one on the bytes that
+        // actually arrive, not this one.
+        let attachment = declared(Some(u64::MAX));
+
+        assert_eq!(
+            attachment.source_for(ImageSize::Display).declared_bytes,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn refuses_a_download_that_turns_out_to_be_over_the_limit() {
+        // A sender can declare nothing, or lie. The bytes that actually arrive
+        // are checked too.
+        let session = mock_session("media-actually-too-big").await;
+        let oversized = vec![0u8; (MAX_PREVIEW_BYTES + 1) as usize];
+        mount_thumbnail(&session, oversized, 1).await;
+
+        let error = expect_error(
+            fetch_image(&session.client, &declared(None), ImageSize::Display).await,
+        );
+
+        assert_eq!(error, over_limit(MAX_PREVIEW_BYTES + 1, MAX_PREVIEW_BYTES));
+    }
+
+    #[tokio::test]
+    async fn asks_the_homeserver_to_scale_an_unencrypted_image_with_no_thumbnail() {
+        // The scaling request is what keeps a full-resolution photo off the
+        // wire when all the UI needs is a row-sized preview.
+        let session = mock_session("media-server-scaled").await;
+        mount_thumbnail(&session, rgba_png(4, 4), 1).await;
+        session
+            .server
+            .mock_authed_media_download()
+            .ok_bytes(rgba_png(4, 4))
+            .expect(0)
+            .mount()
+            .await;
+
+        let decoded = fetch_image(&session.client, &declared(None), ImageSize::Display)
+            .await
+            .expect("the fetch should succeed");
+
+        assert_eq!((decoded.width(), decoded.height()), (4, 4));
+        session.server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn fetches_the_original_file_at_full_size() {
+        let session = mock_session("media-full").await;
+        session
+            .server
+            .mock_authed_media_download()
+            .ok_bytes(rgba_png(4, 4))
+            .expect(1)
+            .mount()
+            .await;
+
+        let decoded = fetch_image(&session.client, &declared(None), ImageSize::Full)
+            .await
+            .expect("the fetch should succeed");
+
+        assert_eq!((decoded.width(), decoded.height()), (4, 4));
+        session.server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn downscales_an_oversized_download_to_the_display_size() {
+        let session = mock_session("media-downscale").await;
+        mount_thumbnail(&session, rgba_png(1000, 1000), 1).await;
+
+        let decoded = fetch_image(&session.client, &declared(None), ImageSize::Display)
+            .await
+            .expect("the fetch should succeed");
+
+        // The homeserver is asked to scale, but nothing obliges it to, so the
+        // ceiling is enforced again on what comes back.
+        assert_eq!((decoded.width(), decoded.height()), (640, 640));
+    }
+
+    #[tokio::test]
+    async fn reports_a_download_the_server_refuses() {
+        let session = mock_session("media-error").await;
+        session
+            .server
+            .mock_authed_media_download()
+            .error500()
+            .mount()
+            .await;
+
+        let error =
+            expect_error(fetch_image(&session.client, &declared(None), ImageSize::Full).await);
+
+        assert!(
+            error.starts_with("Failed to download image"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_a_saved_file_byte_for_byte() {
+        // Saving to disk must not thumbnail, re-encode or truncate: the file has
+        // to land as the sender uploaded it.
+        let session = mock_session("media-file").await;
+        let contents = b"\x00\x01\x02 arbitrary bytes \xff\xfe".to_vec();
+        session
+            .server
+            .mock_authed_media_download()
+            .ok_bytes(contents.clone())
+            .mount()
+            .await;
+
+        let fetched = fetch_file(&session.client, &declared(None))
+            .await
+            .expect("the fetch should succeed");
+
+        assert_eq!(fetched, contents);
+    }
+
+    #[tokio::test]
+    async fn fetches_a_file_of_any_kind_regardless_of_size() {
+        // Unlike a preview, a save has no kind restriction and no byte ceiling.
+        let session = mock_session("media-file-large").await;
+        let contents = vec![7u8; (MAX_PREVIEW_BYTES + 1) as usize];
+        session
+            .server
+            .mock_authed_media_download()
+            .ok_bytes(contents.clone())
+            .mount()
+            .await;
+
+        let attachment = Attachment {
+            kind: crate::rooms::messages::AttachmentKind::File,
+            size: Some(MAX_PREVIEW_BYTES + 1),
+            ..image_attachment()
+        };
+
+        let fetched = fetch_file(&session.client, &attachment)
+            .await
+            .expect("the fetch should succeed");
+
+        assert_eq!(fetched.len(), contents.len());
+    }
+
+    #[tokio::test]
+    async fn more_concurrent_fetches_than_decode_permits_all_complete() {
+        // Decoding is capped so a burst of images cannot have every one of them
+        // holding a full-size buffer at once. The cap must throttle, not drop.
+        let session = mock_session("media-concurrent").await;
+        session
+            .server
+            .mock_authed_media_download()
+            .ok_bytes(rgba_png(8, 8))
+            .mount()
+            .await;
+
+        let fetches = (0..DECODE_PERMITS * 2).map(|_| {
+            let client = session.client.clone();
+            async move {
+                fetch_image(&client, &declared(None), ImageSize::Full)
+                    .await
+                    .map(|image| (image.width(), image.height()))
+            }
+        });
+        let results = futures_util::future::join_all(fetches).await;
+
+        assert_eq!(results.len(), DECODE_PERMITS * 2);
+        for result in results {
+            assert_eq!(result.expect("every fetch should succeed"), (8, 8));
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 mod parse_xdg_download_dir {
     use super::*;

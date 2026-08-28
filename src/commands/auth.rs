@@ -255,3 +255,7 @@ pub async fn list_accounts(state: ClientState) -> Result<String, String> {
     }
     Ok(lines.join("\n"))
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/commands/auth.rs"]
+mod tests;
