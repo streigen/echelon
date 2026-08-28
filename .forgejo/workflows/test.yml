@@ -1,0 +1,27 @@
+name: test
+
+# Every branch, master included. Tags are excluded: a tag points at a commit that
+# was already tested when it was pushed.
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  test:
+    runs-on: hetz
+    container:
+      image: git.flaxeneel2.net/streigen/build-environments/build-environment-linux:142c69403e
+    steps:
+      - name: setup ssh
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
+          chmod 400 ~/.ssh/config
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+      - name: Run tests
+        run: cargo test

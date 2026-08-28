@@ -1,40 +1,21 @@
-name: 'build-test'
+name: build
 
+# Only the two events that need a build. A push to any other branch does not match,
+# so no run is created at all rather than one full of skipped jobs.
 on:
- - pull_request
- - push
+  pull_request:
+  push:
+    branches:
+      - master
 
 jobs:
-  # Runs on every push, master included. Pull requests skip this: the branch push
-  # that produced the commit already ran it.
-  test:
-    if: github.event_name == 'push'
-    runs-on: hetz
-    container:
-      image: git.flaxeneel2.net/streigen/build-environments/build-environment-linux:142c69403e
-    steps:
-      - name: setup ssh
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_CONFIG }}" > ~/.ssh/config
-          chmod 400 ~/.ssh/config
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
-      - name: Run tests
-        run: cargo test
-
-  # The build jobs gate pull requests (debug) and produce the shipped artifacts on
-  # master (release). Any other push only runs `test` above.
   build-windows:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
     runs-on: hetz
     container:
       image: git.flaxeneel2.net/streigen/build-environments/build-environment-windows:142c69403e
     env:
-      # Empty on a pull request, so cargo falls back to the dev profile.
+      # Empty on a pull request, where the ref is refs/pull/N/merge, so cargo falls
+      # back to the dev profile.
       CARGO_PROFILE_ARG: ${{ github.ref == 'refs/heads/master' && '--release' || '' }}
       BUILD_TYPE: ${{ github.ref == 'refs/heads/master' && 'release' || 'debug' }}
     steps:
@@ -62,7 +43,6 @@ jobs:
           path: target/x86_64-pc-windows-msvc/${{ env.BUILD_TYPE }}/echelon.exe
 
   build-linux:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
     runs-on: hetz
     container:
       image: git.flaxeneel2.net/streigen/build-environments/build-environment-linux:142c69403e
@@ -90,7 +70,6 @@ jobs:
           path: target/${{ env.BUILD_TYPE }}/echelon
 
   build-android:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
     runs-on: hetz
     container:
       image: git.flaxeneel2.net/streigen/build-environments/build-environment-android:142c69403e
