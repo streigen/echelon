@@ -114,6 +114,7 @@ let
     export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
     export ANDROID_SDK_HOME="$HOME/.android"
     export ANDROID_AVD_HOME="$HOME/.android/avd"
+    export LLVM_COV_FLAGS="--ignore-filename-regex=^/nix/store/"
     mkdir -p "$ANDROID_AVD_HOME"
     export NDK_HOME="$ANDROID_HOME/ndk-bundle"
     export ANDROID_NDK_HOME="$NDK_HOME"
