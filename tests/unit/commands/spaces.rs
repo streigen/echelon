@@ -338,3 +338,53 @@ async fn a_pair_of_spaces_pointing_at_each_other_disappears_entirely() {
         "giving these a root is a behaviour change, not a test fix"
     );
 }
+
+mod labels {
+    use super::*;
+
+    /// Sync `builder` and hand back the room it describes.
+    ///
+    /// # Arguments
+    /// * `session` - The session to sync into.
+    /// * `room_id` - The room's id.
+    /// * `builder` - The room to sync.
+    async fn joined(session: &MockSession, room_id: &str, builder: JoinedRoomBuilder) -> Room {
+        sync(session, vec![builder]).await;
+        session
+            .client
+            .get_room(room_id.try_into().expect("a valid room id"))
+            .expect("the room was just synced")
+    }
+
+    #[tokio::test]
+    async fn uses_the_name_the_room_was_given() {
+        let session = mock_session("spaces-label-named").await;
+        let room = joined(
+            &session,
+            "!space:example.org",
+            space("!space:example.org", &[]).add_state_event(state_event(
+                "m.room.name",
+                "",
+                serde_json::json!({"name": "Engineering"}),
+            )),
+        )
+        .await;
+
+        assert_eq!(room_label(&room), "Engineering");
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_the_room_id_when_the_room_is_unnamed() {
+        // A space with no `m.room.name` is legal. Labelling it with an empty
+        // string would make two of them indistinguishable in the log this feeds.
+        let session = mock_session("spaces-label-unnamed").await;
+        let room = joined(
+            &session,
+            "!space:example.org",
+            space("!space:example.org", &[]),
+        )
+        .await;
+
+        assert_eq!(room_label(&room), "!space:example.org");
+    }
+}

@@ -7,8 +7,8 @@
 use super::*;
 use crate::test_support::*;
 use matrix_sdk::test_utils::mocks::RoomMessagesResponseTemplate;
-use matrix_sdk_test::JoinedRoomBuilder;
 use matrix_sdk_test::event_factory::EventFactory;
+use matrix_sdk_test::{InvitedRoomBuilder, JoinedRoomBuilder, LeftRoomBuilder};
 use ruma::{RoomId, UserId, event_id, room_id, user_id};
 use serde_json::json;
 
@@ -274,6 +274,53 @@ mod send_message {
             outcome.starts_with("Failed to send message to room !room:localhost"),
             "unexpected error: {outcome}"
         );
+    }
+
+    #[tokio::test]
+    async fn refuses_a_room_the_account_was_only_invited_to() {
+        // The client knows this room, so the "not found" check passes and the
+        // send would otherwise go out and be refused by the homeserver. Saying
+        // so here names a reason the user can act on, and costs no request.
+        let session = mock_session("send-invited").await;
+        session
+            .server
+            .mock_sync()
+            .ok_and_run(&session.client, |builder| {
+                builder.add_invited_room(InvitedRoomBuilder::new(the_room()));
+            })
+            .await;
+        session
+            .server
+            .mock_room_send()
+            .ok(event_id!("$sent"))
+            .expect(0)
+            .mount()
+            .await;
+
+        let outcome = send(&session, "hello")
+            .await
+            .expect_err("the account has not joined this room");
+
+        assert_eq!(outcome, "Not joined to room !room:localhost");
+        session.server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn refuses_a_room_the_account_has_left() {
+        let session = mock_session("send-left").await;
+        session
+            .server
+            .mock_sync()
+            .ok_and_run(&session.client, |builder| {
+                builder.add_left_room(LeftRoomBuilder::new(the_room()));
+            })
+            .await;
+
+        let outcome = send(&session, "hello")
+            .await
+            .expect_err("the account is no longer in this room");
+
+        assert_eq!(outcome, "Not joined to room !room:localhost");
     }
 }
 
@@ -624,5 +671,122 @@ mod pagination {
         let page = page(&session, None, 0).await.expect("the page should build");
 
         assert!(bodies(&page).is_empty());
+    }
+
+    #[tokio::test]
+    async fn reopening_the_same_room_keeps_its_subscription() {
+        // Opening a room takes the event cache subscription over from whichever
+        // room held it. Releasing and retaking it for the room that already has
+        // it would unload the scrollback the user is looking at, so the second
+        // open reads the cache without touching the slot.
+        let session = mock_session("page-reopen").await;
+        sync_room(&session, message_batch(5), Vec::new()).await;
+
+        let first = page(&session, None, 3).await.expect("the page should build");
+        let second = page(&session, None, 3).await.expect("the page should build");
+
+        assert_eq!(bodies(&first), ["message 2", "message 3", "message 4"]);
+        assert_eq!(bodies(&second), bodies(&first));
+        assert_eq!(second.next_token, first.next_token);
+    }
+
+    #[tokio::test]
+    async fn a_fetched_page_with_no_messages_is_anchored_on_a_raw_event() {
+        // A fetch can come back holding nothing the list shows: a run of
+        // membership changes, or reactions. Reporting no token for that reads to
+        // the caller as the start of the room, so the scroll would dead-end
+        // short of the room's actual beginning. The raw event id keeps it going
+        // and resolves as an anchor next time, since the event is in the cache
+        // whether or not it renders.
+        let session = mock_session("page-raw-anchor").await;
+        sync_room_with_older_history(&session, Vec::new()).await;
+        session
+            .server
+            .mock_room_messages()
+            .ok(RoomMessagesResponseTemplate::default()
+                .end_token("older-still")
+                .events(
+                    // Newest first, as a backwards page arrives, and enough of
+                    // them to satisfy the limit in one round so the pagination
+                    // stops short of the room's start.
+                    (0..3)
+                        .map(|n| {
+                            events()
+                                .reaction(event_id!("$absent"), "👍")
+                                .event_id(&ruma::EventId::parse(format!("$reaction{n}")).unwrap())
+                                .into_raw_timeline()
+                        })
+                        .collect::<Vec<_>>(),
+                ))
+            .mount()
+            .await;
+
+        let page = page(&session, None, 3).await.expect("the page should build");
+
+        assert!(bodies(&page).is_empty());
+        assert_eq!(page.next_token.as_deref(), Some("$reaction2"));
+    }
+}
+
+mod oldest_event_id {
+    use super::*;
+
+    /// A batch as `run_backwards_until` returns one: newest first.
+    ///
+    /// # Arguments
+    /// * `ids` - Event ids, newest first.
+    fn newest_first(ids: &[&str]) -> Vec<TimelineEvent> {
+        ids.iter()
+            .map(|id| {
+                timeline_event(json!({
+                    "type": "m.room.message",
+                    "event_id": id,
+                    "sender": "@alice:example.org",
+                    "origin_server_ts": 1_700_000_000_000u64,
+                    "content": {"msgtype": "m.text", "body": "hello"},
+                }))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn takes_the_last_event_of_a_newest_first_batch() {
+        // Reading this from the front would anchor the next page on the newest
+        // event of this one, which asks the server for what was just fetched.
+        assert_eq!(
+            super::super::oldest_event_id(&newest_first(&["$new", "$mid", "$old"])),
+            Some(event_id!("$old").to_owned())
+        );
+    }
+
+    #[test]
+    fn a_single_event_is_its_own_oldest() {
+        assert_eq!(
+            super::super::oldest_event_id(&newest_first(&["$only"])),
+            Some(event_id!("$only").to_owned())
+        );
+    }
+
+    #[test]
+    fn an_empty_batch_has_no_oldest_event() {
+        assert_eq!(super::super::oldest_event_id(&[]), None);
+    }
+
+    #[test]
+    fn skips_past_an_event_that_carries_no_id() {
+        // An event the server sent without an `event_id` cannot anchor
+        // anything, so the search has to keep walking rather than give up.
+        let mut batch = newest_first(&["$new"]);
+        batch.push(timeline_event(json!({
+            "type": "m.room.message",
+            "sender": "@alice:example.org",
+            "origin_server_ts": 1_700_000_000_000u64,
+            "content": {"msgtype": "m.text", "body": "no id"},
+        })));
+
+        assert_eq!(
+            super::super::oldest_event_id(&batch),
+            Some(event_id!("$new").to_owned())
+        );
     }
 }

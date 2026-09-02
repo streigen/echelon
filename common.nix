@@ -78,6 +78,7 @@ let
       "rust-src"
       "rust-analysis"
       "clippy"
+      "llvm-tools-preview"
       "rustfmt"
       "rust-analyzer"
     ];
@@ -162,6 +163,7 @@ in
     nativeBuildInputs = with pkgs; [
       rustToolchain
       cargo-ndk
+      cargo-llvm-cov
       gradle
       xdg-utils
       pkg-config

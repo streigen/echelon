@@ -74,4 +74,46 @@ mod tests {
         // suites run with no event loop.
         assert!(handler.ui_handle.upgrade().is_none());
     }
+
+    /// The handler held by a mock session.
+    ///
+    /// # Arguments
+    /// * `session` - The session to reach into.
+    async fn handler_of(
+        session: &crate::test_support::MockSession,
+    ) -> tokio::sync::RwLockReadGuard<'_, Option<ClientHandler>> {
+        session.state.read().await
+    }
+
+    #[tokio::test]
+    async fn revoking_a_session_invalidates_it_on_the_homeserver() {
+        let session = crate::test_support::mock_session("handler-revoke").await;
+        session.server.mock_logout().ok().expect(1).mount().await;
+
+        let state = handler_of(&session).await;
+        state
+            .as_ref()
+            .expect("the session holds a handler")
+            .revoke_session()
+            .await
+            .expect("the homeserver accepted the logout");
+
+        session.server.verify_and_reset().await;
+    }
+
+    #[tokio::test]
+    async fn reports_a_homeserver_that_refuses_the_logout() {
+        // The caller carries on with a local logout regardless, but it can only
+        // log why if the failure reaches it rather than being swallowed here.
+        let session = crate::test_support::mock_session("handler-revoke-error").await;
+        session.server.mock_logout().error500().mount().await;
+
+        let state = handler_of(&session).await;
+        state
+            .as_ref()
+            .expect("the session holds a handler")
+            .revoke_session()
+            .await
+            .expect_err("the homeserver refused the logout");
+    }
 }
