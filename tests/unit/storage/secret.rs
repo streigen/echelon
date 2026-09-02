@@ -329,6 +329,33 @@ mod deletion {
     }
 
     #[test]
+    fn reports_a_snapshot_that_cannot_be_removed() {
+        // Anything other than "it was already gone" has to be reported, because
+        // the keyring key is deleted immediately afterwards: carrying on would
+        // leave a snapshot on disk that nothing can ever decrypt again.
+        //
+        // A directory standing where the snapshot belongs is the reachable
+        // version of this. A file whose parent denies writes would be the other
+        // one, but that stops failing as soon as the tests run as root.
+        let (dir, secrets) = temp_secret_service("delete-blocked");
+        let snapshot = dir
+            .path()
+            .join(SecretService::user_id_hash("@alice:example.org"));
+        std::fs::create_dir(&snapshot).expect("creating the blocking directory should succeed");
+
+        let error = secrets
+            .delete_session("@alice:example.org")
+            .expect_err("a snapshot that cannot be removed should be reported");
+
+        assert!(
+            error
+                .to_string()
+                .starts_with("Failed to delete stronghold snapshot at"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
     fn deleting_a_user_who_has_nothing_stored_is_not_an_error() {
         // Logout runs this even when the session was never written, so a missing
         // snapshot has to be the normal case rather than a failure.

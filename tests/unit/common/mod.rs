@@ -47,6 +47,42 @@ pub fn install_mock_keyring() {
     });
 }
 
+/// Arm the mock credential store to fail the next operation on one entry.
+///
+/// The mock credential carries a one-shot error that takes precedence over its
+/// normal behaviour and is cleared as soon as it has been returned, so this
+/// injects exactly one failure and leaves the entry working afterwards.
+///
+/// The failure is attached to a single service and account rather than to the
+/// store, and the suites already give each case its own service name, so an
+/// armed failure cannot reach a test running alongside it.
+///
+/// # Arguments
+/// * `service` - The keyring service name the [`KeyringClient`] was built with.
+/// * `account` - The keyring account name the failing call will use.
+/// * `error` - The failure to return once.
+pub fn fail_next_keyring_call(service: &str, account: &str, error: keyring_core::Error) {
+    install_mock_keyring();
+    keyring_core::Entry::new(service, account)
+        .expect("the mock store builds an entry for any name")
+        .as_any()
+        .downcast_ref::<keyring_core::mock::Cred>()
+        .expect("the default store is the mock one")
+        .set_error(error);
+}
+
+/// The error a keyring reports when it is present but cannot be read.
+///
+/// A locked login keyring or a denied portal request is the realistic version of
+/// this, and it is the case that has to be told apart from "no entry yet": one
+/// means the user has to unlock something, the other means there is nothing to
+/// unlock.
+pub fn keyring_locked() -> keyring_core::Error {
+    keyring_core::Error::NoStorageAccess(Box::new(std::io::Error::other(
+        "the credential store is locked",
+    )))
+}
+
 /// An [`EchelonStore`] over a fresh directory, keyed under `name`.
 ///
 /// The returned [`TempDir`] owns the snapshot file, so a test must hold it for

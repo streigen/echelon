@@ -63,3 +63,7 @@ impl KeyringClient {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/storage/keyring_client.rs"]
+mod tests;
