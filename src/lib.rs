@@ -11,6 +11,14 @@ mod events;
 mod rooms;
 mod storage;
 
+/// Fixtures for the unit suites, which live under `tests/unit` rather than
+/// beside the code they cover. Each suite is pulled into the module it tests by
+/// a `#[path]` declaration at the foot of that module's file, so the tests keep
+/// access to private items while the test code stays in one tree.
+#[cfg(test)]
+#[path = "../tests/unit/common/mod.rs"]
+mod test_support;
+
 use app_state::{AppState, app_data_dir};
 use client::ClientHandler;
 use rooms::room_types::SpaceRoom;

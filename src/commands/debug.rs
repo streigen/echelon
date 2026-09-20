@@ -150,3 +150,7 @@ pub async fn dispatch(
         other => Err(format!("unknown command '{other}'")),
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/commands/debug.rs"]
+mod tests;

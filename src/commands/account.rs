@@ -30,3 +30,7 @@ pub async fn reset_account(
         Err(e) => Err(format!("Account reset failed: {}", e)),
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/commands/account.rs"]
+mod tests;

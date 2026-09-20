@@ -235,3 +235,7 @@ async fn resolve_display_names(
     )
     .await
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/commands/messages.rs"]
+mod tests;

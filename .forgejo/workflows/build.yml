@@ -1,14 +1,23 @@
-name: 'build-test'
+name: build
 
+# Only the two events that need a build. A push to any other branch does not match,
+# so no run is created at all rather than one full of skipped jobs.
 on:
- - pull_request
- - push
+  pull_request:
+  push:
+    branches:
+      - master
 
 jobs:
   build-windows:
     runs-on: hetz
     container:
       image: git.flaxeneel2.net/streigen/build-environments/build-environment-windows:142c69403e
+    env:
+      # Empty on a pull request, where the ref is refs/pull/N/merge, so cargo falls
+      # back to the dev profile.
+      CARGO_PROFILE_ARG: ${{ github.ref == 'refs/heads/master' && '--release' || '' }}
+      BUILD_TYPE: ${{ github.ref == 'refs/heads/master' && 'release' || 'debug' }}
     steps:
       - name: setup ssh
         run: |
@@ -21,19 +30,25 @@ jobs:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
       - name: Build Windows
-        run: cargo xwin build --target x86_64-pc-windows-msvc
+        # $CARGO_PROFILE_ARG is intentionally unquoted so an empty value expands to
+        # no argument at all.
+        run: cargo xwin build --target x86_64-pc-windows-msvc $CARGO_PROFILE_ARG
         env:
           RUSTFLAGS: "-C link-arg=/FORCE:MULTIPLE -C link-arg=/ignore:4006 -C link-arg=/NODEFAULTLIB:libucrt.lib -C link-arg=/NODEFAULTLIB:libvcruntime.lib -C link-arg=/NODEFAULTLIB:libcmt.lib -C link-arg=ucrt.lib -C link-arg=vcruntime.lib"
       - name: Upload artifacts
         uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
-          name: windows-x86_64
+          name: windows-x86_64-${{ env.BUILD_TYPE }}
           retention-days: 7
-          path: target/x86_64-pc-windows-msvc/debug/echelon.exe
+          path: target/x86_64-pc-windows-msvc/${{ env.BUILD_TYPE }}/echelon.exe
+
   build-linux:
     runs-on: hetz
     container:
       image: git.flaxeneel2.net/streigen/build-environments/build-environment-linux:142c69403e
+    env:
+      CARGO_PROFILE_ARG: ${{ github.ref == 'refs/heads/master' && '--release' || '' }}
+      BUILD_TYPE: ${{ github.ref == 'refs/heads/master' && 'release' || 'debug' }}
     steps:
       - name: setup ssh
         run: |
@@ -46,18 +61,21 @@ jobs:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
       - name: Build Linux
-        run: cargo build
+        run: cargo build $CARGO_PROFILE_ARG
       - name: Upload Artifacts
         uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
-          name: linux-x86_64
+          name: linux-x86_64-${{ env.BUILD_TYPE }}
           retention-days: 7
-          path: target/debug/echelon
+          path: target/${{ env.BUILD_TYPE }}/echelon
 
   build-android:
     runs-on: hetz
     container:
       image: git.flaxeneel2.net/streigen/build-environments/build-environment-android:142c69403e
+    env:
+      CARGO_PROFILE_ARG: ${{ github.ref == 'refs/heads/master' && '--release' || '' }}
+      BUILD_TYPE: ${{ github.ref == 'refs/heads/master' && 'release' || 'debug' }}
     steps:
       - name: setup ssh
         run: |
@@ -69,6 +87,8 @@ jobs:
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           ssh-known-hosts: "${{ secrets.SSH_KNOWN_HOSTS }}"
+      # The release build type signs with this keystore too, so it is needed for
+      # both profiles.
       - name: Write android debug keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
@@ -77,15 +97,14 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
           chmod 400 ~/.android/debug.keystore
       - name: Build Android
-        run: bash scripts/android-build.sh
+        run: bash scripts/android-build.sh $CARGO_PROFILE_ARG
         env:
           CARGO_PROFILE_DEV_DEBUG: 1
       - name: Upload Artifacts
         uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
-          name: android-arm64-x86_64
+          name: android-arm64-x86_64-${{ env.BUILD_TYPE }}
           retention-days: 7
           path: |
-            android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-            android/app/build/outputs/apk/debug/app-x86_64-debug.apk
-
+            android/app/build/outputs/apk/${{ env.BUILD_TYPE }}/app-arm64-v8a-${{ env.BUILD_TYPE }}.apk
+            android/app/build/outputs/apk/${{ env.BUILD_TYPE }}/app-x86_64-${{ env.BUILD_TYPE }}.apk

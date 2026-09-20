@@ -87,3 +87,7 @@ async fn get_orphaned_rooms(client: &Client) -> Result<Vec<Room>, String> {
 
     Ok(other_rooms)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/commands/dm.rs"]
+mod tests;

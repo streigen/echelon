@@ -20,3 +20,7 @@ pub(crate) fn is_active_room(room_id: &RoomId) -> bool {
     let active = ACTIVE_ROOM.read().unwrap_or_else(|e| e.into_inner());
     active.as_deref() == Some(room_id)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/rooms/mod.rs"]
+mod tests;

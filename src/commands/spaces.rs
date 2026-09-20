@@ -125,3 +125,7 @@ fn build_tree(
         children: children_nodes,
     })
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/commands/spaces.rs"]
+mod tests;

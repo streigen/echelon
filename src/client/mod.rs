@@ -17,6 +17,13 @@ mod password_auth;
 mod registration;
 pub mod sync_manager;
 
+/// Test fixture that assembles a handler around a caller-supplied client. Lives
+/// here rather than with the other fixtures because the handler's fields are
+/// private to this module, and only a module inside it can set them.
+#[cfg(test)]
+#[path = "../../tests/unit/common/client_handler.rs"]
+pub(crate) mod test_handler;
+
 use active_room::ActiveRoomSlot;
 
 pub type ClientState = Arc<RwLock<Option<ClientHandler>>>;
@@ -66,6 +73,17 @@ impl ClientHandler {
 
     pub async fn stop_sync(&self) {
         self.sync_manager.stop_sync().await;
+    }
+
+    /// Invalidate this session on the homeserver.
+    ///
+    /// [`Client::logout`] picks the right endpoint (`/logout` for a password
+    /// session, OAuth token revocation for an OAuth one) based on which
+    /// authentication API the client is currently using, so callers don't
+    /// need to track that themselves.
+    pub async fn revoke_session(&self) -> anyhow::Result<()> {
+        self.matrix_client.logout().await?;
+        Ok(())
     }
 }
 

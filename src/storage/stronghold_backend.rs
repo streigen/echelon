@@ -39,3 +39,7 @@ pub(crate) fn commit_store(
 ) -> Result<()> {
     Ok(stronghold.commit_with_keyprovider(snapshot_path, key_provider)?)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/storage/stronghold_backend.rs"]
+mod tests;
