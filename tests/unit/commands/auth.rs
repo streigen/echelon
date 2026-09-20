@@ -420,7 +420,7 @@ mod logout {
     #[tokio::test]
     async fn clears_the_client_state() {
         let session = signed_in("auth-logout").await;
-        session.server.mock_logout().ok().mount().await;
+        session.server.mock_logout().expect_access_token("abc123").ok().expect(1).mount().await;
 
         let outcome = super::super::logout(session.state.clone())
             .await
@@ -433,7 +433,7 @@ mod logout {
     #[tokio::test]
     async fn forgets_the_account_and_its_secrets() {
         let session = signed_in("auth-logout-cleanup").await;
-        session.server.mock_logout().ok().mount().await;
+        session.server.mock_logout().expect_access_token("abc123").ok().expect(1).mount().await;
 
         super::super::logout(session.state.clone())
             .await
@@ -463,7 +463,23 @@ mod logout {
         // the user in a session the app will not let them leave. The local
         // cleanup happens either way.
         let session = signed_in("auth-logout-server-error").await;
-        session.server.mock_logout().error500().mount().await;
+        let client = session.server.client_builder().logged_in_with_token(
+            "abc123".to_owned(),
+            USER_ID.parse().expect("valid fixture user id"),
+            DEVICE_ID.into(),
+        ).build().await;
+
+        {
+            let mut state = session.state.write().await;
+            state.as_ref().expect("signed-in handler").stop_sync().await;
+            *state = Some(crate::client::test_handler::handler_from_parts(
+                client,
+                session.app_state.clone(),
+                slint::Weak::default(),
+            ));
+        }
+
+        session.server.mock_logout().expect_access_token("abc123").error500().expect(1).mount().await;
 
         let outcome = super::super::logout(session.state.clone())
             .await
