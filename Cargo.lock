@@ -2016,6 +2016,7 @@ dependencies = [
  "anyhow",
  "apple-native-keyring-store",
  "blake3",
+ "crc32fast",
  "futures-core",
  "futures-util",
  "image",

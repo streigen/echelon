@@ -452,7 +452,8 @@ mod decode_image {
         // into a multi-gigabyte buffer by a sender.
         let bytes = png_header_claiming(MAX_DECODE_EDGE + 1, MAX_DECODE_EDGE + 1);
 
-        assert!(decode_image(bytes, 640).is_err());
+        let error = decode_error(bytes);
+        assert_eq!(error, "Failed to read image header: Image size exceeds limit");
     }
 
     /// A PNG whose `IHDR` declares `width` x `height` without carrying the pixels
@@ -467,7 +468,11 @@ mod decode_image {
         // length and 4-byte type, so its width and height sit at bytes 16 and 20.
         bytes[16..20].copy_from_slice(&width.to_be_bytes());
         bytes[20..24].copy_from_slice(&height.to_be_bytes());
+
+        let checksum = crc32fast::hash(&bytes[12..29]);
+        bytes[29..33].copy_from_slice(&checksum.to_be_bytes());
         bytes
+
     }
 }
 

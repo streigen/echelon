@@ -72,6 +72,7 @@ tempfile = "3"
 matrix-sdk = { version = "0.18.0", features = ["testing"] }
 matrix-sdk-test = "0.18.0"
 wiremock = "0.6"
+crc32fast = "1.5"
 
 [build-dependencies]
 slint-build = "1.17.0"
