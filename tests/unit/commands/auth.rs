@@ -526,6 +526,16 @@ mod restore_session {
         .await
         .expect("signing in should succeed");
 
+        let client = session.server.client_builder().unlogged().build().await;
+
+        {
+            let mut state = session.state.write().await;
+            state.as_ref().expect("signed-in handler").stop_sync().await;
+            *state = Some(crate::client::test_handler::handler_from_parts(client, session.app_state.clone(), slint::Weak::default()));
+        }
+
+        assert_eq!(signed_in_as(&session.state).await, None);
+
         let outcome = super::super::restore_session(
             USER_ID.to_owned(),
             Some(session.server.uri()),
