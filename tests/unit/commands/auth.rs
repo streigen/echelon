@@ -345,6 +345,18 @@ mod register {
         .expect("registration should succeed after the challenge");
 
         assert_eq!(outcome, "registered");
+
+        let requests = session.server.received_requests().await.expect("could not retrieve the fake server's request history");
+        let registration_reqs: Vec<_> = requests.iter().filter(|request| {
+            request.method.as_str() == "POST" && request.url.path() == "/_matrix/client/v3/register"
+        }).collect();
+
+        assert_eq!(registration_reqs.len(), 2, "expected the initial registration request and one retry");
+
+        let retry_body: serde_json::Value = serde_json::from_slice(&registration_reqs[1].body).expect("the registration retry should contain valid JSON");
+        assert_eq!(retry_body["auth"]["token"], "secret-token");
+        assert_eq!(retry_body["auth"]["session"], "uiaa-session");
+        assert_eq!(retry_body["auth"]["type"], "m.login.registration_token");
     }
 
     #[tokio::test]
