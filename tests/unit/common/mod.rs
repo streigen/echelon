@@ -14,9 +14,7 @@ use matrix_sdk::deserialized_responses::TimelineEvent;
 use matrix_sdk::test_utils::mocks::MatrixMockServer;
 use ruma::OwnedMxcUri;
 use ruma::events::AnySyncTimelineEvent;
-use ruma::events::room::{
-    EncryptedFile, EncryptedFileHashes, MediaSource, V2EncryptedFileInfo,
-};
+use ruma::events::room::{EncryptedFile, EncryptedFileHashes, MediaSource, V2EncryptedFileInfo};
 use ruma::serde::Raw;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -356,8 +354,15 @@ pub fn space_create_event() -> Raw<ruma::events::AnySyncStateEvent> {
 /// * `child_room_id` - The room the edge points to.
 /// * `via` - Servers through which the child can be reached. An edge with none
 ///   is not a valid child link.
-pub fn space_child_event(child_room_id: &str, via: &[&str]) -> Raw<ruma::events::AnySyncStateEvent> {
-    state_event("m.space.child", child_room_id, serde_json::json!({"via": via}))
+pub fn space_child_event(
+    child_room_id: &str,
+    via: &[&str],
+) -> Raw<ruma::events::AnySyncStateEvent> {
+    state_event(
+        "m.space.child",
+        child_room_id,
+        serde_json::json!({"via": via}),
+    )
 }
 
 /// An `m.space.parent` event pointing a room at `parent_room_id`.

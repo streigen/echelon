@@ -319,7 +319,10 @@ mod deletion {
         let snapshot = dir
             .path()
             .join(SecretService::user_id_hash("@alice:example.org"));
-        assert!(snapshot.is_file(), "the snapshot should exist to begin with");
+        assert!(
+            snapshot.is_file(),
+            "the snapshot should exist to begin with"
+        );
 
         secrets
             .delete_session("@alice:example.org")

@@ -54,9 +54,19 @@ async fn signed_in_as(state: &ClientState) -> Option<String> {
 /// # Arguments
 /// * `session` - The session whose server to mount on.
 async fn mock_sign_in(session: &MockSession) {
-    session.server.mock_versions().ok().named("versions").mount().await;
+    session
+        .server
+        .mock_versions()
+        .ok()
+        .named("versions")
+        .mount()
+        .await;
     session.server.mock_login().ok().mount().await;
-    session.server.mock_sync().ok_and_run(&session.client, |_| {}).await;
+    session
+        .server
+        .mock_sync()
+        .ok_and_run(&session.client, |_| {})
+        .await;
 }
 
 /// Mount a `/register` endpoint returning `response` for each call in turn.
@@ -245,7 +255,10 @@ mod login {
             .get_account(USER_ID)
             .expect("reading the store should succeed")
             .expect("the account was just added");
-        assert_eq!(account.homeserver.as_deref(), Some(session.server.uri().as_str()));
+        assert_eq!(
+            account.homeserver.as_deref(),
+            Some(session.server.uri().as_str())
+        );
     }
 
     #[tokio::test]
@@ -307,7 +320,11 @@ mod register {
     async fn creates_an_account_and_signs_in() {
         let session = mock_session("auth-register").await;
         session.server.mock_versions().ok().mount().await;
-        session.server.mock_sync().ok_and_run(&session.client, |_| {}).await;
+        session
+            .server
+            .mock_sync()
+            .ok_and_run(&session.client, |_| {})
+            .await;
         mock_register(&session, vec![registered_body()]).await;
 
         let outcome = super::super::register(
@@ -331,7 +348,11 @@ mod register {
         // attached, or the server treats it as a fresh unauthenticated attempt.
         let session = mock_session("auth-register-uiaa").await;
         session.server.mock_versions().ok().mount().await;
-        session.server.mock_sync().ok_and_run(&session.client, |_| {}).await;
+        session
+            .server
+            .mock_sync()
+            .ok_and_run(&session.client, |_| {})
+            .await;
         mock_register(&session, vec![needs_token_body(), registered_body()]).await;
 
         let outcome = super::super::register(
@@ -346,14 +367,27 @@ mod register {
 
         assert_eq!(outcome, "registered");
 
-        let requests = session.server.received_requests().await.expect("could not retrieve the fake server's request history");
-        let registration_reqs: Vec<_> = requests.iter().filter(|request| {
-            request.method.as_str() == "POST" && request.url.path() == "/_matrix/client/v3/register"
-        }).collect();
+        let requests = session
+            .server
+            .received_requests()
+            .await
+            .expect("could not retrieve the fake server's request history");
+        let registration_reqs: Vec<_> = requests
+            .iter()
+            .filter(|request| {
+                request.method.as_str() == "POST"
+                    && request.url.path() == "/_matrix/client/v3/register"
+            })
+            .collect();
 
-        assert_eq!(registration_reqs.len(), 2, "expected the initial registration request and one retry");
+        assert_eq!(
+            registration_reqs.len(),
+            2,
+            "expected the initial registration request and one retry"
+        );
 
-        let retry_body: serde_json::Value = serde_json::from_slice(&registration_reqs[1].body).expect("the registration retry should contain valid JSON");
+        let retry_body: serde_json::Value = serde_json::from_slice(&registration_reqs[1].body)
+            .expect("the registration retry should contain valid JSON");
         assert_eq!(retry_body["auth"]["token"], "secret-token");
         assert_eq!(retry_body["auth"]["session"], "uiaa-session");
         assert_eq!(retry_body["auth"]["type"], "m.login.registration_token");
@@ -432,7 +466,14 @@ mod logout {
     #[tokio::test]
     async fn clears_the_client_state() {
         let session = signed_in("auth-logout").await;
-        session.server.mock_logout().expect_access_token("abc123").ok().expect(1).mount().await;
+        session
+            .server
+            .mock_logout()
+            .expect_access_token("abc123")
+            .ok()
+            .expect(1)
+            .mount()
+            .await;
 
         let outcome = super::super::logout(session.state.clone())
             .await
@@ -445,7 +486,14 @@ mod logout {
     #[tokio::test]
     async fn forgets_the_account_and_its_secrets() {
         let session = signed_in("auth-logout-cleanup").await;
-        session.server.mock_logout().expect_access_token("abc123").ok().expect(1).mount().await;
+        session
+            .server
+            .mock_logout()
+            .expect_access_token("abc123")
+            .ok()
+            .expect(1)
+            .mount()
+            .await;
 
         super::super::logout(session.state.clone())
             .await
@@ -475,11 +523,16 @@ mod logout {
         // the user in a session the app will not let them leave. The local
         // cleanup happens either way.
         let session = signed_in("auth-logout-server-error").await;
-        let client = session.server.client_builder().logged_in_with_token(
-            "abc123".to_owned(),
-            USER_ID.parse().expect("valid fixture user id"),
-            DEVICE_ID.into(),
-        ).build().await;
+        let client = session
+            .server
+            .client_builder()
+            .logged_in_with_token(
+                "abc123".to_owned(),
+                USER_ID.parse().expect("valid fixture user id"),
+                DEVICE_ID.into(),
+            )
+            .build()
+            .await;
 
         {
             let mut state = session.state.write().await;
@@ -491,7 +544,14 @@ mod logout {
             ));
         }
 
-        session.server.mock_logout().expect_access_token("abc123").error500().expect(1).mount().await;
+        session
+            .server
+            .mock_logout()
+            .expect_access_token("abc123")
+            .error500()
+            .expect(1)
+            .mount()
+            .await;
 
         let outcome = super::super::logout(session.state.clone())
             .await
@@ -531,7 +591,11 @@ mod restore_session {
         {
             let mut state = session.state.write().await;
             state.as_ref().expect("signed-in handler").stop_sync().await;
-            *state = Some(crate::client::test_handler::handler_from_parts(client, session.app_state.clone(), slint::Weak::default()));
+            *state = Some(crate::client::test_handler::handler_from_parts(
+                client,
+                session.app_state.clone(),
+                slint::Weak::default(),
+            ));
         }
 
         assert_eq!(signed_in_as(&session.state).await, None);

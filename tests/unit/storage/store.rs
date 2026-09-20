@@ -98,10 +98,7 @@ mod adding {
             .add_account("@bob:example.org", "https://example.org")
             .expect("adding should succeed");
 
-        assert_eq!(
-            user_ids(&store),
-            ["@bob:example.org", "@alice:example.org"]
-        );
+        assert_eq!(user_ids(&store), ["@bob:example.org", "@alice:example.org"]);
     }
 
     #[test]
@@ -118,10 +115,7 @@ mod adding {
             .add_account("@alice:example.org", "https://example.org")
             .expect("adding should succeed");
 
-        assert_eq!(
-            user_ids(&store),
-            ["@alice:example.org", "@bob:example.org"]
-        );
+        assert_eq!(user_ids(&store), ["@alice:example.org", "@bob:example.org"]);
     }
 
     #[test]
@@ -328,10 +322,7 @@ mod legacy_snapshots {
 
         let accounts = store.get_accounts().expect("reading should succeed");
 
-        assert_eq!(
-            user_ids(&store),
-            ["@alice:example.org", "@bob:example.org"]
-        );
+        assert_eq!(user_ids(&store), ["@alice:example.org", "@bob:example.org"]);
         assert_eq!(accounts.last.as_deref(), Some("@alice:example.org"));
         // A bare id says nothing about where the account lives, so the
         // homeserver has to be rediscovered rather than guessed.

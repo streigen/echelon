@@ -210,7 +210,9 @@ mod source_for {
 
         assert_eq!(choice.declared_bytes, Some(1024));
         assert!(!choice.server_scaled);
-        assert!(matches!(choice.source, MediaSource::Plain(uri) if uri == "mxc://example.org/thumb"));
+        assert!(
+            matches!(choice.source, MediaSource::Plain(uri) if uri == "mxc://example.org/thumb")
+        );
     }
 
     #[test]
@@ -260,7 +262,9 @@ mod source_for {
 
         assert_eq!(choice.declared_bytes, Some(9_000_000));
         assert!(!choice.server_scaled);
-        assert!(matches!(choice.source, MediaSource::Plain(uri) if uri == "mxc://example.org/full"));
+        assert!(
+            matches!(choice.source, MediaSource::Plain(uri) if uri == "mxc://example.org/full")
+        );
     }
 }
 
@@ -299,7 +303,10 @@ mod previewable {
             ..image_attachment()
         };
 
-        assert_eq!(attachment.source_for(ImageSize::Display).declared_bytes, None);
+        assert_eq!(
+            attachment.source_for(ImageSize::Display).declared_bytes,
+            None
+        );
         assert!(attachment.previewable());
     }
 
@@ -453,7 +460,10 @@ mod decode_image {
         let bytes = png_header_claiming(MAX_DECODE_EDGE + 1, MAX_DECODE_EDGE + 1);
 
         let error = decode_error(bytes);
-        assert_eq!(error, "Failed to read image header: Image size exceeds limit");
+        assert_eq!(
+            error,
+            "Failed to read image header: Image size exceeds limit"
+        );
     }
 
     /// A PNG whose `IHDR` declares `width` x `height` without carrying the pixels
@@ -472,7 +482,6 @@ mod decode_image {
         let checksum = crc32fast::hash(&bytes[12..29]);
         bytes[29..33].copy_from_slice(&checksum.to_be_bytes());
         bytes
-
     }
 }
 
@@ -487,7 +496,10 @@ mod write_new_file {
             write_new_file(dir.path(), "photo.jpg", b"contents").expect("the write should succeed");
 
         assert_eq!(written, dir.path().join("photo.jpg"));
-        assert_eq!(std::fs::read(&written).expect("the file exists"), b"contents");
+        assert_eq!(
+            std::fs::read(&written).expect("the file exists"),
+            b"contents"
+        );
     }
 
     #[test]
@@ -672,9 +684,8 @@ mod fetching {
         let oversized = vec![0u8; (MAX_PREVIEW_BYTES + 1) as usize];
         mount_thumbnail(&session, oversized, 1).await;
 
-        let error = expect_error(
-            fetch_image(&session.client, &declared(None), ImageSize::Display).await,
-        );
+        let error =
+            expect_error(fetch_image(&session.client, &declared(None), ImageSize::Display).await);
 
         assert_eq!(error, over_limit(MAX_PREVIEW_BYTES + 1, MAX_PREVIEW_BYTES));
     }

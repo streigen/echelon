@@ -41,8 +41,8 @@ mod room_messages {
 
     /// Classify an `m.room.message` from its content object.
     fn classify(content: Value) -> EventEffect {
-        let event: SyncRoomMessageEvent = serde_json::from_value(message_event(content))
-            .expect("the fixture should deserialize");
+        let event: SyncRoomMessageEvent =
+            serde_json::from_value(message_event(content)).expect("the fixture should deserialize");
         effect_of_room_message(event)
     }
 
@@ -136,8 +136,8 @@ mod attachments {
 
     /// The attachment extracted from an `m.room.message` content object.
     fn attachment_from(content: Value) -> Option<Attachment> {
-        let event: SyncRoomMessageEvent = serde_json::from_value(message_event(content))
-            .expect("the fixture should deserialize");
+        let event: SyncRoomMessageEvent =
+            serde_json::from_value(message_event(content)).expect("the fixture should deserialize");
         expect_new(effect_of_room_message(event)).attachment
     }
 

@@ -216,7 +216,12 @@ mod send_message {
     async fn sends_into_a_joined_room() {
         let session = mock_session("send-ok").await;
         sync_room(&session, Vec::new(), Vec::new()).await;
-        session.server.mock_room_state_encryption().plain().mount().await;
+        session
+            .server
+            .mock_room_state_encryption()
+            .plain()
+            .mount()
+            .await;
         session
             .server
             .mock_room_send()
@@ -225,7 +230,9 @@ mod send_message {
             .mount()
             .await;
 
-        let sent = send(&session, "hello").await.expect("sending should succeed");
+        let sent = send(&session, "hello")
+            .await
+            .expect("sending should succeed");
 
         assert_eq!(sent, "$sent");
     }
@@ -236,7 +243,12 @@ mod send_message {
         // used a different one would leave that row stuck as pending forever.
         let session = mock_session("send-txn").await;
         sync_room(&session, Vec::new(), Vec::new()).await;
-        session.server.mock_room_state_encryption().plain().mount().await;
+        session
+            .server
+            .mock_room_state_encryption()
+            .plain()
+            .mount()
+            .await;
         session
             .server
             .mock_room_send()
@@ -244,7 +256,9 @@ mod send_message {
             .mount()
             .await;
 
-        send(&session, "hello").await.expect("sending should succeed");
+        send(&session, "hello")
+            .await
+            .expect("sending should succeed");
 
         let requests = session
             .server
@@ -263,7 +277,12 @@ mod send_message {
     async fn reports_a_server_refusal() {
         let session = mock_session("send-error").await;
         sync_room(&session, Vec::new(), Vec::new()).await;
-        session.server.mock_room_state_encryption().plain().mount().await;
+        session
+            .server
+            .mock_room_state_encryption()
+            .plain()
+            .mount()
+            .await;
         session.server.mock_room_send().error500().mount().await;
 
         let outcome = send(&session, "hello")
@@ -366,10 +385,9 @@ mod own_display_name {
     async fn reports_an_unknown_room() {
         let session = mock_session("name-unknown-room").await;
 
-        let outcome =
-            super::super::own_display_name(session.state.clone(), the_room().to_owned())
-                .await
-                .expect_err("the room was never joined");
+        let outcome = super::super::own_display_name(session.state.clone(), the_room().to_owned())
+            .await
+            .expect_err("the room was never joined");
 
         assert_eq!(outcome, "Room !room:localhost not found");
     }
@@ -393,7 +411,12 @@ mod own_display_name {
         // to the full user id. The full-id fallback in `display_name` is for a
         // member the client has no event for at all, which is a different case.
         let session = mock_session("name-unset").await;
-        sync_room(&session, Vec::new(), vec![member("@example:localhost", None)]).await;
+        sync_room(
+            &session,
+            Vec::new(),
+            vec![member("@example:localhost", None)],
+        )
+        .await;
 
         assert_eq!(name(&session).await, "example");
     }
@@ -509,7 +532,9 @@ mod pagination {
             .mount()
             .await;
 
-        let page = page(&session, None, 3).await.expect("the page should build");
+        let page = page(&session, None, 3)
+            .await
+            .expect("the page should build");
 
         assert_eq!(bodies(&page), ["message 2", "message 3", "message 4"]);
         session.server.verify_and_reset().await;
@@ -520,7 +545,9 @@ mod pagination {
         let session = mock_session("page-token").await;
         sync_room(&session, message_batch(5), Vec::new()).await;
 
-        let page = page(&session, None, 3).await.expect("the page should build");
+        let page = page(&session, None, 3)
+            .await
+            .expect("the page should build");
 
         assert_eq!(page.next_token.as_deref(), Some("$message2"));
     }
@@ -553,7 +580,9 @@ mod pagination {
             .mount()
             .await;
 
-        let page = page(&session, None, 10).await.expect("the page should build");
+        let page = page(&session, None, 10)
+            .await
+            .expect("the page should build");
 
         assert_eq!(bodies(&page), ["message 0"]);
         assert_eq!(page.next_token.as_deref(), Some("$message0"));
@@ -577,7 +606,9 @@ mod pagination {
             .mount()
             .await;
 
-        let page = page(&session, None, 10).await.expect("the page should build");
+        let page = page(&session, None, 10)
+            .await
+            .expect("the page should build");
 
         assert!(bodies(&page).contains(&"older".to_owned()));
         session.server.verify_and_reset().await;
@@ -596,7 +627,9 @@ mod pagination {
             .mount()
             .await;
 
-        let page = page(&session, None, 10).await.expect("the page should build");
+        let page = page(&session, None, 10)
+            .await
+            .expect("the page should build");
 
         assert_eq!(page.next_token, None);
     }
@@ -630,7 +663,9 @@ mod pagination {
             .mount()
             .await;
 
-        let _page = page(&session, None, 3).await.expect("the page should build");
+        let _page = page(&session, None, 3)
+            .await
+            .expect("the page should build");
 
         session.server.verify_and_reset().await;
     }
@@ -649,7 +684,9 @@ mod pagination {
         )
         .await;
 
-        let page = page(&session, None, 2).await.expect("the page should build");
+        let page = page(&session, None, 2)
+            .await
+            .expect("the page should build");
 
         assert_eq!(
             page.display_names.get(alice()).map(String::as_str),
@@ -668,7 +705,9 @@ mod pagination {
             .mount()
             .await;
 
-        let page = page(&session, None, 0).await.expect("the page should build");
+        let page = page(&session, None, 0)
+            .await
+            .expect("the page should build");
 
         assert!(bodies(&page).is_empty());
     }
@@ -682,8 +721,12 @@ mod pagination {
         let session = mock_session("page-reopen").await;
         sync_room(&session, message_batch(5), Vec::new()).await;
 
-        let first = page(&session, None, 3).await.expect("the page should build");
-        let second = page(&session, None, 3).await.expect("the page should build");
+        let first = page(&session, None, 3)
+            .await
+            .expect("the page should build");
+        let second = page(&session, None, 3)
+            .await
+            .expect("the page should build");
 
         assert_eq!(bodies(&first), ["message 2", "message 3", "message 4"]);
         assert_eq!(bodies(&second), bodies(&first));
@@ -721,7 +764,9 @@ mod pagination {
             .mount()
             .await;
 
-        let page = page(&session, None, 3).await.expect("the page should build");
+        let page = page(&session, None, 3)
+            .await
+            .expect("the page should build");
 
         assert!(bodies(&page).is_empty());
         assert_eq!(page.next_token.as_deref(), Some("$reaction2"));

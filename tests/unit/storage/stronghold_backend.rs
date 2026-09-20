@@ -78,8 +78,8 @@ mod missing_snapshot {
     fn creates_the_snapshot_when_it_is_allowed_to() {
         let (_dir, path) = empty_snapshot();
 
-        let opened = open_store(&key("passphrase"), &path, "client", true)
-            .expect("creating should succeed");
+        let opened =
+            open_store(&key("passphrase"), &path, "client", true).expect("creating should succeed");
 
         assert!(opened.is_some());
     }
