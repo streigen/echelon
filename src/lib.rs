@@ -964,7 +964,10 @@ fn android_main(app: slint::android::AndroidApp) {
 }
 
 pub async fn run_app() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     keyring_init();
     let data_dir = app_data_dir(APP_ID);

@@ -88,9 +88,19 @@ To install the app in the emulator/on your device, you need to first build the a
 adb install -r android/app/build/outputs/apk/release/app-x86_64-release.apk
 ```
 
-#### Debugging
+### Debugging
 
-To debug the app, you can use logcat to view the logs.
+#### Desktop
+
+The application uses `tracing` for logging. You can control the log level using the `RUST_LOG` environment variable. The default log level is `warn`.
+
+```sh
+RUST_LOG=debug cargo run
+```
+
+#### Android
+
+To debug the app on Android, you can use logcat to view the logs.
 
 ```sh
 adb logcat -s 'RustStdoutStderr:* AndroidRuntime:E DEBUG:* *:F'
