@@ -6,9 +6,9 @@ use matrix_sdk::utils::local_server::LocalServerBuilder;
 use ruma::serde::Raw;
 use url::Url;
 
+use crate::client::session_of;
 use crate::client::sync_manager::SyncManager;
 use crate::events::client_events::ClientEvents;
-use crate::storage::secret::Session;
 
 use super::ClientHandler;
 
@@ -33,7 +33,7 @@ impl ClientHandler {
         if login {
             // oauth.restore_registered_client()
         } else {
-            let url = Url::parse("https://github.com/flaxeneel2/echelon/")?;
+            let url = Url::parse("https://git.flaxeneel2.net/streigen/echelon/")?;
             let new_client_url = Localized::new(url, Vec::new());
             let grant_types: Vec<OAuthGrantType> = vec![
                 OAuthGrantType::AuthorizationCode {
@@ -62,31 +62,35 @@ impl ClientHandler {
             .finish_login(UrlOrQuery::Query(query.to_string()))
             .await?;
 
-        let session_tokens = new_client
-            .session_tokens()
-            .ok_or_else(|| anyhow::anyhow!("Missing session tokens after OAuth login"))?;
-        let user_id = new_client
-            .user_id()
-            .ok_or_else(|| anyhow::anyhow!("Missing user_id after OAuth login"))?
-            .to_string();
-        self.app_state.secret_service.set_session(&Session {
-            user_id: user_id.clone(),
-            device_id: new_client
-                .device_id()
-                .map(|d| d.to_string())
-                .unwrap_or_default(),
-            access_token: session_tokens.access_token,
-            refresh_token: session_tokens.refresh_token,
-        })?;
+        let auth_session = new_client
+            .session()
+            .ok_or_else(|| anyhow::anyhow!("Missing OAuth session afte login"))?;
+        let session = session_of(&new_client)?;
+        let user_id = session.user_id.clone();
 
+        self.app_state.secret_service.set_session(&session)?;
         self.app_state
             .echelon_store
             .add_account(&user_id, &homeserver)?;
 
-        ClientEvents::register_events(&new_client, self.ui_handle.clone());
+        drop(oauth);
+        drop(new_client);
+
+        let sqlite_pwd = self
+            .app_state
+            .secret_service
+            .get_or_create_sqlite_pwd(&user_id)?;
+
+        let persistent_client = self
+            .get_new_client(&user_id, &homeserver, &sqlite_pwd)
+            .await?;
+
+        persistent_client.restore_session(auth_session).await?;
+
+        ClientEvents::register_events(&persistent_client, self.ui_handle.clone());
 
         Ok(Some(ClientHandler {
-            matrix_client: new_client,
+            matrix_client: persistent_client,
             sync_manager: SyncManager::new(),
             active_room: Default::default(),
             app_state: self.app_state.clone(),
