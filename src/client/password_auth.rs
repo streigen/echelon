@@ -112,6 +112,8 @@ impl ClientHandler {
                 .await?;
         }
 
+        self.configure_session_persistence(&new_client, &user_id)?;
+
         ClientEvents::register_events(&new_client, self.ui_handle.clone());
 
         Ok(Some(ClientHandler {

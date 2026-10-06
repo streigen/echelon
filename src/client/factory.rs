@@ -23,6 +23,7 @@ impl ClientHandler {
     ) -> Result<Client> {
         let client = Client::builder()
             .homeserver_url(new_homeserver)
+            .handle_refresh_tokens()
             .sqlite_store(
                 self.app_state
                     .data_dir
@@ -37,6 +38,52 @@ impl ClientHandler {
         client.event_cache().subscribe()?;
 
         Ok(client)
+    }
+
+    /// Persist token rotations made by the SDK so a restored client always has
+    /// the current access and refresh token pair.
+    pub(super) fn configure_session_persistence(
+        &self,
+        client: &Client,
+        user_id: &str,
+    ) -> Result<()> {
+        let reload_state = self.app_state.clone();
+        let reload_user_id = user_id.to_owned();
+        let save_state = self.app_state.clone();
+        let save_user_id = user_id.to_owned();
+
+        client.set_session_callbacks(
+            Box::new(move |_| {
+                let session = reload_state
+                    .secret_service
+                    .get_session(&reload_user_id)
+                    .map_err(|error| std::io::Error::other(error.to_string()))?
+                    .ok_or_else(|| std::io::Error::other("No stored session tokens"))?;
+
+                Ok(matrix_sdk::SessionTokens {
+                    access_token: session.access_token.clone(),
+                    refresh_token: session.refresh_token.clone(),
+                })
+            }),
+            Box::new(move |client: Client| {
+                let tokens = client
+                    .session_tokens()
+                    .ok_or_else(|| std::io::Error::other("Client has no session tokens"))?;
+
+                save_state
+                    .secret_service
+                    .set_session_tokens(
+                        &save_user_id,
+                        &tokens.access_token,
+                        tokens.refresh_token.as_deref(),
+                    )
+                    .map_err(|error| std::io::Error::other(error.to_string()))?;
+
+                Ok(())
+            }),
+        )?;
+
+        Ok(())
     }
 
     /// Build an unauthenticated, store-less client for initial auth requests.

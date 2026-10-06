@@ -149,6 +149,29 @@ mod sessions {
     }
 
     #[test]
+    fn updating_tokens_preserves_session_metadata_and_replaces_the_pair() {
+        let (_dir, secrets) = temp_secret_service("session-token-rotation");
+        let mut initial = session("@alice:example.org", Some("old-refresh"));
+        initial.oauth_client_id = Some("client-123".to_owned());
+        secrets
+            .set_session(&initial)
+            .expect("storing should succeed");
+
+        secrets
+            .set_session_tokens("@alice:example.org", "new-access", Some("new-refresh"))
+            .expect("storing rotated tokens should succeed");
+
+        let stored = secrets
+            .get_session("@alice:example.org")
+            .expect("reading should succeed")
+            .expect("the session was just stored");
+        assert_eq!(stored.access_token, "new-access");
+        assert_eq!(stored.refresh_token.as_deref(), Some("new-refresh"));
+        assert_eq!(stored.device_id, "DEVICE1");
+        assert_eq!(stored.oauth_client_id.as_deref(), Some("client-123"));
+    }
+
+    #[test]
     fn stores_and_returns_an_oauth_session() {
         let (_dir, secrets) = temp_secret_service("session-oauth");
         let mut sess = session("@alice:example.org", Some("refresh-token"));

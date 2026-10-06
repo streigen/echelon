@@ -134,6 +134,34 @@ impl SecretService {
         self.commit(&stronghold, &key_provider, &snapshot_path)
     }
 
+    /// Persist a rotated access and refresh token pair without replacing the
+    /// account metadata stored alongside the session.
+    pub fn set_session_tokens(
+        &self,
+        user_id: &str,
+        access_token: &str,
+        refresh_token: Option<&str>,
+    ) -> Result<()> {
+        let (stronghold, store, key_provider, snapshot_path) = self
+            .open_store(user_id, false)?
+            .ok_or_else(|| anyhow::anyhow!("No stronghold store found for user"))?;
+
+        // Commit only after both values have been updated. If a write fails,
+        // the on-disk snapshot still contains the last committed token pair.
+        store.insert(
+            b"access_token".to_vec(),
+            access_token.as_bytes().to_vec(),
+            None,
+        )?;
+        if let Some(token) = refresh_token {
+            store.insert(b"refresh_token".to_vec(), token.as_bytes().to_vec(), None)?;
+        } else {
+            let _ = store.delete(b"refresh_token");
+        }
+
+        self.commit(&stronghold, &key_provider, &snapshot_path)
+    }
+
     /// Retrieve the stored [`Session`] for `user_id`, or `None` if not found.
     pub fn get_session(&self, user_id: &str) -> Result<Option<Session>> {
         let Some((_, store, _, _)) = self.open_store(user_id, false)? else {
