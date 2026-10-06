@@ -105,7 +105,6 @@ mod missing_arguments {
             "username and password are required"
         );
         assert_eq!(error("oauth_login", &[]).await, "homeserver is required");
-        assert_eq!(error("oauth_register", &[]).await, "homeserver is required");
         assert_eq!(error("restore_session", &[]).await, "user id is required");
     }
 

@@ -18,6 +18,7 @@ pub struct Session {
     pub device_id: String,
     pub access_token: String,
     pub refresh_token: Option<String>,
+    pub oauth_client_id: Option<String>,
 }
 
 pub struct SecretService {
@@ -124,6 +125,12 @@ impl SecretService {
             let _ = store.delete(b"refresh_token");
         }
 
+        if let Some(t) = &session.oauth_client_id {
+            store.insert(b"oauth_client_id".to_vec(), t.as_bytes().to_vec(), None)?;
+        } else {
+            let _ = store.delete(b"oauth_client_id");
+        }
+
         self.commit(&stronghold, &key_provider, &snapshot_path)
     }
 
@@ -147,6 +154,10 @@ impl SecretService {
             access_token: String::from_utf8(access_bytes)?,
             refresh_token: store
                 .get(b"refresh_token")?
+                .map(String::from_utf8)
+                .transpose()?,
+            oauth_client_id: store
+                .get(b"oauth_client_id")?
                 .map(String::from_utf8)
                 .transpose()?,
         }))

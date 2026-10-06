@@ -32,6 +32,7 @@ fn session_with(user_id: &str, access_token: &str, refresh_token: Option<&str>) 
         device_id: "DEVICE1".to_owned(),
         access_token: access_token.to_owned(),
         refresh_token: refresh_token.map(ToOwned::to_owned),
+        oauth_client_id: None,
     }
 }
 
@@ -108,6 +109,8 @@ mod sessions {
         assert_eq!(stored.device_id, "DEVICE1");
         assert_eq!(stored.access_token, "access-token");
         assert_eq!(stored.refresh_token.as_deref(), Some("refresh-token"));
+        // Password sessions and pre OAuth snapshots have no OAuth client ID.
+        assert_eq!(stored.oauth_client_id, None);
     }
 
     #[test]
@@ -143,6 +146,38 @@ mod sessions {
             .expect("reading should succeed")
             .expect("the session was just stored");
         assert_eq!(stored.refresh_token, None);
+    }
+
+    #[test]
+    fn stores_and_returns_an_oauth_session() {
+        let (_dir, secrets) = temp_secret_service("session-oauth");
+        let mut sess = session("@alice:example.org", Some("refresh-token"));
+        sess.oauth_client_id = Some("client-123".to_owned());
+
+        secrets.set_session(&sess).expect("storing should succeed");
+        let stored = secrets
+            .get_session("@alice:example.org")
+            .expect("reading should succeed")
+            .expect("the session was just stored");
+
+        assert_eq!(stored.oauth_client_id.as_deref(), Some("client-123"));
+    }
+
+    #[test]
+    fn replacing_a_session_drops_an_oauth_client_id_it_no_longer_has() {
+        let (_dir, secrets) = temp_secret_service("session-oauth-cleared");
+        let mut sess = session("@alice:example.org", Some("refresh-token"));
+        sess.oauth_client_id = Some("client-123".to_owned());
+        secrets.set_session(&sess).expect("storing should succeed");
+
+        sess.oauth_client_id = None;
+        secrets.set_session(&sess).expect("storing should succeed");
+
+        let stored = secrets
+            .get_session("@alice:example.org")
+            .expect("reading should succeed")
+            .expect("the session was just stored");
+        assert_eq!(stored.oauth_client_id, None);
     }
 
     #[test]

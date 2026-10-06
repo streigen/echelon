@@ -1,11 +1,7 @@
 use crate::ClientState;
 use tracing::{debug, trace};
 
-async fn oauth_impl(
-    homeserver: String,
-    state: ClientState,
-    is_login: bool,
-) -> Result<String, String> {
+async fn oauth_impl(homeserver: String, state: ClientState) -> Result<String, String> {
     if homeserver.trim().is_empty() {
         return Err("homeserver is required".to_string());
     }
@@ -16,19 +12,18 @@ async fn oauth_impl(
         let Some(client_handler) = state_r.as_ref() else {
             return Err("No active client session".to_string());
         };
-        client_handler.oauth_login(homeserver, is_login).await
+        client_handler.oauth_login(homeserver).await
     };
 
-    let action = if is_login { "login" } else { "registration" };
     match result {
         Ok(Some(handler)) => {
             handler.start_sync().await;
             let mut write_guard = state.write().await;
             *write_guard = Some(handler);
-            Ok(format!("oauth {action} successful"))
+            Ok("OAuth login successful".to_string())
         }
-        Ok(None) => Err(format!("OAuth {action} failed: no handler returned")),
-        Err(e) => Err(format!("OAuth {action} failed: {e}")),
+        Ok(None) => Err(format!("OAuth failed: no handler returned")),
+        Err(e) => Err(format!("OAuth failed: {e}")),
     }
 }
 
@@ -39,17 +34,7 @@ async fn oauth_impl(
 /// * `state` - The client state containing the Matrix client to perform the login on.
 pub async fn oauth_login(homeserver: String, state: ClientState) -> Result<String, String> {
     trace!("Starting OAuth login for homeserver: {}", homeserver);
-    oauth_impl(homeserver, state, true).await
-}
-
-/// Register a user with OAuth2 authentication using their homeserver
-///
-/// # Arguments
-/// * `homeserver` - The URL of the homeserver to register with.
-/// * `state` - The client state containing the Matrix client to perform the login on.
-pub async fn oauth_register(homeserver: String, state: ClientState) -> Result<String, String> {
-    trace!("Starting OAuth register for homeserver: {}", homeserver);
-    oauth_impl(homeserver, state, false).await
+    oauth_impl(homeserver, state).await
 }
 
 /// Register a new user with the given username, password, and homeserver. Optionally takes a

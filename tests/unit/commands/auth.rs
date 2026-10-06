@@ -155,16 +155,10 @@ mod guards {
     }
 
     #[tokio::test]
-    async fn the_oauth_flows_require_a_homeserver() {
+    async fn oauth_login_requires_a_homeserver() {
         for homeserver in ["", "   "] {
             assert_eq!(
                 oauth_login(homeserver.to_owned(), empty_state())
-                    .await
-                    .expect_err("a blank homeserver should be refused"),
-                "homeserver is required"
-            );
-            assert_eq!(
-                oauth_register(homeserver.to_owned(), empty_state())
                     .await
                     .expect_err("a blank homeserver should be refused"),
                 "homeserver is required"
@@ -572,6 +566,7 @@ mod logout {
 
 mod restore_session {
     use super::*;
+    use matrix_sdk::AuthSession;
 
     #[tokio::test]
     async fn restores_a_session_that_was_stored_earlier() {
@@ -610,6 +605,68 @@ mod restore_session {
 
         assert_eq!(outcome, "session restored");
         assert_eq!(signed_in_as(&session.state).await.as_deref(), Some(USER_ID));
+    }
+
+    #[tokio::test]
+    async fn restores_an_oauth_session_with_its_client_id() {
+        let session = mock_session("auth-restore-oauth").await;
+        session.server.mock_versions().ok().mount().await;
+        session
+            .server
+            .mock_sync()
+            .ok_and_run(&session.client, |_| {})
+            .await;
+
+        session
+            .app_state
+            .secret_service
+            .set_session(&crate::storage::secret::Session {
+                user_id: USER_ID.to_owned(),
+                device_id: DEVICE_ID.to_owned(),
+                access_token: "oauth-access-token".to_owned(),
+                refresh_token: Some("oauth-refresh-token".to_owned()),
+                oauth_client_id: Some("oauth-client-123".to_owned()),
+            })
+            .expect("storing the OAuth session should succeed");
+        session
+            .app_state
+            .echelon_store
+            .add_account(USER_ID, &session.server.uri())
+            .expect("recording the account should succeed");
+
+        let outcome = super::super::restore_session(
+            USER_ID.to_owned(),
+            Some(session.server.uri()),
+            session.state.clone(),
+        )
+        .await
+        .expect("restoring should succeed");
+
+        assert_eq!(outcome, "session restored");
+        let state = session.state.read().await;
+        let restored = state
+            .as_ref()
+            .expect("the session should be installed")
+            .get_client()
+            .session()
+            .expect("the client should have an authentication session");
+        match restored {
+            AuthSession::OAuth(oauth) => {
+                assert_eq!(oauth.client_id.as_str(), "oauth-client-123");
+                assert_eq!(oauth.user.tokens.access_token, "oauth-access-token");
+                assert_eq!(
+                    oauth.user.tokens.refresh_token.as_deref(),
+                    Some("oauth-refresh-token")
+                );
+            }
+            AuthSession::Matrix(_) => panic!("OAuth session restored as Matrix auth"),
+            _ => panic!("unexpected authentication session type"),
+        }
+        state
+            .as_ref()
+            .expect("the session should be installed")
+            .stop_sync()
+            .await;
     }
 
     #[tokio::test]

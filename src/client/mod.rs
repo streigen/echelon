@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use matrix_sdk::Client;
+use matrix_sdk::{AuthSession, Client};
 use tokio::sync::RwLock;
 use url::Url;
 
@@ -101,6 +101,14 @@ pub(crate) fn session_of(client: &Client) -> anyhow::Result<Session> {
     let tokens = client
         .session_tokens()
         .ok_or_else(|| anyhow::anyhow!("Missing session tokens after authentication"))?;
+    let auth_session = client
+        .session()
+        .ok_or_else(|| anyhow::anyhow!("Missing authentication session after authentication"))?;
+    let oauth_client_id = match auth_session {
+        AuthSession::Matrix(_) => None,
+        AuthSession::OAuth(session) => Some(session.client_id.as_str().to_owned()),
+        _ => anyhow::bail!("Unsupported authentication session type"),
+    };
     Ok(Session {
         user_id: client
             .user_id()
@@ -112,5 +120,6 @@ pub(crate) fn session_of(client: &Client) -> anyhow::Result<Session> {
             .to_string(),
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
+        oauth_client_id,
     })
 }

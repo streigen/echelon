@@ -143,17 +143,6 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                HorizontalLayout {
-                    alignment: center;
-                    padding-top: 8px;
-                    CustomButton {
-                        text: "register";
-                        enabled: !root.loading;
-                        width: parent.width * 0.8;
-                        clicked => { root.oauth_action("register", root.homeserver); }
-                    }
-                }
-
                 Rectangle { height: 16px; }
 
                 Rectangle {

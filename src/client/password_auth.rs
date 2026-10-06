@@ -1,4 +1,5 @@
 use matrix_sdk::authentication::matrix::MatrixSession;
+use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UserSession};
 use matrix_sdk::{AuthSession, SessionMeta, SessionTokens};
 use ruma::{OwnedDeviceId, OwnedUserId};
 
@@ -89,15 +90,27 @@ impl ClientHandler {
             refresh_token: session.refresh_token.take(),
         };
 
-        new_client
-            .restore_session(AuthSession::Matrix(MatrixSession {
-                meta: SessionMeta {
-                    user_id: OwnedUserId::try_from(session.user_id.as_str())?,
-                    device_id: OwnedDeviceId::from(session.device_id.as_str()),
-                },
-                tokens,
-            }))
-            .await?;
+        let meta = SessionMeta {
+            user_id: OwnedUserId::try_from(session.user_id.as_str())?,
+            device_id: OwnedDeviceId::from(session.device_id.as_str()),
+        };
+
+        if let Some(client_id) = session.oauth_client_id.take() {
+            new_client
+                .oauth()
+                .restore_session(
+                    OAuthSession {
+                        client_id: ClientId::new(client_id),
+                        user: UserSession { meta, tokens },
+                    },
+                    Default::default(),
+                )
+                .await?;
+        } else {
+            new_client
+                .restore_session(AuthSession::Matrix(MatrixSession { meta, tokens }))
+                .await?;
+        }
 
         ClientEvents::register_events(&new_client, self.ui_handle.clone());
 

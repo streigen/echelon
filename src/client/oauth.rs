@@ -17,34 +17,38 @@ impl ClientHandler {
     ///
     /// # Arguments
     /// * `homeserver` - The URL of the homeserver to log in to.
-    /// * `login` - If true, the user has registered already so log them in, otherwise register
-    pub async fn oauth_login(
-        &self,
-        homeserver: String,
-        login: bool,
-    ) -> anyhow::Result<Option<ClientHandler>> {
+    pub async fn oauth_login(&self, homeserver: String) -> anyhow::Result<Option<ClientHandler>> {
         let new_client = self.get_oauth_client(&homeserver).await?;
         let oauth = new_client.oauth();
 
-        oauth.server_metadata().await?;
-
+        let metadata = oauth.server_metadata().await?;
+        let issuer = metadata.issuer.as_str();
         let (redirect_uri, redirect_handle) = LocalServerBuilder::new().spawn().await?;
 
-        if login {
-            // oauth.restore_registered_client()
+        if let Some(client_id) = self.app_state.echelon_store.oauth_client_id(issuer)? {
+            oauth.restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(
+                client_id,
+            ));
         } else {
+            let mut registered_redirect_uri = redirect_uri.clone();
+            registered_redirect_uri
+                .set_port(None)
+                .map_err(|_| anyhow::anyhow!("Invalid OAuth redirect URI"))?;
+
             let url = Url::parse("https://git.flaxeneel2.net/streigen/echelon/")?;
-            let new_client_url = Localized::new(url, Vec::new());
-            let grant_types: Vec<OAuthGrantType> = vec![
-                OAuthGrantType::AuthorizationCode {
-                    redirect_uris: vec![redirect_uri.clone()],
-                },
-                OAuthGrantType::DeviceCode,
-            ];
-            let client_metadata =
-                ClientMetadata::new(ApplicationType::Native, grant_types, new_client_url);
-            let raw_client_metadata = Raw::new(&client_metadata)?;
-            oauth.register_client(&raw_client_metadata).await?;
+            let grant_types = vec![OAuthGrantType::AuthorizationCode {
+                redirect_uris: vec![registered_redirect_uri],
+            }];
+            let client_metadata = ClientMetadata::new(
+                ApplicationType::Native,
+                grant_types,
+                Localized::new(url, Vec::new()),
+            );
+
+            let response = oauth.register_client(&Raw::new(&client_metadata)?).await?;
+            self.app_state
+                .echelon_store
+                .set_oauth_client_id(issuer, response.client_id.as_str())?;
         }
 
         let auth_data = oauth
@@ -64,7 +68,7 @@ impl ClientHandler {
 
         let auth_session = new_client
             .session()
-            .ok_or_else(|| anyhow::anyhow!("Missing OAuth session afte login"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing OAuth session after login"))?;
         let session = session_of(&new_client)?;
         let user_id = session.user_id.clone();
 
