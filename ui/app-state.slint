@@ -66,6 +66,12 @@ export struct DebugCommand {
 }
 
 export global UiState {
+    // Current account identity shown in the user bar and settings.
+    in-out property <string> account-display-name: "";
+    in-out property <string> account-user-id: "";
+    in-out property <string> account-homeserver: "";
+    in-out property <bool> settings-open: false;
+
     // Chat state
     in-out property <string> active-room: "";
     in-out property <string> active-room-id: "";

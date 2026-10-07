@@ -6,6 +6,7 @@ import { ChatPage } from "./chat/chat-page.slint";
 import { DebugPage } from "./debug/debug-page.slint";
 import { Lightbox } from "./components/lightbox.slint";
 import { Toast } from "./components/toast.slint";
+import { SettingsDrawer } from "./settings/settings-drawer.slint";
 import { UiState, Message, MessageAttachment, DebugCommand } from "./app-state.slint";
 export { UiState }
 
@@ -184,6 +185,7 @@ export component AppWindow inherits Window {
     }
 
     if active-page == 1 : ChatPage {}
+    if active-page == 1 : SettingsDrawer {}
 
     if active-page == 2 : DebugPage {
         commands: root.debug-commands;

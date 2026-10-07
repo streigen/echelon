@@ -1080,6 +1080,51 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         move || {
             let state = state.clone();
             let ui_handle = ui_handle.clone();
+            let identity_state = state.clone();
+            let identity_ui = ui_handle.clone();
+            handle.spawn(async move {
+                let Ok(client) = commands::get_active_client(&identity_state).await else {
+                    return;
+                };
+                let Some(user_id) = client.user_id() else {
+                    return;
+                };
+                let fallback_name = user_id.localpart().to_string();
+                let user_id = user_id.to_string();
+                let homeserver = client
+                    .homeserver()
+                    .to_string()
+                    .trim_end_matches('/')
+                    .trim_start_matches("https://")
+                    .trim_start_matches("http://")
+                    .to_string();
+                let expected_user_id = user_id.clone();
+                let _ = slint::invoke_from_event_loop({
+                    let identity_ui = identity_ui.clone();
+                    move || {
+                        if let Some(ui) = identity_ui.upgrade() {
+                            let state = ui.global::<UiState>();
+                            state.set_account_user_id(user_id.into());
+                            state.set_account_display_name(fallback_name.into());
+                            state.set_account_homeserver(homeserver.into());
+                        }
+                    }
+                });
+
+                // The global profile lookup is optional and must not delay chat.
+                if let Ok(Some(display_name)) = client.account().get_display_name().await
+                    && !display_name.trim().is_empty()
+                {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = identity_ui.upgrade() {
+                            let state = ui.global::<UiState>();
+                            if state.get_account_user_id().as_str() == expected_user_id {
+                                state.set_account_display_name(display_name.into());
+                            }
+                        }
+                    });
+                }
+            });
             handle.spawn(async move {
                 let result = commands::spaces::get_space_hierarchy(state).await;
                 let _ = slint::invoke_from_event_loop(move || {
