@@ -157,9 +157,17 @@ mod sessions {
             .set_session(&initial)
             .expect("storing should succeed");
 
-        secrets
-            .set_session_tokens("@alice:example.org", "new-access", Some("new-refresh"))
-            .expect("storing rotated tokens should succeed");
+        assert!(
+            secrets
+                .set_session_tokens_for_device(
+                    "@alice:example.org",
+                    "DEVICE1",
+                    Some("client-123"),
+                    "new-access",
+                    Some("new-refresh"),
+                )
+                .expect("storing rotated tokens should succeed")
+        );
 
         let stored = secrets
             .get_session("@alice:example.org")
@@ -169,6 +177,112 @@ mod sessions {
         assert_eq!(stored.refresh_token.as_deref(), Some("new-refresh"));
         assert_eq!(stored.device_id, "DEVICE1");
         assert_eq!(stored.oauth_client_id.as_deref(), Some("client-123"));
+    }
+
+    #[test]
+    fn ignores_a_late_refresh_from_a_different_device() {
+        let (_dir, secrets) = temp_secret_service("session-stale-refresh");
+        secrets
+            .set_session(&session("@alice:example.org", Some("current-refresh")))
+            .expect("storing should succeed");
+
+        assert!(
+            !secrets
+                .set_session_tokens_for_device(
+                    "@alice:example.org",
+                    "OLDDEVICE",
+                    None,
+                    "late-access",
+                    Some("late-refresh"),
+                )
+                .expect("a stale callback is a normal rejected write")
+        );
+        assert_eq!(
+            secrets
+                .get_session("@alice:example.org")
+                .expect("reading should succeed")
+                .expect("current session remains")
+                .access_token,
+            "access-token"
+        );
+    }
+
+    #[test]
+    fn late_refresh_after_delete_does_not_recreate_snapshot_or_keyring_entry() {
+        const USER_ID: &str = "@alice:example.org";
+        const SERVICE: &str = "echelon-test-session-stale-after-delete";
+        let (_dir, secrets) = temp_secret_service("session-stale-after-delete");
+        secrets
+            .set_session(&session(USER_ID, Some("refresh-token")))
+            .expect("storing should succeed");
+        let snapshot_path = secrets.snapshot_path(USER_ID);
+        let keyring_entry =
+            keyring_core::Entry::new(SERVICE, &SecretService::user_id_hash(USER_ID))
+                .expect("the test keyring entry should be addressable");
+        assert!(
+            keyring_entry.get_password().is_ok(),
+            "storing a session creates its keyring key"
+        );
+
+        secrets
+            .delete_session(USER_ID)
+            .expect("full session cleanup should succeed");
+        assert!(
+            !secrets
+                .set_session_tokens_for_device(
+                    USER_ID,
+                    "DEVICE1",
+                    None,
+                    "late-access",
+                    Some("late-refresh"),
+                )
+                .expect("a retired callback is safely ignored")
+        );
+
+        assert!(!snapshot_path.as_path().exists());
+        assert!(matches!(
+            keyring_entry.get_password(),
+            Err(keyring_core::Error::NoEntry)
+        ));
+    }
+
+    #[test]
+    fn preserving_database_key_removes_tokens_but_keeps_sqlite_password() {
+        let (_dir, secrets) = temp_secret_service("session-preserve-db-key");
+        secrets
+            .set_session(&session("@alice:example.org", Some("refresh-token")))
+            .expect("storing should succeed");
+        let password = secrets
+            .get_or_create_sqlite_pwd("@alice:example.org")
+            .expect("database password should be created");
+
+        secrets
+            .delete_session_preserving_key("@alice:example.org")
+            .expect("session tokens should be cleared");
+
+        assert!(
+            secrets
+                .get_session("@alice:example.org")
+                .expect("reading should succeed")
+                .is_none()
+        );
+        assert_eq!(
+            *secrets
+                .get_or_create_sqlite_pwd("@alice:example.org")
+                .expect("database password should remain available"),
+            *password
+        );
+        assert!(
+            !secrets
+                .set_session_tokens_for_device(
+                    "@alice:example.org",
+                    "DEVICE1",
+                    None,
+                    "late-access",
+                    Some("late-refresh"),
+                )
+                .expect("a callback without session credentials is rejected")
+        );
     }
 
     #[test]

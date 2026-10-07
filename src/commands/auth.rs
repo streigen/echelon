@@ -135,39 +135,96 @@ pub async fn login(
 pub async fn logout(state: ClientState) -> Result<String, String> {
     debug!("Logging out user...");
 
-    // Revoke the session on the homeserver and stop sync in a separate scope.
-    let user_id = {
+    // Keep the local logout independent of the homeserver's response.
+    let (user_id, revoke_error, app_state, ui_handle) = {
         let state_r = state.read().await;
         let Some(handler) = state_r.as_ref() else {
             return Err("No active client session".to_string());
         };
 
-        if let Err(e) = handler.revoke_session().await {
-            debug!("Failed to revoke session on homeserver (continuing with local logout): {e}");
-        }
+        let revoke_error = match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            handler.revoke_session(),
+        )
+        .await
+        {
+            Ok(Ok(())) => None,
+            Ok(Err(error)) => Some(error.to_string()),
+            Err(_) => Some("request timed out after 10 seconds".to_string()),
+        };
         handler.stop_sync().await;
+        let active_room = handler.active_room_slot();
+        *active_room.lock().await = None;
 
-        handler.get_client().user_id().map(|id| id.to_string())
+        (
+            handler.get_client().user_id().map(|id| id.to_string()),
+            revoke_error,
+            handler.app_state.clone(),
+            handler.ui_handle.clone(),
+        )
     };
 
-    // Remove the stored account entry and session secrets.
-    if let Some(user_id) = &user_id {
-        let state_r = state.read().await;
-        if let Some(handler) = state_r.as_ref() {
-            if let Err(e) = handler.app_state.echelon_store.remove_account(user_id) {
-                debug!("Failed to remove account from store: {e}");
-            }
-            if let Err(e) = handler.app_state.secret_service.delete_session(user_id) {
-                debug!("Failed to delete stored session secrets: {e}");
-            }
+    // Build the existing unauthenticated handler used by password and OAuth
+    // login. If that client cannot be built, still finish local cleanup and
+    // report the missing bootstrap handler to the caller.
+    let bootstrap = crate::client::ClientHandler::new(app_state.clone(), ui_handle).await;
+
+    // Replacing the handler drops this handler's SQLite client before its
+    // account directory is removed. Sync has been awaited and the room
+    // subscription cleared, though other in-flight SDK clones may still hold
+    // database connections; the cleanup path reports a failed directory removal.
+    let mut errors = Vec::new();
+    match bootstrap {
+        Ok(handler) => *state.write().await = Some(handler),
+        Err(error) => {
+            *state.write().await = None;
+            errors.push(format!("could not prepare login client: {error}"));
         }
     }
 
-    // Clear the client state.
-    let mut write_guard = state.write().await;
-    *write_guard = None;
+    if let Some(user_id) = &user_id {
+        if let Err(error) = app_state.echelon_store.remove_account(user_id) {
+            errors.push(format!("could not remove account entry: {error}"));
+        }
 
-    Ok("logged out".into())
+        let account_dir = app_state
+            .data_dir
+            .join("accounts")
+            .join(crate::storage::secret::SecretService::user_id_hash(user_id));
+        let database_removed = match std::fs::remove_dir_all(&account_dir) {
+            Ok(()) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+            Err(error) => {
+                errors.push(format!(
+                    "could not delete account database at {account_dir:?}: {error}"
+                ));
+                false
+            }
+        };
+
+        let secret_cleanup = if database_removed {
+            app_state.secret_service.delete_session(user_id)
+        } else {
+            app_state
+                .secret_service
+                .delete_session_preserving_key(user_id)
+        };
+        if let Err(error) = secret_cleanup {
+            errors.push(format!("could not delete stored session secrets: {error}"));
+        }
+    }
+
+    let mut status = "logged out".to_string();
+    if let Some(error) = revoke_error {
+        status.push_str(&format!(" locally; homeserver revocation failed: {error}"));
+    }
+    if !errors.is_empty() {
+        return Err(format!(
+            "{status}; local cleanup incomplete: {}",
+            errors.join("; ")
+        ));
+    }
+    Ok(status)
 }
 
 /// Restore a previous session for the given user id and optional homeserver.

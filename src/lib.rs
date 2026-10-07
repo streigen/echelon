@@ -198,6 +198,9 @@ thread_local! {
     /// Counter incremented when the message model is reset.
     static MESSAGE_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 
+    /// Invalidates account-scoped UI work when the active session is cleared.
+    static ACCOUNT_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+
     /// Cached own display name for the active room.
     static OWN_DISPLAY_NAME: std::cell::RefCell<slint::SharedString> =
         std::cell::RefCell::new(slint::SharedString::new());
@@ -369,6 +372,59 @@ fn reset_message_view(ui: &AppWindow) {
     state.set_next_token(slint::SharedString::new());
     state.set_loading_more(false);
     state.set_newer_trimmed(false);
+}
+
+/// Clear account-owned UI state after logout while retaining layout preferences.
+fn reset_account_ui(ui: &AppWindow) {
+    ACCOUNT_GENERATION.with(|generation| {
+        generation.set(generation.get().wrapping_add(1));
+    });
+    clear_message_rows();
+    MESSAGE_GENERATION.with(|generation| {
+        generation.set(generation.get().wrapping_add(1));
+    });
+    PREVIEW_WINDOW.with(|state| *state.borrow_mut() = PreviewWindow::default());
+    OWN_DISPLAY_NAME.with(|name| *name.borrow_mut() = slint::SharedString::new());
+
+    let state = ui.global::<UiState>();
+    let previous_room_id = state.get_active_room_id();
+    if let Ok(room_id) = <&RoomId>::try_from(previous_room_id.as_str()) {
+        rooms::messages::clear_room_attachments(room_id);
+    }
+    rooms::set_active_room(None);
+    state.set_settings_open(false);
+    state.set_logout_busy(false);
+    state.set_account_display_name(slint::SharedString::new());
+    state.set_account_user_id(slint::SharedString::new());
+    state.set_account_homeserver(slint::SharedString::new());
+    state.set_active_room(slint::SharedString::new());
+    state.set_active_room_id(slint::SharedString::new());
+    state.set_messages_loading(false);
+    state.set_next_token(slint::SharedString::new());
+    state.set_loading_more(false);
+    state.set_prepend_count(0);
+    state.set_prepend_epoch(state.get_prepend_epoch().wrapping_add(1));
+    state.set_newer_trimmed(false);
+    state.set_active_voice_room(slint::SharedString::new());
+    state.set_muted(false);
+    state.set_deafened(false);
+    state.set_space_tabs(to_model(Vec::new()));
+    state.set_space_channels(to_model(Vec::new()));
+    state.set_active_space_index(-1);
+    state.set_active_space_name(slint::SharedString::new());
+    state.set_categories(to_model(Vec::new()));
+    state.set_lightbox_visible(false);
+    state.set_lightbox_loading(false);
+    state.set_lightbox_image(slint::Image::default());
+    state.set_lightbox_width(0);
+    state.set_lightbox_height(0);
+    state.set_lightbox_event_id(slint::SharedString::new());
+    state.set_lightbox_savable(false);
+    ui.set_username(slint::SharedString::new());
+    ui.set_password(slint::SharedString::new());
+    ui.set_error(slint::SharedString::new());
+    ui.set_loading(false);
+    ui.set_active_page(0);
 }
 
 /// How long a toast stays up before clearing itself.
@@ -1071,6 +1127,36 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    ui.global::<UiState>().on_logout({
+        let client_state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        move || {
+            let (client_state, ui_handle) = (client_state.clone(), ui_handle.clone());
+            if let Some(ui) = ui_handle.upgrade() {
+                let state = ui.global::<UiState>();
+                if state.get_logout_busy() {
+                    return;
+                }
+                state.set_logout_busy(true);
+                ui.set_loading(true);
+            }
+            handle.spawn(async move {
+                let result = commands::auth::logout(client_state).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    reset_account_ui(&ui);
+                    match result {
+                        Ok(message) => show_toast(&ui, message, false),
+                        Err(error) => show_toast(&ui, error, true),
+                    }
+                });
+            });
+        }
+    });
+
     // Populate the sidebar from the live space hierarchy, select the first space
     // tab, and open its first channel (if any).
     ui.on_open_chat({
@@ -1082,6 +1168,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let ui_handle = ui_handle.clone();
             let identity_state = state.clone();
             let identity_ui = ui_handle.clone();
+            let account_generation = ACCOUNT_GENERATION.with(std::cell::Cell::get);
             handle.spawn(async move {
                 let Ok(client) = commands::get_active_client(&identity_state).await else {
                     return;
@@ -1103,6 +1190,9 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     let identity_ui = identity_ui.clone();
                     move || {
                         if let Some(ui) = identity_ui.upgrade() {
+                            if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation {
+                                return;
+                            }
                             let state = ui.global::<UiState>();
                             state.set_account_user_id(user_id.into());
                             state.set_account_display_name(fallback_name.into());
@@ -1117,6 +1207,9 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 {
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(ui) = identity_ui.upgrade() {
+                            if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation {
+                                return;
+                            }
                             let state = ui.global::<UiState>();
                             if state.get_account_user_id().as_str() == expected_user_id {
                                 state.set_account_display_name(display_name.into());
@@ -1131,6 +1224,9 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     let Some(ui) = ui_handle.upgrade() else {
                         return;
                     };
+                    if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation {
+                        return;
+                    }
                     match result {
                         Ok(hierarchy) => {
                             let flat = space_hierarchy_to_ui(hierarchy);
@@ -1636,10 +1732,14 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             }
             handle.spawn(async move {
                 let result = commands::debug::dispatch(&command, &args, state).await;
+                let did_logout = command == "logout";
                 let msg: slint::SharedString =
                     result.map_or_else(|e| format!("Error: {e}").into(), |s| s.into());
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(ui) = ui_handle.upgrade() {
+                        if did_logout {
+                            reset_account_ui(&ui);
+                        }
                         ui.set_debug_output(msg);
                         ui.set_debug_busy(false);
                     }

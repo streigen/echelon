@@ -71,6 +71,7 @@ export global UiState {
     in-out property <string> account-user-id: "";
     in-out property <string> account-homeserver: "";
     in-out property <bool> settings-open: false;
+    in-out property <bool> logout-busy: false;
 
     // Chat state
     in-out property <string> active-room: "";
@@ -126,4 +127,5 @@ export global UiState {
     callback close-lightbox();
     callback save-attachment(string); // event id
     callback preview-window-changed(int, string, bool); // row index hint, event id, in-keep-window
+    callback logout();
 }

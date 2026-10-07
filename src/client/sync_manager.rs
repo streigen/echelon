@@ -99,6 +99,7 @@ impl SyncManager {
         if let Some(handle) = sync_guard.take() {
             debug!("Stopping sync task...");
             handle.abort();
+            let _ = handle.await;
             debug!("Sync task stopped");
         }
     }

@@ -66,18 +66,24 @@ impl ClientHandler {
                 })
             }),
             Box::new(move |client: Client| {
-                let tokens = client
-                    .session_tokens()
-                    .ok_or_else(|| std::io::Error::other("Client has no session tokens"))?;
+                let session = super::session_of(&client)
+                    .map_err(|error| std::io::Error::other(error.to_string()))?;
 
-                save_state
+                let saved = save_state
                     .secret_service
-                    .set_session_tokens(
+                    .set_session_tokens_for_device(
                         &save_user_id,
-                        &tokens.access_token,
-                        tokens.refresh_token.as_deref(),
+                        &session.device_id,
+                        session.oauth_client_id.as_deref(),
+                        &session.access_token,
+                        session.refresh_token.as_deref(),
                     )
                     .map_err(|error| std::io::Error::other(error.to_string()))?;
+                if !saved {
+                    tracing::trace!(
+                        "Skipping a token refresh for a retired or replaced session: {save_user_id}"
+                    );
+                }
 
                 Ok(())
             }),

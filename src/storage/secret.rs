@@ -5,6 +5,7 @@ use blake3;
 use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use rand::distr::{Alphanumeric, SampleString};
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard};
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 /// All per-user session data stored in the stronghold.
@@ -26,6 +27,9 @@ pub struct SecretService {
     keyring: KeyringClient,
     /// Directory where per-user stronghold snapshot files are kept.
     stronghold_path: PathBuf,
+    /// Ensures snapshot operations run one at a time, so token writes cannot
+    /// overlap with session replacement or deletion
+    session_lock: Mutex<()>,
 }
 
 impl SecretService {
@@ -33,7 +37,14 @@ impl SecretService {
         SecretService {
             keyring,
             stronghold_path,
+            session_lock: Mutex::new(()),
         }
+    }
+
+    fn lock_sessions(&self) -> Result<MutexGuard<'_, ()>> {
+        self.session_lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Session storage lock was poisoned"))
     }
 
     /// Generate a random 32-character alphanumeric string, wiped when dropped.
@@ -99,6 +110,7 @@ impl SecretService {
 
     /// Persist a full [`Session`].
     pub fn set_session(&self, session: &Session) -> Result<()> {
+        let _guard = self.lock_sessions()?;
         let (stronghold, store, key_provider, snapshot_path) = self
             .open_store(&session.user_id, true)?
             .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
@@ -136,15 +148,43 @@ impl SecretService {
 
     /// Persist a rotated access and refresh token pair without replacing the
     /// account metadata stored alongside the session.
-    pub fn set_session_tokens(
+    pub fn set_session_tokens_for_device(
         &self,
         user_id: &str,
+        device_id: &str,
+        oauth_client_id: Option<&str>,
         access_token: &str,
         refresh_token: Option<&str>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        let _guard = self.lock_sessions()?;
+        // Avoid asking the keyring to create a replacement key after logout
+        // removed this account's snapshot.
+        let snapshot = self.snapshot_path(user_id);
+        if !snapshot.as_path().exists() {
+            return Ok(false);
+        }
         let (stronghold, store, key_provider, snapshot_path) = self
             .open_store(user_id, false)?
             .ok_or_else(|| anyhow::anyhow!("No stronghold store found for user"))?;
+
+        let stored_device = store
+            .get(b"device_id")?
+            .map(String::from_utf8)
+            .transpose()?
+            .unwrap_or_default();
+        let stored_oauth_client_id = store
+            .get(b"oauth_client_id")?
+            .map(String::from_utf8)
+            .transpose()?;
+        let stored_user_id = store.get(b"user_id")?.map(String::from_utf8).transpose()?;
+        let has_access_token = store.get(b"access_token")?.is_some();
+        if !has_access_token
+            || stored_user_id.as_deref() != Some(user_id)
+            || stored_device != device_id
+            || stored_oauth_client_id.as_deref() != oauth_client_id
+        {
+            return Ok(false);
+        }
 
         // Commit only after both values have been updated. If a write fails,
         // the on-disk snapshot still contains the last committed token pair.
@@ -159,11 +199,13 @@ impl SecretService {
             let _ = store.delete(b"refresh_token");
         }
 
-        self.commit(&stronghold, &key_provider, &snapshot_path)
+        self.commit(&stronghold, &key_provider, &snapshot_path)?;
+        Ok(true)
     }
 
     /// Retrieve the stored [`Session`] for `user_id`, or `None` if not found.
     pub fn get_session(&self, user_id: &str) -> Result<Option<Session>> {
+        let _guard = self.lock_sessions()?;
         let Some((_, store, _, _)) = self.open_store(user_id, false)? else {
             return Ok(None);
         };
@@ -193,6 +235,7 @@ impl SecretService {
 
     /// Return the sqlite password for `user_id`, generating and persisting one on first use.
     pub fn get_or_create_sqlite_pwd(&self, user_id: &str) -> Result<Zeroizing<String>> {
+        let _guard = self.lock_sessions()?;
         let (stronghold, store, key_provider, snapshot_path) = self
             .open_store(user_id, true)?
             .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
@@ -213,6 +256,7 @@ impl SecretService {
     /// # Arguments
     /// * `user_id` - The full Matrix user id whose stored secrets to delete.
     pub fn delete_session(&self, user_id: &str) -> Result<()> {
+        let _guard = self.lock_sessions()?;
         let path = self.snapshot_path(user_id).as_path().to_path_buf();
         match std::fs::remove_file(&path) {
             Ok(()) => {}
@@ -225,6 +269,29 @@ impl SecretService {
         }
 
         self.keyring.delete_password(&Self::user_id_hash(user_id))
+    }
+
+    /// Delete session credentials while retaining the shared per-user keyring
+    /// key. Logout uses this if the SQLite directory could not be deleted, since
+    /// that key also protects the database password.
+    pub fn delete_session_preserving_key(&self, user_id: &str) -> Result<()> {
+        let _guard = self.lock_sessions()?;
+        let Some((stronghold, store, key_provider, snapshot_path)) =
+            self.open_store(user_id, false)?
+        else {
+            return Ok(());
+        };
+
+        for key in [
+            b"user_id".as_slice(),
+            b"device_id",
+            b"access_token",
+            b"refresh_token",
+            b"oauth_client_id",
+        ] {
+            store.delete(key)?;
+        }
+        self.commit(&stronghold, &key_provider, &snapshot_path)
     }
 }
 
