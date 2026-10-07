@@ -6,21 +6,96 @@ import { ParticipantsPanel } from "./participants-panel.slint";
 
 export component ChatPage inherits Rectangle {
     background: #000000;
-    
+
+    property <bool> resizing-rooms: false;
+    property <bool> resizing-participants: false;
+    property <length> room-drag-start-width: 250px;
+    property <length> participants-drag-start-width: 250px;
+    property <length> room-drag-start-page-x: 0px;
+    property <length> participants-drag-start-page-x: 0px;
+
+    // Keep the center chat usable where possible, while retaining preferences
+    // when a temporarily narrow window forces a smaller displayed panel.
+    property <length> participants-display-width: {
+        let preferred = min(max(UiState.participants-width, 180px), 400px);
+        let available = root.width - 370px;
+        min(preferred, max(available, 0px))
+    }
+    property <length> room-display-width: {
+        let preferred = min(max(UiState.room-sidebar-width, 180px), 400px);
+        let available = root.width - 70px - 300px - (UiState.participants-visible ? root.participants-display-width : 0px);
+        min(preferred, max(available, 0px))
+    }
+
     HorizontalLayout {
-        // Background sidebar, animates width natively.
         LeftPanel {
-            width: UiState.sidebar-collapsed ? 70px : 320px;
-            animate width { duration: 100ms; easing: ease-in-out; }
+            width: UiState.sidebar-collapsed ? 70px : 70px + root.room-display-width;
+            room-content-width: root.room-display-width;
+            animate width { duration: root.resizing-rooms ? 0ms : 100ms; easing: ease-in-out; }
         }
-        
-        // Main chat area - natively stretches to fill remaining space.
-        ChatMain {
-            horizontal-stretch: 1;
-        }
-        
+        ChatMain { horizontal-stretch: 1; }
         if UiState.participants-visible : ParticipantsPanel {
-            width: 250px;
+            width: root.participants-display-width;
         }
+    }
+
+    // Room sidebar right edge. The fixed space rail remains 70px wide.
+    if !UiState.sidebar-collapsed : Rectangle {
+        x: 70px + root.room-display-width - 3px;
+        width: 6px;
+        height: 100%;
+        background: transparent;
+        rooms-resize-ta := TouchArea {
+            width: 100%; height: 100%; mouse-cursor: col-resize;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    root.resizing-rooms = false;
+                } else if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                    root.resizing-rooms = true;
+                    root.room-drag-start-width = root.room-display-width;
+                    root.room-drag-start-page-x = parent.x + self.mouse-x;
+                }
+            }
+            moved => {
+                if (root.resizing-rooms) {
+                    let page-cursor-x = parent.x + self.mouse-x;
+                    let next = root.room-drag-start-width + page-cursor-x - root.room-drag-start-page-x;
+                    let available = root.width - 70px - 300px - (UiState.participants-visible ? root.participants-display-width : 0px);
+                    let ceiling = min(max(available, 180px), 400px);
+                    UiState.room-sidebar-width = min(max(next, 180px), ceiling);
+                }
+            }
+        }
+        Rectangle { x: 2px; width: 1px; height: 100%; background: rooms-resize-ta.has-hover ? rgba(255, 255, 255, 0.35) : transparent; }
+    }
+
+    // Participants panel left edge; dragging left increases its width.
+    if UiState.participants-visible : Rectangle {
+        x: root.width - root.participants-display-width - 3px;
+        width: 6px;
+        height: 100%;
+        background: transparent;
+        participants-resize-ta := TouchArea {
+            width: 100%; height: 100%; mouse-cursor: col-resize;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                    root.resizing-participants = false;
+                } else if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                    root.resizing-participants = true;
+                    root.participants-drag-start-width = root.participants-display-width;
+                    root.participants-drag-start-page-x = parent.x + self.mouse-x;
+                }
+            }
+            moved => {
+                if (root.resizing-participants) {
+                    let page-cursor-x = parent.x + self.mouse-x;
+                    let next = root.participants-drag-start-width + root.participants-drag-start-page-x - page-cursor-x;
+                    let available = root.width - 70px - 300px - (UiState.sidebar-collapsed ? 0px : root.room-display-width);
+                    let ceiling = min(max(available, 180px), 400px);
+                    UiState.participants-width = min(max(next, 180px), ceiling);
+                }
+            }
+        }
+        Rectangle { x: 2px; width: 1px; height: 100%; background: participants-resize-ta.has-hover ? rgba(255, 255, 255, 0.35) : transparent; }
     }
 }

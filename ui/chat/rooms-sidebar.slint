@@ -5,6 +5,7 @@ import { ListView } from "std-widgets.slint";
 export { CategoryData }
 
 export component RoomsSidebar inherits Rectangle {
+    in property <length> content-width: 250px;
     in-out property <[string]> voice-participants: [];
     in property <[CategoryData]> categories: [];
     callback toggle-category(int);
@@ -13,12 +14,11 @@ export component RoomsSidebar inherits Rectangle {
     clip: true;
     background: #000000;
     
-    // CPU Optimization: Fix internal layout width to 250px to prevent layout reflows during the width animation.
-    // The outer Rectangle will just clip the static layout as it animates to 0 width!
+    // Keep the expanded content width fixed while the outer panel collapses.
     HorizontalLayout {
         x: 0;
         y: 0;
-        width: 250px;
+        width: root.content-width;
         height: 100%;
         
         Rectangle {

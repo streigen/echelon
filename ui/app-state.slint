@@ -86,6 +86,9 @@ export global UiState {
     // Layout state
     in-out property <bool> sidebar-collapsed: false;
     in-out property <bool> participants-visible: true;
+    // Panel widths are transient UI state and reset when the app exits.
+    in-out property <length> room-sidebar-width: 250px;
+    in-out property <length> participants-width: 250px;
 
     // Voice state
     in-out property <string> active-voice-room: "";
