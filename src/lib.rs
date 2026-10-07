@@ -1603,6 +1603,34 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    match app_state.echelon_store.get_last() {
+        Ok(Some(user_id)) => {
+            // Disable login actions before the window is shown while the saved
+            // local session is being restored.
+            ui.set_loading(true);
+            let client_state = client_state.clone();
+            let ui_handle = ui_handle.clone();
+            rt_handle.spawn(async move {
+                let result = commands::auth::restore_session(user_id, None, client_state).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    ui.set_loading(false);
+                    match result {
+                        Ok(_) => {
+                            ui.set_active_page(1);
+                            ui.invoke_open_chat();
+                        }
+                        Err(e) => show_toast(&ui, e, true),
+                    }
+                });
+            });
+        }
+        Ok(None) => {}
+        Err(e) => show_toast(&ui, format!("Failed to read last account: {e}"), true),
+    }
+
     ui.run()?;
 
     Ok(())
