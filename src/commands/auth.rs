@@ -22,7 +22,7 @@ async fn oauth_impl(homeserver: String, state: ClientState) -> Result<String, St
             *write_guard = Some(handler);
             Ok("OAuth login successful".to_string())
         }
-        Ok(None) => Err(format!("OAuth failed: no handler returned")),
+        Ok(None) => Err("OAuth failed: no handler returned".to_string()),
         Err(e) => Err(format!("OAuth failed: {e}")),
     }
 }

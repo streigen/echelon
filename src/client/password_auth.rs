@@ -84,6 +84,7 @@ impl ClientHandler {
             .secret_service
             .get_session(&user_id)?
             .ok_or_else(|| anyhow::anyhow!("No stored session found for user"))?;
+        let is_oauth_session = session.oauth_client_id.is_some();
 
         let tokens = SessionTokens {
             access_token: std::mem::take(&mut session.access_token),
@@ -113,6 +114,9 @@ impl ClientHandler {
         }
 
         self.configure_session_persistence(&new_client, &user_id)?;
+        if is_oauth_session {
+            super::ensure_oauth_device_display_name(&new_client, true).await;
+        }
 
         ClientEvents::register_events(&new_client, self.ui_handle.clone());
 

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use matrix_sdk::{AuthSession, Client};
 use tokio::sync::RwLock;
+use tracing::warn;
 use url::Url;
 
 use crate::AppWindow;
@@ -35,6 +36,63 @@ pub struct ClientHandler {
     active_room: ActiveRoomSlot,
     pub(crate) app_state: Arc<AppState>,
     pub(crate) ui_handle: slint::Weak<AppWindow>,
+}
+
+pub(crate) async fn ensure_oauth_device_display_name(client: &Client, only_if_unknown: bool) {
+    let Some(device_id) = client.device_id() else {
+        warn!("Cannot set OAuth device name: current device ID is unavailable");
+        return;
+    };
+
+    if only_if_unknown {
+        let devices = match client.devices().await {
+            Ok(response) => response.devices,
+            Err(error) => {
+                warn!("Could not inspect current OAuth device name: {error}");
+                return;
+            }
+        };
+        let Some(current_device) = devices.iter().find(|device| device.device_id == device_id)
+        else {
+            warn!("Could not find the current device while checking its display name");
+            return;
+        };
+        if !current_device
+            .display_name
+            .as_deref()
+            .is_none_or(is_unknown_device_name)
+        {
+            return;
+        }
+    }
+
+    if let Err(error) = client
+        .rename_device(device_id, oauth_device_display_name())
+        .await
+    {
+        warn!("Could not set OAuth device display name: {error}");
+    }
+}
+
+fn is_unknown_device_name(name: &str) -> bool {
+    let name = name.trim();
+    name.is_empty() || name.to_ascii_lowercase().starts_with("unknown device")
+}
+
+fn oauth_device_display_name() -> &'static str {
+    if cfg!(target_os = "android") {
+        "Echelon Mobile on Android"
+    } else if cfg!(target_os = "ios") {
+        "Echelon Mobile on iOS"
+    } else if cfg!(target_os = "windows") {
+        "Echelon on Windows"
+    } else if cfg!(target_os = "macos") {
+        "Echelon on macOS"
+    } else if cfg!(target_os = "linux") {
+        "Echelon on Linux"
+    } else {
+        "Echelon"
+    }
 }
 
 impl ClientHandler {

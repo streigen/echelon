@@ -25,7 +25,7 @@ export component AppWindow inherits Window {
     in-out property <bool> show_password: false;
 
     callback login(string, string, string);
-    callback oauth_action(string, string);
+    callback oauth_action(string);
     callback open_chat();
     callback forgot_password();
     in-out property <string> result: "";
@@ -139,7 +139,8 @@ export component AppWindow inherits Window {
                     ] : OAuthIcon {
                         icon: provider.img;
                         provider-id: provider.id;
-                        clicked(id) => { root.oauth_action("login", id); }
+                        enabled: !root.loading;
+                        clicked(_provider) => { root.oauth_action(root.homeserver); }
                     }
                 }
 
