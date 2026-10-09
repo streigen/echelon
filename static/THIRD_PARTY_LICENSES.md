@@ -168,6 +168,12 @@ This software uses icons and assets from the following resources:
 
 ---
 
+## Settings Icon (Lucide Icons)
+* **Source:** [settings](https://lucide.dev/icons/settings)
+* **License:** [Lucide License](https://lucide.dev/license)
+
+--
+
 ## Trademark Disclaimer
 
 The logos and brand names included in this software are the property of their respective owners:
