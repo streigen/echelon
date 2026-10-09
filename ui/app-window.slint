@@ -72,7 +72,7 @@ export component AppWindow inherits Window {
                     edited(val) => { root.password = val; }
                     input-type: root.show_password ? InputType.text : InputType.password;
                     is-password: true;
-                    show-password: root.show_password;
+                    show-password <=> root.show_password;
                     enabled: !root.loading;
                     accepted => { root.login(root.username, root.password, root.homeserver); }
                 }
