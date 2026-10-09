@@ -1089,7 +1089,11 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     };
                     ui.set_loading(false);
                     match result {
-                        Ok(message) => show_toast(&ui, message, false),
+                        Ok(message) => {
+                            show_toast(&ui, message, false);
+                            ui.set_active_page(1);
+                            ui.invoke_open_chat();
+                        }
                         Err(e) => show_toast(&ui, e, true),
                     }
                 });
@@ -1163,7 +1167,11 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let state = client_state.clone();
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
+        let mut hierarchy_task: Option<tokio::task::JoinHandle<()>> = None;
         move || {
+            if let Some(task) = hierarchy_task.take() {
+                task.abort();
+            }
             let state = state.clone();
             let ui_handle = ui_handle.clone();
             let identity_state = state.clone();
@@ -1218,8 +1226,25 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     });
                 }
             });
-            handle.spawn(async move {
-                let result = commands::spaces::get_space_hierarchy(state).await;
+            hierarchy_task = Some(handle.spawn(async move {
+                // Subscribe before reading the local store so a sync update that
+                // races the initial query remains buffered for the receiver.
+                let mut room_updates = {
+                    let Ok(client) = commands::get_active_client(&state).await else {
+                        return;
+                    };
+                    client.subscribe_to_all_room_updates()
+                };
+
+                let result = match commands::spaces::get_space_hierarchy(state.clone()).await {
+                    Ok(hierarchy) if hierarchy.is_empty() => match room_updates.recv().await {
+                        Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            commands::spaces::get_space_hierarchy(state).await
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                    },
+                    result => result,
+                };
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = ui_handle.upgrade() else {
                         return;
@@ -1254,7 +1279,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 });
-            });
+            }));
         }
     });
 
