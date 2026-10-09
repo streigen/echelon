@@ -159,6 +159,7 @@ export component AppWindow inherits Window {
                         animate color { duration: 90ms; easing: ease; }
                     }
                     chat-ta := TouchArea {
+                        enabled: !root.loading && !root.debug-busy;
                         clicked => { root.active-page = 1; root.open_chat(); }
                         mouse-cursor: pointer;
                     }
@@ -176,6 +177,7 @@ export component AppWindow inherits Window {
                         animate color { duration: 90ms; easing: ease; }
                     }
                     debug-ta := TouchArea {
+                        enabled: !root.loading && !root.debug-busy;
                         clicked => { root.active-page = 2; }
                         mouse-cursor: pointer;
                     }
@@ -191,7 +193,7 @@ export component AppWindow inherits Window {
         commands: root.debug-commands;
         busy: root.debug-busy;
         output: root.debug-output;
-        back => { root.active-page = 0; }
+        back => { if !root.debug-busy && !root.loading { root.active-page = 0; } }
         run(cmd, a0, a1, a2, a3) => { root.debug-run-command(cmd, a0, a1, a2, a3); }
     }
 

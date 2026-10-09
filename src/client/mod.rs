@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use matrix_sdk::{AuthSession, Client};
+use matrix_sdk::Client;
 use tokio::sync::RwLock;
 use tracing::warn;
 use url::Url;
@@ -66,10 +66,7 @@ pub(crate) async fn ensure_oauth_device_display_name(client: &Client, only_if_un
         }
     }
 
-    if let Err(error) = client
-        .rename_device(device_id, oauth_device_display_name())
-        .await
-    {
+    if let Err(error) = client.rename_device(device_id, device_display_name()).await {
         warn!("Could not set OAuth device display name: {error}");
     }
 }
@@ -79,7 +76,7 @@ fn is_unknown_device_name(name: &str) -> bool {
     name.is_empty() || name.to_ascii_lowercase().starts_with("unknown device")
 }
 
-fn oauth_device_display_name() -> &'static str {
+pub(crate) fn device_display_name() -> &'static str {
     if cfg!(target_os = "android") {
         "Echelon Mobile on Android"
     } else if cfg!(target_os = "ios") {
@@ -156,26 +153,24 @@ impl ClientHandler {
 /// # Arguments
 /// * `client` - The client the request was made on, now carrying the session.
 pub(crate) fn session_of(client: &Client) -> anyhow::Result<Session> {
+    let oauth_client_id = client
+        .oauth()
+        .client_id()
+        .map(|client_id| client_id.as_str().to_owned());
+    let user_id = client
+        .user_id()
+        .ok_or_else(|| anyhow::anyhow!("Missing user id after authentication"))?
+        .to_string();
+    let device_id = client
+        .device_id()
+        .ok_or_else(|| anyhow::anyhow!("Missing device id after authentication"))?
+        .to_string();
     let tokens = client
         .session_tokens()
         .ok_or_else(|| anyhow::anyhow!("Missing session tokens after authentication"))?;
-    let auth_session = client
-        .session()
-        .ok_or_else(|| anyhow::anyhow!("Missing authentication session after authentication"))?;
-    let oauth_client_id = match auth_session {
-        AuthSession::Matrix(_) => None,
-        AuthSession::OAuth(session) => Some(session.client_id.as_str().to_owned()),
-        _ => anyhow::bail!("Unsupported authentication session type"),
-    };
     Ok(Session {
-        user_id: client
-            .user_id()
-            .ok_or_else(|| anyhow::anyhow!("Missing user id after authentication"))?
-            .to_string(),
-        device_id: client
-            .device_id()
-            .ok_or_else(|| anyhow::anyhow!("Missing device id after authentication"))?
-            .to_string(),
+        user_id,
+        device_id,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         oauth_client_id,

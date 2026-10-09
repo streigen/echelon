@@ -6,7 +6,30 @@ use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use rand::distr::{Alphanumeric, SampleString};
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
-use zeroize::{ZeroizeOnDrop, Zeroizing};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+
+/// Decode secret bytes while keeping both malformed input and decoded strings
+/// under a zeroizing owner until the caller has finished fallible work.
+fn decode_secret(bytes: Vec<u8>, field: &str) -> Result<Zeroizing<String>> {
+    match String::from_utf8(bytes) {
+        Ok(value) => Ok(Zeroizing::new(value)),
+        Err(error) => {
+            let mut bytes = error.into_bytes();
+            bytes.zeroize();
+            Err(anyhow::anyhow!("Stored {field} is not valid UTF-8"))
+        }
+    }
+}
+
+fn decode_metadata(bytes: Vec<u8>, field: &str) -> Result<String> {
+    String::from_utf8(bytes).map_err(|_| anyhow::anyhow!("Stored {field} is not valid UTF-8"))
+}
+
+fn wipe_store_value(value: Option<Vec<u8>>) {
+    if let Some(mut bytes) = value {
+        bytes.zeroize();
+    }
+}
 
 /// All per-user session data stored in the stronghold.
 ///
@@ -125,22 +148,26 @@ impl SecretService {
             session.device_id.as_bytes().to_vec(),
             None,
         )?;
-        store.insert(
+        wipe_store_value(store.insert(
             b"access_token".to_vec(),
             session.access_token.as_bytes().to_vec(),
             None,
-        )?;
+        )?);
 
         if let Some(t) = &session.refresh_token {
-            store.insert(b"refresh_token".to_vec(), t.as_bytes().to_vec(), None)?;
+            wipe_store_value(store.insert(
+                b"refresh_token".to_vec(),
+                t.as_bytes().to_vec(),
+                None,
+            )?);
         } else {
-            let _ = store.delete(b"refresh_token");
+            wipe_store_value(store.delete(b"refresh_token")?);
         }
 
         if let Some(t) = &session.oauth_client_id {
             store.insert(b"oauth_client_id".to_vec(), t.as_bytes().to_vec(), None)?;
         } else {
-            let _ = store.delete(b"oauth_client_id");
+            wipe_store_value(store.delete(b"oauth_client_id")?);
         }
 
         self.commit(&stronghold, &key_provider, &snapshot_path)
@@ -169,15 +196,18 @@ impl SecretService {
 
         let stored_device = store
             .get(b"device_id")?
-            .map(String::from_utf8)
+            .map(|bytes| decode_metadata(bytes, "device id"))
             .transpose()?
             .unwrap_or_default();
         let stored_oauth_client_id = store
             .get(b"oauth_client_id")?
-            .map(String::from_utf8)
+            .map(|bytes| decode_metadata(bytes, "OAuth client id"))
             .transpose()?;
-        let stored_user_id = store.get(b"user_id")?.map(String::from_utf8).transpose()?;
-        let has_access_token = store.get(b"access_token")?.is_some();
+        let stored_user_id = store
+            .get(b"user_id")?
+            .map(|bytes| decode_metadata(bytes, "user id"))
+            .transpose()?;
+        let has_access_token = store.contains_key(b"access_token")?;
         if !has_access_token
             || stored_user_id.as_deref() != Some(user_id)
             || stored_device != device_id
@@ -188,15 +218,19 @@ impl SecretService {
 
         // Commit only after both values have been updated. If a write fails,
         // the on-disk snapshot still contains the last committed token pair.
-        store.insert(
+        wipe_store_value(store.insert(
             b"access_token".to_vec(),
             access_token.as_bytes().to_vec(),
             None,
-        )?;
+        )?);
         if let Some(token) = refresh_token {
-            store.insert(b"refresh_token".to_vec(), token.as_bytes().to_vec(), None)?;
+            wipe_store_value(store.insert(
+                b"refresh_token".to_vec(),
+                token.as_bytes().to_vec(),
+                None,
+            )?);
         } else {
-            let _ = store.delete(b"refresh_token");
+            wipe_store_value(store.delete(b"refresh_token")?);
         }
 
         self.commit(&stronghold, &key_provider, &snapshot_path)?;
@@ -210,26 +244,34 @@ impl SecretService {
             return Ok(None);
         };
 
+        if !store.contains_key(b"access_token")? {
+            return Ok(None);
+        }
+
+        let device_id = store
+            .get(b"device_id")?
+            .map(|bytes| decode_metadata(bytes, "device id"))
+            .transpose()?
+            .unwrap_or_default();
+        let refresh_token = store
+            .get(b"refresh_token")?
+            .map(|bytes| decode_secret(bytes, "refresh token"))
+            .transpose()?;
+        let oauth_client_id = store
+            .get(b"oauth_client_id")?
+            .map(|bytes| decode_metadata(bytes, "OAuth client id"))
+            .transpose()?;
         let Some(access_bytes) = store.get(b"access_token")? else {
             return Ok(None);
         };
+        let mut access_token = decode_secret(access_bytes, "access token")?;
 
         Ok(Some(Session {
             user_id: user_id.to_string(),
-            device_id: store
-                .get(b"device_id")?
-                .map(String::from_utf8)
-                .transpose()?
-                .unwrap_or_default(),
-            access_token: String::from_utf8(access_bytes)?,
-            refresh_token: store
-                .get(b"refresh_token")?
-                .map(String::from_utf8)
-                .transpose()?,
-            oauth_client_id: store
-                .get(b"oauth_client_id")?
-                .map(String::from_utf8)
-                .transpose()?,
+            device_id,
+            access_token: std::mem::take(&mut *access_token),
+            refresh_token: refresh_token.map(|mut value| std::mem::take(&mut *value)),
+            oauth_client_id,
         }))
     }
 
@@ -241,7 +283,7 @@ impl SecretService {
             .ok_or_else(|| anyhow::anyhow!("Failed to open user stronghold store"))?;
 
         if let Some(bytes) = store.get(b"sqlite_password")? {
-            return Ok(Zeroizing::new(String::from_utf8(bytes)?));
+            return decode_secret(bytes, "SQLite password");
         }
 
         let pwd = Self::random_secret();
@@ -282,13 +324,10 @@ impl SecretService {
             return Ok(());
         };
 
-        for key in [
-            b"user_id".as_slice(),
-            b"device_id",
-            b"access_token",
-            b"refresh_token",
-            b"oauth_client_id",
-        ] {
+        for key in [b"access_token".as_slice(), b"refresh_token"] {
+            wipe_store_value(store.delete(key)?);
+        }
+        for key in [b"user_id".as_slice(), b"device_id", b"oauth_client_id"] {
             store.delete(key)?;
         }
         self.commit(&stronghold, &key_provider, &snapshot_path)

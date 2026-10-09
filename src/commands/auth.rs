@@ -1,5 +1,6 @@
 use crate::ClientState;
 use tracing::{debug, trace};
+use zeroize::Zeroizing;
 
 async fn oauth_impl(homeserver: String, state: ClientState) -> Result<String, String> {
     if homeserver.trim().is_empty() {
@@ -48,13 +49,14 @@ pub async fn oauth_login(homeserver: String, state: ClientState) -> Result<Strin
 /// * `state` - The client state containing the Matrix client to perform registration on.
 pub async fn register(
     username: String,
-    password: String,
+    password: impl Into<Zeroizing<String>>,
     homeserver: String,
     registration_token: Option<String>,
     state: ClientState,
 ) -> Result<String, String> {
     trace!("Registering user: {} with password", username);
 
+    let password = password.into();
     if username.trim().is_empty() || password.trim().is_empty() {
         return Err("username and password are required".into());
     }
@@ -91,11 +93,12 @@ pub async fn register(
 /// * `state` - The client state containing the Matrix client to perform the login on.
 pub async fn login(
     username: String,
-    password: String,
+    password: impl Into<Zeroizing<String>>,
     homeserver: String,
     state: ClientState,
 ) -> Result<String, String> {
     trace!("Logging user: {} with password", username);
+    let password = password.into();
     if username.trim().is_empty() || password.trim().is_empty() {
         return Err("username and password are required".to_string());
     }

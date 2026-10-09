@@ -31,7 +31,7 @@ impl KeyringClient {
                 Ok(p)
             }
             Err(e) => {
-                error!("Failed to get password from keyring (account={account:?}): {e:?}");
+                error!("Failed to get password from keyring (account={account:?}): {e}");
                 Err(anyhow::anyhow!("Failed to get password from keyring: {e}"))
             }
         }
@@ -55,7 +55,7 @@ impl KeyringClient {
         match entry.delete_credential() {
             Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
             Err(e) => {
-                error!("Failed to delete password from keyring (account={account:?}): {e:?}");
+                error!("Failed to delete password from keyring (account={account:?}): {e}");
                 Err(anyhow::anyhow!(
                     "Failed to delete password from keyring: {e}"
                 ))

@@ -37,6 +37,7 @@ export component DebugPage inherits Rectangle {
             CustomButton {
                 text: "← back";
                 width: 100px;
+                enabled: !root.busy;
                 clicked => { root.back(); }
             }
         }

@@ -114,6 +114,31 @@ mod sessions {
     }
 
     #[test]
+    fn malformed_access_token_bytes_return_an_error() {
+        const USER_ID: &str = "@alice:example.org";
+        let (_dir, secrets) = temp_secret_service("session-malformed-token");
+        secrets
+            .set_session(&session(USER_ID, Some("refresh-token")))
+            .expect("storing should succeed");
+        let (stronghold, store, key_provider, snapshot_path) = secrets
+            .open_store(USER_ID, false)
+            .expect("opening should succeed")
+            .expect("the snapshot exists");
+        store
+            .insert(b"access_token".to_vec(), vec![0xff, 0xfe], None)
+            .expect("corrupt fixture should be writable");
+        secrets
+            .commit(&stronghold, &key_provider, &snapshot_path)
+            .expect("corrupt fixture should be committed");
+
+        let error = match secrets.get_session(USER_ID) {
+            Ok(_) => panic!("malformed stored token bytes must not decode"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("access token"));
+    }
+
+    #[test]
     fn stores_a_session_that_has_no_refresh_token() {
         let (_dir, secrets) = temp_secret_service("session-no-refresh");
 

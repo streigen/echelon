@@ -89,8 +89,8 @@ impl ClientHandler {
             .get_new_client(&user_id, &homeserver, &sqlite_pwd)
             .await?;
 
-        persistent_client.restore_session(auth_session).await?;
         self.configure_session_persistence(&persistent_client, &user_id)?;
+        persistent_client.restore_session(auth_session).await?;
         super::ensure_oauth_device_display_name(&persistent_client, false).await;
 
         ClientEvents::register_events(&persistent_client, self.ui_handle.clone());

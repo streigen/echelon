@@ -27,6 +27,7 @@ use slint::Model;
 use storage::keyring_client::KeyringClient;
 use storage::secret::SecretService;
 use storage::store::EchelonStore;
+use zeroize::Zeroizing;
 
 pub use client::ClientState;
 
@@ -1072,9 +1073,15 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_handle = ui_handle.clone();
         move |username, password, homeserver| {
             let (client_state, ui_handle) = (client_state.clone(), ui_handle.clone());
+            if ui_handle
+                .upgrade()
+                .is_some_and(|ui| ui.get_loading() || ui.get_debug_busy())
+            {
+                return;
+            }
             let (username, password, homeserver) = (
                 username.to_string(),
-                password.to_string(),
+                Zeroizing::new(password.to_string()),
                 homeserver.to_string(),
             );
             if let Some(ui) = ui_handle.upgrade() {
@@ -1090,6 +1097,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     ui.set_loading(false);
                     match result {
                         Ok(message) => {
+                            ui.set_password(slint::SharedString::new());
                             show_toast(&ui, message, false);
                             ui.set_active_page(1);
                             ui.invoke_open_chat();
@@ -1107,6 +1115,12 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_handle = ui_handle.clone();
         move |homeserver| {
             let (client_state, ui_handle) = (client_state.clone(), ui_handle.clone());
+            if ui_handle
+                .upgrade()
+                .is_some_and(|ui| ui.get_loading() || ui.get_debug_busy())
+            {
+                return;
+            }
             let homeserver = homeserver.to_string();
             if let Some(ui) = ui_handle.upgrade() {
                 ui.set_loading(true);
@@ -1120,6 +1134,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     ui.set_loading(false);
                     match result {
                         Ok(message) => {
+                            ui.set_password(slint::SharedString::new());
                             show_toast(&ui, message, false);
                             ui.set_active_page(1);
                             ui.invoke_open_chat();
@@ -1139,7 +1154,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let (client_state, ui_handle) = (client_state.clone(), ui_handle.clone());
             if let Some(ui) = ui_handle.upgrade() {
                 let state = ui.global::<UiState>();
-                if state.get_logout_busy() {
+                if state.get_logout_busy() || ui.get_loading() || ui.get_debug_busy() {
                     return;
                 }
                 state.set_logout_busy(true);
@@ -1743,20 +1758,32 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
         move |command, arg0, arg1, arg2, arg3| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            if ui.get_debug_busy() || ui.get_loading() {
+                return;
+            }
+            let auth_command = matches!(
+                command.as_str(),
+                "register" | "login" | "oauth_login" | "restore_session" | "logout"
+            );
             let state = state.clone();
             let command = command.to_string();
-            let args: Vec<String> = vec![
+            let args = Zeroizing::new(vec![
                 arg0.to_string(),
                 arg1.to_string(),
                 arg2.to_string(),
                 arg3.to_string(),
-            ];
+            ]);
             let ui_handle = ui_handle.clone();
-            if let Some(ui) = ui_handle.upgrade() {
-                ui.set_debug_busy(true);
+            ui.set_debug_busy(true);
+            if auth_command {
+                ui.set_loading(true);
             }
             handle.spawn(async move {
                 let result = commands::debug::dispatch(&command, &args, state).await;
+                let command_succeeded = result.is_ok();
                 let did_logout = command == "logout";
                 let msg: slint::SharedString =
                     result.map_or_else(|e| format!("Error: {e}").into(), |s| s.into());
@@ -1767,6 +1794,12 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                         }
                         ui.set_debug_output(msg);
                         ui.set_debug_busy(false);
+                        if auth_command && command_succeeded {
+                            ui.set_password(slint::SharedString::new());
+                        }
+                        if auth_command && !did_logout {
+                            ui.set_loading(false);
+                        }
                     }
                 });
             });

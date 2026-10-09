@@ -40,8 +40,8 @@ impl ClientHandler {
         Ok(client)
     }
 
-    /// Persist token rotations made by the SDK so a restored client always has
-    /// the current access and refresh token pair.
+    /// Persist token rotations made by the SDK when the session snapshot write
+    /// succeeds, keeping the saved access and refresh token pair current.
     pub(super) fn configure_session_persistence(
         &self,
         client: &Client,
@@ -54,15 +54,15 @@ impl ClientHandler {
 
         client.set_session_callbacks(
             Box::new(move |_| {
-                let session = reload_state
+                let mut session = reload_state
                     .secret_service
                     .get_session(&reload_user_id)
                     .map_err(|error| std::io::Error::other(error.to_string()))?
                     .ok_or_else(|| std::io::Error::other("No stored session tokens"))?;
 
                 Ok(matrix_sdk::SessionTokens {
-                    access_token: session.access_token.clone(),
-                    refresh_token: session.refresh_token.clone(),
+                    access_token: std::mem::take(&mut session.access_token),
+                    refresh_token: session.refresh_token.take(),
                 })
             }),
             Box::new(move |client: Client| {
