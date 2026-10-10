@@ -33,7 +33,7 @@ futures-util = "0.3.31"
 futures-core = "0.3.31"
 blake3 = "1.8.3"
 url = "2"
-open = "5"
+webbrowser = "1.2.1"
 jiff = "0.2"
 zeroize = { version = "1.9", features = ["derive"] }
 

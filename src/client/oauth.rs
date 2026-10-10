@@ -55,7 +55,7 @@ impl ClientHandler {
             .login(redirect_uri.clone(), None, None, None)
             .build()
             .await?;
-        open::that(auth_data.url.as_str())
+        webbrowser::open(auth_data.url.as_str())
             .map_err(|e| anyhow::anyhow!("Failed to open URL in browser: {}", e))?;
 
         let query = redirect_handle
