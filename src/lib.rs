@@ -358,10 +358,7 @@ fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
 /// # Arguments
 /// * `ui` - The window whose message view to reset.
 fn reset_message_view(ui: &AppWindow) {
-    clear_message_rows();
-    // Before any fetch this reset goes on to start, so that one carries the new
-    // generation and every page still in flight against the old rows carries the old.
-    MESSAGE_GENERATION.with(|g| g.set(g.get().wrapping_add(1)));
+    reset_message_rows();
     PREVIEW_WINDOW.with(|s| {
         let mut window = s.borrow_mut();
         window.loaded.clear();
@@ -375,19 +372,35 @@ fn reset_message_view(ui: &AppWindow) {
     state.set_newer_trimmed(false);
 }
 
+/// Clear rows and invalidate asynchronous work that was keyed to them.
+fn reset_message_rows() {
+    clear_message_rows();
+    // Future fetches use the new generation; existing pages remain stale.
+    MESSAGE_GENERATION.with(|generation| generation.set(generation.get().wrapping_add(1)));
+}
+
+/// Close the lightbox and release its image and attachment identity.
+fn close_lightbox(ui: &AppWindow) {
+    let state = ui.global::<UiState>();
+    state.set_lightbox_visible(false);
+    state.set_lightbox_event_id(slint::SharedString::new());
+    state.set_lightbox_savable(false);
+    // Drop the held image now rather than retaining a full resolution decode.
+    state.set_lightbox_image(slint::Image::default());
+}
+
 /// Clear account-owned UI state after logout while retaining layout preferences.
 fn reset_account_ui(ui: &AppWindow) {
+    // Invalidate pending account and message work before clearing its view state.
     ACCOUNT_GENERATION.with(|generation| {
         generation.set(generation.get().wrapping_add(1));
     });
-    clear_message_rows();
-    MESSAGE_GENERATION.with(|generation| {
-        generation.set(generation.get().wrapping_add(1));
-    });
+    reset_message_rows();
     PREVIEW_WINDOW.with(|state| *state.borrow_mut() = PreviewWindow::default());
     OWN_DISPLAY_NAME.with(|name| *name.borrow_mut() = slint::SharedString::new());
 
     let state = ui.global::<UiState>();
+    // Clear attachment cache entries before discarding the active room id.
     let previous_room_id = state.get_active_room_id();
     if let Ok(room_id) = <&RoomId>::try_from(previous_room_id.as_str()) {
         rooms::messages::clear_room_attachments(room_id);
@@ -395,32 +408,37 @@ fn reset_account_ui(ui: &AppWindow) {
     rooms::set_active_room(None);
     state.set_settings_open(false);
     state.set_logout_busy(false);
+    // Clear account and room identity.
     state.set_account_display_name(slint::SharedString::new());
     state.set_account_user_id(slint::SharedString::new());
     state.set_account_homeserver(slint::SharedString::new());
     state.set_active_room(slint::SharedString::new());
     state.set_active_room_id(slint::SharedString::new());
+
+    // Reset message paging and sidebar selection.
     state.set_messages_loading(false);
     state.set_next_token(slint::SharedString::new());
     state.set_loading_more(false);
     state.set_prepend_count(0);
     state.set_prepend_epoch(state.get_prepend_epoch().wrapping_add(1));
     state.set_newer_trimmed(false);
-    state.set_active_voice_room(slint::SharedString::new());
-    state.set_muted(false);
-    state.set_deafened(false);
     state.set_space_tabs(to_model(Vec::new()));
     state.set_space_channels(to_model(Vec::new()));
     state.set_active_space_index(-1);
     state.set_active_space_name(slint::SharedString::new());
     state.set_categories(to_model(Vec::new()));
-    state.set_lightbox_visible(false);
+
+    // Reset voice controls for the logged-out account.
+    state.set_active_voice_room(slint::SharedString::new());
+    state.set_muted(false);
+    state.set_deafened(false);
+
+    // Logout also resets loading and dimensions beyond the normal lightbox close.
+    close_lightbox(ui);
     state.set_lightbox_loading(false);
-    state.set_lightbox_image(slint::Image::default());
     state.set_lightbox_width(0);
     state.set_lightbox_height(0);
-    state.set_lightbox_event_id(slint::SharedString::new());
-    state.set_lightbox_savable(false);
+    // Clear the login form.
     ui.set_username(slint::SharedString::new());
     ui.set_password(slint::SharedString::new());
     ui.set_error(slint::SharedString::new());
@@ -1692,14 +1710,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_handle = ui_handle.clone();
         move || {
             if let Some(ui) = ui_handle.upgrade() {
-                let global = ui.global::<UiState>();
-                global.set_lightbox_visible(false);
-                global.set_lightbox_event_id(slint::SharedString::new());
-                global.set_lightbox_savable(false);
-                // Drop the held image now, rather than leaving a full
-                // resolution decode on the model until the next open
-                // overwrites it.
-                global.set_lightbox_image(slint::Image::default());
+                close_lightbox(&ui);
             }
         }
     });
