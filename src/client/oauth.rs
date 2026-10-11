@@ -35,7 +35,7 @@ impl ClientHandler {
                 .set_port(None)
                 .map_err(|_| anyhow::anyhow!("Invalid OAuth redirect URI"))?;
 
-            let url = Url::parse("https://git.flaxeneel2.net/streigen/echelon/")?;
+            let url = Url::parse("https://echelon.sh")?;
             let grant_types = vec![OAuthGrantType::AuthorizationCode {
                 redirect_uris: vec![registered_redirect_uri],
             }];
