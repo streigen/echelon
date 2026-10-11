@@ -23,10 +23,12 @@ export component AppWindow inherits Window {
     in-out property <string> homeserver: "https://matrix.org";
     in-out property <string> error: "";
     in-out property <bool> loading: false;
+    in-out property <bool> oauth-waiting: false;
     in-out property <bool> show_password: false;
 
     callback login(string, string, string);
     callback oauth_action(string);
+    callback oauth_cancel();
     callback open_chat();
     callback forgot_password();
     in-out property <string> result: "";
@@ -115,7 +117,30 @@ export component AppWindow inherits Window {
 
                 Rectangle { height: 12px; }
 
-                HorizontalLayout {
+                if root.loading && root.oauth-waiting : HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 8px;
+                        Text {
+                            text: "Waiting for browser login…";
+                            color: #818CF8;
+                            font-size: 14px;
+                            horizontal-alignment: center;
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            CustomButton {
+                                text: "Cancel login";
+                                width: 128px;
+                                height: 32px;
+                                clicked => { root.oauth_cancel(); }
+                            }
+                        }
+                    }
+                }
+
+                if !(root.loading && root.oauth-waiting) : HorizontalLayout {
                     alignment: center;
                     CustomButton {
                         text: root.loading ? "..." : "login";

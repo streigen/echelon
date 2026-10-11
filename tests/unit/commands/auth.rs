@@ -162,7 +162,7 @@ mod guards {
     async fn oauth_login_requires_a_homeserver() {
         for homeserver in ["", "   "] {
             assert_eq!(
-                oauth_login(homeserver.to_owned(), empty_state())
+                oauth_login(homeserver.to_owned(), empty_state(), None)
                     .await
                     .expect_err("a blank homeserver should be refused"),
                 "homeserver is required"
@@ -186,7 +186,7 @@ mod guards {
             "No active client session"
         );
         assert_eq!(
-            oauth_login("https://example.org".to_owned(), empty_state())
+            oauth_login("https://example.org".to_owned(), empty_state(), None)
                 .await
                 .expect_err("there is no handler"),
             "No active client session"

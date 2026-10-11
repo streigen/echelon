@@ -2,7 +2,15 @@ use crate::ClientState;
 use tracing::{debug, trace};
 use zeroize::Zeroizing;
 
-async fn oauth_impl(homeserver: String, state: ClientState) -> Result<String, String> {
+/// Log in with OAuth, returning `Ok(None)` when the browser wait is cancelled.
+///
+/// `cancel` is checked only while waiting for the local browser redirect.
+pub async fn oauth_login(
+    homeserver: String,
+    state: ClientState,
+    cancel: Option<tokio::sync::oneshot::Receiver<()>>,
+) -> Result<Option<String>, String> {
+    trace!("Starting OAuth login for homeserver: {}", homeserver);
     if homeserver.trim().is_empty() {
         return Err("homeserver is required".to_string());
     }
@@ -13,7 +21,7 @@ async fn oauth_impl(homeserver: String, state: ClientState) -> Result<String, St
         let Some(client_handler) = state_r.as_ref() else {
             return Err("No active client session".to_string());
         };
-        client_handler.oauth_login(homeserver).await
+        client_handler.oauth_login(homeserver, cancel).await
     };
 
     match result {
@@ -21,21 +29,11 @@ async fn oauth_impl(homeserver: String, state: ClientState) -> Result<String, St
             handler.start_sync().await;
             let mut write_guard = state.write().await;
             *write_guard = Some(handler);
-            Ok("OAuth login successful".to_string())
+            Ok(Some("OAuth login successful".to_string()))
         }
-        Ok(None) => Err("OAuth failed: no handler returned".to_string()),
+        Ok(None) => Ok(None),
         Err(e) => Err(format!("OAuth failed: {e}")),
     }
-}
-
-/// Log in a user with OAuth2 authentication using their homeserver
-///
-/// # Arguments
-/// * `homeserver` - The URL of the homeserver to log in to.
-/// * `state` - The client state containing the Matrix client to perform the login on.
-pub async fn oauth_login(homeserver: String, state: ClientState) -> Result<String, String> {
-    trace!("Starting OAuth login for homeserver: {}", homeserver);
-    oauth_impl(homeserver, state).await
 }
 
 /// Register a new user with the given username, password, and homeserver. Optionally takes a

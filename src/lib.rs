@@ -1113,6 +1113,20 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let client_state = client_state.clone();
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
+        let cancel_sender = Arc::new(std::sync::Mutex::new(
+            None::<tokio::sync::oneshot::Sender<()>>,
+        ));
+        let cancel_sender_for_action = cancel_sender.clone();
+        ui.on_oauth_cancel({
+            let cancel_sender = cancel_sender.clone();
+            move || {
+                if let Ok(mut sender) = cancel_sender.lock() {
+                    if let Some(sender) = sender.take() {
+                        let _ = sender.send(());
+                    }
+                }
+            }
+        });
         move |homeserver| {
             let (client_state, ui_handle) = (client_state.clone(), ui_handle.clone());
             if ui_handle
@@ -1124,21 +1138,33 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let homeserver = homeserver.to_string();
             if let Some(ui) = ui_handle.upgrade() {
                 ui.set_loading(true);
+                ui.set_oauth_waiting(false);
             }
+            let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+            if let Ok(mut sender) = cancel_sender_for_action.lock() {
+                *sender = Some(cancel_tx);
+            }
+            let cancel_sender = cancel_sender_for_action.clone();
             handle.spawn(async move {
-                let result = commands::auth::oauth_login(homeserver, client_state).await;
+                let result =
+                    commands::auth::oauth_login(homeserver, client_state, Some(cancel_rx)).await;
                 let _ = slint::invoke_from_event_loop(move || {
+                    if let Ok(mut sender) = cancel_sender.lock() {
+                        *sender = None;
+                    }
                     let Some(ui) = ui_handle.upgrade() else {
                         return;
                     };
                     ui.set_loading(false);
+                    ui.set_oauth_waiting(false);
                     match result {
-                        Ok(message) => {
+                        Ok(Some(message)) => {
                             ui.set_password(slint::SharedString::new());
                             show_toast(&ui, message, false);
                             ui.set_active_page(1);
                             ui.invoke_open_chat();
                         }
+                        Ok(None) => {}
                         Err(e) => show_toast(&ui, e, true),
                     }
                 });
