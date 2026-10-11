@@ -203,6 +203,9 @@ thread_local! {
     /// Invalidates account-scoped UI work when the active session is cleared.
     static ACCOUNT_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 
+    /// Invalidates UI work from earlier chat openings.
+    static CHAT_OPEN_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+
     /// Cached own display name for the active room.
     static OWN_DISPLAY_NAME: std::cell::RefCell<slint::SharedString> =
         std::cell::RefCell::new(slint::SharedString::new());
@@ -1227,8 +1230,17 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let state = client_state.clone();
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
+        let mut identity_task: Option<tokio::task::JoinHandle<()>> = None;
         let mut hierarchy_task: Option<tokio::task::JoinHandle<()>> = None;
         move || {
+            let chat_open_generation = CHAT_OPEN_GENERATION.with(|generation| {
+                let next = generation.get().wrapping_add(1);
+                generation.set(next);
+                next
+            });
+            if let Some(task) = identity_task.take() {
+                task.abort();
+            }
             if let Some(task) = hierarchy_task.take() {
                 task.abort();
             }
@@ -1237,7 +1249,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
             let identity_state = state.clone();
             let identity_ui = ui_handle.clone();
             let account_generation = ACCOUNT_GENERATION.with(std::cell::Cell::get);
-            handle.spawn(async move {
+            identity_task = Some(handle.spawn(async move {
                 let Ok(client) = commands::get_active_client(&identity_state).await else {
                     return;
                 };
@@ -1253,7 +1265,10 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     let identity_ui = identity_ui.clone();
                     move || {
                         if let Some(ui) = identity_ui.upgrade() {
-                            if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation {
+                            if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation
+                                || CHAT_OPEN_GENERATION.with(std::cell::Cell::get)
+                                    != chat_open_generation
+                            {
                                 return;
                             }
                             let state = ui.global::<UiState>();
@@ -1270,7 +1285,10 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 {
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(ui) = identity_ui.upgrade() {
-                            if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation {
+                            if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation
+                                || CHAT_OPEN_GENERATION.with(std::cell::Cell::get)
+                                    != chat_open_generation
+                            {
                                 return;
                             }
                             let state = ui.global::<UiState>();
@@ -1280,7 +1298,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                         }
                     });
                 }
-            });
+            }));
             hierarchy_task = Some(handle.spawn(async move {
                 // Subscribe before reading the local store so a sync update that
                 // races the initial query remains buffered for the receiver.
@@ -1304,7 +1322,9 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     let Some(ui) = ui_handle.upgrade() else {
                         return;
                     };
-                    if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation {
+                    if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation
+                        || CHAT_OPEN_GENERATION.with(std::cell::Cell::get) != chat_open_generation
+                    {
                         return;
                     }
                     match result {
