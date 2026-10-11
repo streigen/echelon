@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use matrix_sdk::Client;
+use matrix_sdk::ruma::api::client::device::get_device;
 use tokio::sync::RwLock;
 use tracing::warn;
 use url::Url;
@@ -45,17 +46,15 @@ pub(crate) async fn ensure_oauth_device_display_name(client: &Client, only_if_un
     };
 
     if only_if_unknown {
-        let devices = match client.devices().await {
-            Ok(response) => response.devices,
+        let current_device = match client
+            .send(get_device::v3::Request::new(device_id.to_owned()))
+            .await
+        {
+            Ok(response) => response.device,
             Err(error) => {
                 warn!("Could not inspect current OAuth device name: {error}");
                 return;
             }
-        };
-        let Some(current_device) = devices.iter().find(|device| device.device_id == device_id)
-        else {
-            warn!("Could not find the current device while checking its display name");
-            return;
         };
         if !current_device
             .display_name
