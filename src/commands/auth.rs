@@ -143,6 +143,8 @@ pub async fn logout(state: ClientState) -> Result<String, String> {
             return Err("No active client session".to_string());
         };
 
+        // Stop the sync loop before revoking the credentials it uses.
+        handler.stop_sync().await;
         let revoke_error = match tokio::time::timeout(
             std::time::Duration::from_secs(10),
             handler.revoke_session(),
@@ -153,7 +155,6 @@ pub async fn logout(state: ClientState) -> Result<String, String> {
             Ok(Err(error)) => Some(error.to_string()),
             Err(_) => Some("request timed out after 10 seconds".to_string()),
         };
-        handler.stop_sync().await;
         let active_room = handler.active_room_slot();
         *active_room.lock().await = None;
 
