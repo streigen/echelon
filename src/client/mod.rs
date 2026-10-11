@@ -76,18 +76,13 @@ fn is_unknown_device_name(name: &str) -> bool {
 }
 
 pub(crate) fn device_display_name() -> &'static str {
-    if cfg!(target_os = "android") {
-        "Echelon Mobile on Android"
-    } else if cfg!(target_os = "ios") {
-        "Echelon Mobile on iOS"
-    } else if cfg!(target_os = "windows") {
-        "Echelon on Windows"
-    } else if cfg!(target_os = "macos") {
-        "Echelon on macOS"
-    } else if cfg!(target_os = "linux") {
-        "Echelon on Linux"
-    } else {
-        "Echelon"
+    match std::env::consts::OS {
+        "android" => "Echelon Mobile on Android",
+        "ios" => "Echelon Mobile on iOS",
+        "windows" => "Echelon on Windows",
+        "macos" => "Echelon on macOS",
+        "linux" => "Echelon on Linux",
+        _ => "Echelon",
     }
 }
 
