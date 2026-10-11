@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::sync::Arc;
+use url::Position;
 
 mod account;
 mod app_state;
@@ -1245,13 +1246,8 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                 };
                 let fallback_name = user_id.localpart().to_string();
                 let user_id = user_id.to_string();
-                let homeserver = client
-                    .homeserver()
-                    .to_string()
-                    .trim_end_matches('/')
-                    .trim_start_matches("https://")
-                    .trim_start_matches("http://")
-                    .to_string();
+                let url = client.homeserver();
+                let homeserver = url[Position::BeforeHost..Position::BeforePath].to_owned();
                 let expected_user_id = user_id.clone();
                 let _ = slint::invoke_from_event_loop({
                     let identity_ui = identity_ui.clone();
