@@ -404,6 +404,12 @@ fn reset_account_ui(ui: &AppWindow) {
     OWN_DISPLAY_NAME.with(|name| *name.borrow_mut() = slint::SharedString::new());
 
     let state = ui.global::<UiState>();
+
+    // Clear sessions
+    state.set_sessions(to_model(Vec::new()));
+    state.set_sessions_loading(false);
+    state.set_sessions_error("".into());
+
     // Clear attachment cache entries before discarding the active room id.
     let previous_room_id = state.get_active_room_id();
     if let Ok(room_id) = <&RoomId>::try_from(previous_room_id.as_str()) {
@@ -1188,6 +1194,70 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                         }
                         Ok(None) => {}
                         Err(e) => show_toast(&ui, e, true),
+                    }
+                });
+            });
+        }
+    });
+
+    ui.global::<UiState>().on_refresh_sessions({
+        let client_state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+
+        move || {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+
+            let state = ui.global::<UiState>();
+
+            if state.get_sessions_loading() || state.get_logout_busy() {
+                return;
+            }
+
+            state.set_sessions_loading(true);
+            state.set_sessions_error("".into());
+            state.set_sessions(to_model(Vec::new()));
+
+            let account_generation = ACCOUNT_GENERATION.with(std::cell::Cell::get);
+
+            let client_state = client_state.clone();
+            let ui_handle = ui_handle.clone();
+
+            handle.spawn(async move {
+                let result = commands::sessions::get_session_list(client_state).await;
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+
+                    if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation {
+                        return;
+                    }
+
+                    let state = ui.global::<UiState>();
+                    state.set_sessions_loading(false);
+
+                    match result {
+                        Ok(devices) => {
+                            let rows = devices
+                                .into_iter()
+                                .map(|device| SessionRow {
+                                    device_id: device.device_id.to_string().into(),
+                                    display_name: device
+                                        .display_name
+                                        .unwrap_or_else(|| "Unnamed device".to_string())
+                                        .into(),
+                                })
+                                .collect();
+
+                            state.set_sessions(to_model(rows));
+                        }
+                        Err(error) => {
+                            state.set_sessions_error(error.into());
+                        }
                     }
                 });
             });

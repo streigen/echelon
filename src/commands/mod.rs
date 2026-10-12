@@ -8,6 +8,7 @@ pub mod debug;
 pub mod dm;
 pub mod media;
 pub mod messages;
+pub mod sessions;
 pub mod spaces;
 
 pub(crate) async fn get_active_client(state: &ClientState) -> Result<Client, String> {

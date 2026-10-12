@@ -65,6 +65,11 @@ export struct DebugCommand {
     arg-labels: [string],
 }
 
+export struct SessionRow {
+    device-id: string,
+    display-name: string,
+}
+
 export global UiState {
     // Current account identity shown in the user bar and settings.
     in-out property <string> account-display-name: "";
@@ -116,6 +121,12 @@ export global UiState {
     in-out property <string> toast-text: "";
     in-out property <bool> toast-error: false;
 
+    // Row containing details of a Session in the settings menu
+    in-out property <[SessionRow]> sessions: [];
+    in-out property <bool> sessions-loading: false;
+    in-out property <string> sessions-error: "";
+
+
     // Backend callbacks
     callback space-clicked(int);
     callback channel-clicked(string, string); // room id, room name
@@ -128,4 +139,5 @@ export global UiState {
     callback save-attachment(string); // event id
     callback preview-window-changed(int, string, bool); // row index hint, event id, in-keep-window
     callback logout();
+    callback refresh-sessions();
 }

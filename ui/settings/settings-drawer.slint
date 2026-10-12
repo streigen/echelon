@@ -15,6 +15,7 @@ export component SettingsDrawer inherits Rectangle {
         if drawer-open {
             root.overlay-active = true;
             focus-scope.focus();
+            UiState.refresh-sessions();
         }
     }
 
@@ -99,6 +100,51 @@ export component SettingsDrawer inherits Rectangle {
                         alignment: start;
                         padding: 24px;
                         spacing: 16px;
+                    
+
+                        Text {
+                            text: "Sessions";
+                            color: #FFFFFF;
+                            font-size: 22px;
+                        }
+
+                        if UiState.sessions-loading : Text {
+                            text: "Loading sessions...";
+                            color: #AAAAAA;
+                        }
+
+                        if UiState.sessions-error != "" : Text {
+                            text: UiState.sessions-error;
+                            color: #ED4245;
+                            wrap: word-wrap;
+                        }
+
+                        CustomButton {
+                            text: "Refresh sessions";
+                            enabled: !UiState.sessions-loading;
+                            clicked => { UiState.refresh-sessions(); }
+                        }
+
+                        for session in UiState.sessions : Rectangle {
+                            height: 76px;
+                            background: #101425;
+                            border-radius: 8px;
+
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 4px;
+
+                                Text {
+                                    text: session.display-name;
+                                    color: #FFFFFF;
+                                }
+
+                                Text {
+                                    text: session.device-id;
+                                    color: #AAAAAA;
+                                }
+                            }
+                        }
                     }
                 }
 
