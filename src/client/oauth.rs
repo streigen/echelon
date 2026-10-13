@@ -61,10 +61,7 @@ impl ClientHandler {
                 .set_oauth_client_id(issuer, response.client_id.as_str())?;
         }
 
-        let auth_data = oauth
-            .login(redirect_uri.clone(), None, None, None)
-            .build()
-            .await?;
+        let auth_data = oauth.login(redirect_uri, None, None, None).build().await?;
         webbrowser::open(auth_data.url.as_str())
             .map_err(|e| anyhow::anyhow!("Failed to open URL in browser: {}", e))?;
 
@@ -86,12 +83,12 @@ impl ClientHandler {
             .session()
             .ok_or_else(|| anyhow::anyhow!("Missing OAuth session after login"))?;
         let session = session_of(&new_client)?;
-        let user_id = session.user_id.clone();
+        let user_id = &session.user_id;
 
         self.app_state.secret_service.set_session(&session)?;
         self.app_state
             .echelon_store
-            .add_account(&user_id, &homeserver)?;
+            .add_account(user_id, &homeserver)?;
 
         drop(oauth);
         drop(new_client);
@@ -99,13 +96,13 @@ impl ClientHandler {
         let sqlite_pwd = self
             .app_state
             .secret_service
-            .get_or_create_sqlite_pwd(&user_id)?;
+            .get_or_create_sqlite_pwd(user_id)?;
 
         let persistent_client = self
-            .get_new_client(&user_id, &homeserver, &sqlite_pwd)
+            .get_new_client(user_id, &homeserver, &sqlite_pwd)
             .await?;
 
-        self.configure_session_persistence(&persistent_client, &user_id)?;
+        self.configure_session_persistence(&persistent_client, user_id)?;
         persistent_client.restore_session(auth_session).await?;
         super::ensure_oauth_device_display_name(&persistent_client, false).await;
 
