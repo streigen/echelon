@@ -1032,6 +1032,20 @@ fn format_time_of_day(origin_server_ts_ms: u64) -> String {
         .unwrap_or_else(|_| "--:--".to_string())
 }
 
+/// Formats session details into the appropriate format
+fn format_session_activity(timestamp_ms: Option<u64>) -> String {
+    timestamp_ms
+        .and_then(|ms| i64::try_from(ms).ok())
+        .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
+        .map(|timestamp| {
+            timestamp
+                .to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|| "Unknown".to_string())
+}
+
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(app: slint::android::AndroidApp) {
@@ -1242,14 +1256,38 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
 
                     match result {
                         Ok(devices) => {
+                            let mut devices = devices;
+                            devices.sort_by_key(|session| !session.is_current);
                             let rows = devices
                                 .into_iter()
-                                .map(|device| SessionRow {
-                                    device_id: device.device_id.to_string().into(),
-                                    display_name: device
-                                        .display_name
-                                        .unwrap_or_else(|| "Unnamed device".to_string())
+                                .map(|session| {
+                                    let device = session.device;
+
+                                    SessionRow {
+                                        device_id: device.device_id.to_string().into(),
+                                        display_name: device
+                                            .display_name
+                                            .unwrap_or_else(|| "Unnamed device".to_string())
+                                            .into(),
+                                        ip_address: device
+                                            .last_seen_ip
+                                            .unwrap_or_else(|| "Unknown".to_string())
+                                            .into(),
+                                        last_active: format_session_activity(
+                                            device.last_seen_ts.map(|ts| u64::from(ts.get())),
+                                        )
                                         .into(),
+                                        signed_in: "Not available".into(),
+                                        is_current: session.is_current,
+                                        trust: match session.verified {
+                                            Some(true) => SessionTrust::Verified,
+                                            Some(false) => SessionTrust::Unverified,
+                                            None => SessionTrust::Unknown,
+                                        },
+                                        scopes: "Not available".into(),
+                                        client_uri: "Not available".into(),
+                                        client_id: "Not available".into(),
+                                    }
                                 })
                                 .collect();
 

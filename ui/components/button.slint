@@ -2,6 +2,9 @@ import "../../static/JetBrainsMono-Regular.ttf";
 
 export component CustomButton {
     in property <string> text;
+    in property <image> icon;
+    in property <bool> show-icon: false;
+    in property <string> tooltip: "";
     in property <bool> enabled: true;
     
     // Customizable colors
@@ -9,6 +12,7 @@ export component CustomButton {
     in property <color> border-color-normal: #312E81;
     in property <color> border-color-hover: #38BDF8;
     in property <color> text-color: rgba(255, 255, 255, 0.55);
+    out property <bool> has-hover: ta.has-hover;
     
     callback clicked();
 
@@ -24,18 +28,47 @@ export component CustomButton {
 
         animate border-color { duration: 90ms; easing: ease-in-out; }
 
-        Text {
-            text: root.text;
-            color: root.text-color;
-            font-size: 16px;
-            font-family: "JetBrains Mono";
-            horizontal-alignment: center;
-            vertical-alignment: center;
+        HorizontalLayout {
+            width: 100%;
+            height: 24px;
+            y: (parent.height - self.height) / 2;
+            alignment: center;
+            spacing: root.show-icon ? 6px : 0px;
+
+            if root.show-icon : Rectangle {
+                width: 20px;
+                height: 24px;
+                background: transparent;
+
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: root.text-color;
+                }
+            }
+
+            Text {
+                horizontal-stretch: 0;
+                height: 24px;
+                text: root.text;
+                color: root.text-color;
+                font-size: 16px;
+                font-family: "JetBrains Mono";
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
         }
 
         ta := TouchArea {
             clicked => { if (root.enabled) { root.clicked(); } }
             mouse-cursor: root.enabled ? pointer : default;
+
+            if root.tooltip != "" : Tooltip {
+                text: @markdown("\{root.tooltip}");
+            }
         }
     }
 }

@@ -65,9 +65,23 @@ export struct DebugCommand {
     arg-labels: [string],
 }
 
+export enum SessionTrust {
+    Unknown,
+    Verified,
+    Unverified,
+}
+
 export struct SessionRow {
     device-id: string,
     display-name: string,
+    ip-address: string,
+    last-active: string,
+    signed-in: string,
+    is-current: bool,
+    trust: SessionTrust,
+    scopes: string,
+    client-uri: string,
+    client-id: string,
 }
 
 export global UiState {

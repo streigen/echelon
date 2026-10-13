@@ -172,6 +172,14 @@ This software uses icons and assets from the following resources:
 * **Source:** [settings](https://lucide.dev/icons/settings)
 * **License:** [Lucide License](#lucide-license)
 
+## Trash Icon (Lucide Icons)
+* **Source:** [trash](https://lucide.dev/icons/trash)
+* **License:** [Lucide License](#lucide-license)
+
+## Check Icon (Lucide Icons)
+* **Source:** [check](https://lucide.dev/icons/check)
+* **License:** [Lucide License](#lucide-license)
+
 ---
 
 ## Lucide License

@@ -1,5 +1,6 @@
 import { UiState } from "../app-state.slint";
 import { CustomButton } from "../components/button.slint";
+import { SessionCard } from "./session-card.slint";
 
 // Full-window settings surface that stays mounted while it slides closed.
 export component SettingsDrawer inherits Rectangle {
@@ -125,25 +126,8 @@ export component SettingsDrawer inherits Rectangle {
                             clicked => { UiState.refresh-sessions(); }
                         }
 
-                        for session in UiState.sessions : Rectangle {
-                            height: 76px;
-                            background: #101425;
-                            border-radius: 8px;
-
-                            VerticalLayout {
-                                padding: 12px;
-                                spacing: 4px;
-
-                                Text {
-                                    text: session.display-name;
-                                    color: #FFFFFF;
-                                }
-
-                                Text {
-                                    text: session.device-id;
-                                    color: #AAAAAA;
-                                }
-                            }
+                        for session in UiState.sessions : SessionCard {
+                            session: session;
                         }
                     }
                 }

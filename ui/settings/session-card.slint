@@ -1,0 +1,239 @@
+import { SessionRow, SessionTrust } from "../app-state.slint";
+import { CustomButton } from "../components/button.slint";
+
+component Detail inherits Text {
+    color: #AAAAAA;
+    font-size: 12px;
+    wrap: word-wrap;
+}
+
+export component SessionCard inherits Rectangle {
+    in property <SessionRow> session;
+
+    callback verify-requested(string);
+    callback remove-requested(string);
+
+    property <bool> expanded: false;
+    property <bool> hovering:
+        header-ta.has-hover
+        || verify-button.has-hover
+        || trash-ta.has-hover;
+
+    height: content.preferred-height;
+    background: hovering ? #151C30 : #101425;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: hovering ? #465D86 : #222B40;
+
+    drop-shadow-blur: 10px;
+    drop-shadow-color:
+        hovering ? rgba(89, 181, 209, 0.15) : transparent;
+
+    animate background { duration: 120ms; }
+    animate border-color { duration: 120ms; }
+    animate drop-shadow-color { duration: 120ms; }
+
+    content := VerticalLayout {
+        width: root.width;
+        spacing: 0px;
+
+        Rectangle {
+            width: 100%;
+            height: max(112px, identity-texts.preferred-height + 32px);
+
+            // The summary row toggles expansion; action controls have separate hit targets.
+            header-ta := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: pointer;
+                clicked => { root.expanded = !root.expanded; }
+            }
+
+            summary := HorizontalLayout {
+                width: 100%;
+                height: parent.height;
+                padding: 16px;
+                spacing: 16px;
+
+                // This slot fills the row's padded content area. Its children use
+                // explicit y coordinates, so the arrow and identity stay centered.
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: parent.height - 32px;
+                    background: transparent;
+
+                    identity-texts := VerticalLayout {
+                        x: 28px;
+                        width: parent.width - 28px;
+                        height: self.preferred-height;
+                        y: (parent.height - self.height) / 2;
+                        spacing: 5px;
+
+                        Text {
+                            text: root.session.display-name;
+                            color: #FFFFFF;
+                            font-size: 15px;
+                            wrap: word-wrap;
+                        }
+
+                        Detail {
+                            color: root.session.trust == SessionTrust.Verified
+                                ? #76E8A5
+                                : root.session.trust == SessionTrust.Unverified
+                                    ? #ED4245
+                                    : #AAAAAA;
+                            text:
+                                (root.session.is-current ? "This session · " : "")
+                                + (root.session.trust == SessionTrust.Verified
+                                    ? "Verified"
+                                    : root.session.trust == SessionTrust.Unverified
+                                        ? "Unverified"
+                                        : "Verification unknown");
+                        }
+                    }
+
+                    Image {
+                        x: 4px;
+                        y: identity-texts.y + (identity-texts.height - self.height) / 2;
+                        width: 14px;
+                        height: 14px;
+                        source: @image-url("../../static/dropdown.svg");
+                        colorize: #AAAAAA;
+                        transform-rotation: root.expanded ? 0deg : -90deg;
+                        animate transform-rotation { duration: 120ms; }
+                    }
+                }
+
+                Rectangle {
+                    width: 160px;
+                    height: parent.height - 32px;
+                    background: transparent;
+
+                    Detail {
+                        width: parent.width;
+                        height: self.preferred-height;
+                        y: (parent.height - self.height) / 2;
+                        text: "Last active: " + root.session.last-active;
+                    }
+                }
+
+                Rectangle {
+                    width: 180px;
+                    height: parent.height - 32px;
+                    background: transparent;
+
+                    // Keep the Verify slot reserved so trash stays in a fixed position.
+                    Rectangle {
+                        x: 0px;
+                        y: (parent.height - self.height) / 2;
+                        width: 112px;
+                        height: 48px;
+                        background: transparent;
+
+                        verify-button := CustomButton {
+                            visible: root.session.trust == SessionTrust.Unverified;
+                            width: 100%;
+                            height: 100%;
+                            text: "Verify";
+                            icon: @image-url("../../static/check.svg");
+                            show-icon: true;
+                            tooltip: "Verify session";
+                            bg-color: #123322;
+                            border-color-normal: #318957;
+                            border-color-hover: #53CB85;
+                            text-color: #76E8A5;
+
+                            clicked => {
+                                root.verify-requested(root.session.device-id);
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        x: 128px;
+                        y: (parent.height - self.height) / 2;
+                        width: 44px;
+                        height: 48px;
+                        border-radius: 8px;
+                        background: trash-ta.has-hover ? #502025 : #32171C;
+                        border-width: 1px;
+                        border-color: #ED4245;
+
+                        Image {
+                            width: 20px;
+                            height: 20px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("../../static/trash.svg");
+                            colorize: #ED4245;
+                        }
+
+                        trash-ta := TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            mouse-cursor: pointer;
+                            Tooltip { text: @markdown("Delete session"); }
+                            clicked => {
+                                root.remove-requested(root.session.device-id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.expanded : VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-bottom: 16px;
+            spacing: 12px;
+
+            Rectangle {
+                height: 1px;
+                background: #29334A;
+            }
+
+            Text {
+                text: "Session details";
+                color: #FFFFFF;
+                font-size: 14px;
+                font-weight: 700;
+            }
+
+            HorizontalLayout {
+                spacing: 24px;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 8px;
+
+                    Detail { text: "Device ID: " + root.session.device-id; }
+                    Detail { text: "Signed in: " + root.session.signed-in; }
+                    Detail { text: "Client URI: " + root.session.client-uri; }
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 8px;
+
+                    Detail { text: "IP: " + root.session.ip-address; }
+                    Detail { text: "Client ID: " + root.session.client-id; }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: #29334A;
+            }
+
+            Text {
+                text: "Scopes";
+                color: #FFFFFF;
+                font-size: 14px;
+                font-weight: 700;
+            }
+
+            Detail { text: root.session.scopes; }
+        }
+    }
+}
