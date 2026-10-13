@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use matrix_sdk::Client;
+use matrix_sdk::ruma::api::client::device::get_device;
 use tokio::sync::RwLock;
+use tracing::warn;
 use url::Url;
 
 use crate::AppWindow;
@@ -35,6 +37,53 @@ pub struct ClientHandler {
     active_room: ActiveRoomSlot,
     pub(crate) app_state: Arc<AppState>,
     pub(crate) ui_handle: slint::Weak<AppWindow>,
+}
+
+pub(crate) async fn ensure_oauth_device_display_name(client: &Client, only_if_unknown: bool) {
+    let Some(device_id) = client.device_id() else {
+        warn!("Cannot set OAuth device name: current device ID is unavailable");
+        return;
+    };
+
+    if only_if_unknown {
+        let current_device = match client
+            .send(get_device::v3::Request::new(device_id.to_owned()))
+            .await
+        {
+            Ok(response) => response.device,
+            Err(error) => {
+                warn!("Could not inspect current OAuth device name: {error}");
+                return;
+            }
+        };
+        if !current_device
+            .display_name
+            .as_deref()
+            .is_none_or(is_unknown_device_name)
+        {
+            return;
+        }
+    }
+
+    if let Err(error) = client.rename_device(device_id, device_display_name()).await {
+        warn!("Could not set OAuth device display name: {error}");
+    }
+}
+
+fn is_unknown_device_name(name: &str) -> bool {
+    let name = name.trim();
+    name.is_empty() || name.to_ascii_lowercase().starts_with("unknown device")
+}
+
+pub(crate) fn device_display_name() -> &'static str {
+    match std::env::consts::OS {
+        "android" => "Echelon Mobile on Android",
+        "ios" => "Echelon Mobile on iOS",
+        "windows" => "Echelon on Windows",
+        "macos" => "Echelon on macOS",
+        "linux" => "Echelon on Linux",
+        _ => "Echelon",
+    }
 }
 
 impl ClientHandler {
@@ -98,19 +147,26 @@ impl ClientHandler {
 /// # Arguments
 /// * `client` - The client the request was made on, now carrying the session.
 pub(crate) fn session_of(client: &Client) -> anyhow::Result<Session> {
+    let oauth_client_id = client
+        .oauth()
+        .client_id()
+        .map(|client_id| client_id.as_str().to_owned());
+    let user_id = client
+        .user_id()
+        .ok_or_else(|| anyhow::anyhow!("Missing user id after authentication"))?
+        .to_string();
+    let device_id = client
+        .device_id()
+        .ok_or_else(|| anyhow::anyhow!("Missing device id after authentication"))?
+        .to_string();
     let tokens = client
         .session_tokens()
         .ok_or_else(|| anyhow::anyhow!("Missing session tokens after authentication"))?;
     Ok(Session {
-        user_id: client
-            .user_id()
-            .ok_or_else(|| anyhow::anyhow!("Missing user id after authentication"))?
-            .to_string(),
-        device_id: client
-            .device_id()
-            .ok_or_else(|| anyhow::anyhow!("Missing device id after authentication"))?
-            .to_string(),
+        user_id,
+        device_id,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
+        oauth_client_id,
     })
 }

@@ -99,6 +99,11 @@ impl SyncManager {
         if let Some(handle) = sync_guard.take() {
             debug!("Stopping sync task...");
             handle.abort();
+            if let Err(error) = handle.await
+                && error.is_panic()
+            {
+                error!("Sync task panicked: {error}");
+            }
             debug!("Sync task stopped");
         }
     }

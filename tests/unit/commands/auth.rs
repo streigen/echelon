@@ -30,7 +30,11 @@ const DEVICE_ID: &str = "GHTYAJCE";
 /// # Arguments
 /// * `state` - The state to inspect.
 async fn is_signed_in(state: &ClientState) -> bool {
-    state.read().await.is_some()
+    state
+        .read()
+        .await
+        .as_ref()
+        .is_some_and(|handler| handler.get_client().user_id().is_some())
 }
 
 /// The user id of the session held in the state.
@@ -155,16 +159,10 @@ mod guards {
     }
 
     #[tokio::test]
-    async fn the_oauth_flows_require_a_homeserver() {
+    async fn oauth_login_requires_a_homeserver() {
         for homeserver in ["", "   "] {
             assert_eq!(
-                oauth_login(homeserver.to_owned(), empty_state())
-                    .await
-                    .expect_err("a blank homeserver should be refused"),
-                "homeserver is required"
-            );
-            assert_eq!(
-                oauth_register(homeserver.to_owned(), empty_state())
+                oauth_login(homeserver.to_owned(), empty_state(), None)
                     .await
                     .expect_err("a blank homeserver should be refused"),
                 "homeserver is required"
@@ -188,7 +186,7 @@ mod guards {
             "No active client session"
         );
         assert_eq!(
-            oauth_login("https://example.org".to_owned(), empty_state())
+            oauth_login("https://example.org".to_owned(), empty_state(), None)
                 .await
                 .expect_err("there is no handler"),
             "No active client session"
@@ -451,7 +449,9 @@ mod logout {
     /// * `name` - A label unique to the calling test.
     async fn signed_in(name: &str) -> MockSession {
         let session = mock_session(name).await;
-        mock_sign_in(&session).await;
+        session.server.mock_versions().ok().mount().await;
+        session.server.mock_login().ok().mount().await;
+        session.server.mock_sync().ok(|_| {}).mount().await;
         super::super::login(
             "alice".to_owned(),
             "hunter2".to_owned(),
@@ -507,6 +507,27 @@ mod logout {
                 .expect("reading the store should succeed")
                 .is_none()
         );
+        let account_dir = session
+            .app_state
+            .data_dir
+            .join("accounts")
+            .join(crate::storage::secret::SecretService::user_id_hash(USER_ID));
+        assert!(
+            !account_dir.exists(),
+            "the account database directory is removed"
+        );
+        assert!(
+            session.state.read().await.is_some(),
+            "an unauthenticated handler remains available for login"
+        );
+        assert_eq!(
+            session
+                .app_state
+                .echelon_store
+                .get_last()
+                .expect("reading the account list should succeed"),
+            None
+        );
         assert!(
             session
                 .app_state
@@ -557,7 +578,8 @@ mod logout {
             .await
             .expect("local logout should succeed regardless");
 
-        assert_eq!(outcome, "logged out");
+        assert!(outcome.contains("logged out locally"));
+        assert!(outcome.contains("homeserver revocation failed"));
         assert!(!is_signed_in(&session.state).await);
         assert!(
             session
@@ -568,10 +590,237 @@ mod logout {
                 .is_none()
         );
     }
+
+    #[tokio::test]
+    async fn can_sign_in_again_after_logout_with_a_fresh_account_database() {
+        let session = signed_in("auth-logout-signin-again").await;
+        let account_dir = session
+            .app_state
+            .data_dir
+            .join("accounts")
+            .join(crate::storage::secret::SecretService::user_id_hash(USER_ID));
+        assert!(account_dir.exists(), "sign-in created the account database");
+
+        session
+            .server
+            .mock_logout()
+            .expect_access_token("abc123")
+            .ok()
+            .expect(1)
+            .mount()
+            .await;
+        super::super::logout(session.state.clone())
+            .await
+            .expect("local logout should finish");
+        assert!(!account_dir.exists(), "logout removed the old database");
+
+        // Replace the first login response with a new device and token, as a
+        // homeserver does for a fresh login after revocation.
+        session.server.verify_and_reset().await;
+        session.server.mock_versions().ok().mount().await;
+        Mock::given(method("POST"))
+            .and(path("/_matrix/client/v3/login"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "user_id": USER_ID,
+                "device_id": "N3WDEVICE",
+                "access_token": "new-access-token",
+            })))
+            .mount(&session.server)
+            .await;
+        session.server.mock_sync().ok(|_| {}).mount().await;
+
+        super::super::login(
+            "alice".to_owned(),
+            "hunter2".to_owned(),
+            session.server.uri(),
+            session.state.clone(),
+        )
+        .await
+        .expect("the bootstrap handler should permit a new login");
+
+        assert_eq!(signed_in_as(&session.state).await.as_deref(), Some(USER_ID));
+        assert!(
+            account_dir.exists(),
+            "the new login created a fresh database"
+        );
+        let stored = session
+            .app_state
+            .secret_service
+            .get_session(USER_ID)
+            .expect("reading the new session should succeed")
+            .expect("new login stored its session");
+        assert_eq!(stored.device_id, "N3WDEVICE");
+        assert_eq!(stored.access_token, "new-access-token");
+    }
+
+    #[tokio::test]
+    async fn preserves_other_accounts_and_shared_oauth_registration() {
+        let session = signed_in("auth-logout-preserves-shared").await;
+        session
+            .app_state
+            .echelon_store
+            .add_account("@bob:example.org", "https://example.org")
+            .expect("adding the other account should succeed");
+        session
+            .app_state
+            .echelon_store
+            .set_oauth_client_id("https://issuer.example", "shared-client")
+            .expect("setting shared OAuth registration should succeed");
+        session
+            .server
+            .mock_logout()
+            .expect_access_token("abc123")
+            .ok()
+            .expect(1)
+            .mount()
+            .await;
+
+        super::super::logout(session.state.clone())
+            .await
+            .expect("logout should succeed");
+
+        assert!(
+            session
+                .app_state
+                .echelon_store
+                .get_account("@bob:example.org")
+                .expect("reading other account should succeed")
+                .is_some()
+        );
+        assert_eq!(
+            session
+                .app_state
+                .echelon_store
+                .oauth_client_id("https://issuer.example")
+                .expect("reading shared OAuth registration should succeed")
+                .as_deref(),
+            Some("shared-client")
+        );
+        assert_eq!(
+            session
+                .app_state
+                .echelon_store
+                .get_last()
+                .expect("reading last account should succeed")
+                .as_deref(),
+            Some("@bob:example.org")
+        );
+    }
+
+    #[tokio::test]
+    async fn reports_local_secret_cleanup_failure_after_clearing_client_state() {
+        let session = signed_in("auth-logout-cleanup-failure").await;
+        session
+            .server
+            .mock_logout()
+            .expect_access_token("abc123")
+            .ok()
+            .expect(1)
+            .mount()
+            .await;
+        let keyring_account = crate::storage::secret::SecretService::user_id_hash(USER_ID);
+        crate::test_support::fail_next_keyring_call(
+            "echelon-test-auth-logout-cleanup-failure",
+            &keyring_account,
+            crate::test_support::keyring_locked(),
+        );
+
+        let error = super::super::logout(session.state.clone())
+            .await
+            .expect_err("keyring cleanup failure must be reported");
+
+        assert!(error.contains("local cleanup incomplete"), "got: {error}");
+        assert!(error.contains("stored session secrets"), "got: {error}");
+        assert!(!is_signed_in(&session.state).await);
+        assert!(
+            session.state.read().await.is_some(),
+            "the unauthenticated login handler remains available"
+        );
+    }
+
+    #[tokio::test]
+    async fn reports_database_directory_failure_and_keeps_its_password() {
+        let session = mock_session("auth-logout-database-delete-failure").await;
+        let stored_session = crate::client::session_of(&session.client)
+            .expect("the mock handler has an authenticated session");
+        let user_id = stored_session.user_id.clone();
+        session
+            .app_state
+            .secret_service
+            .set_session(&stored_session)
+            .expect("session credentials should be stored");
+        session
+            .app_state
+            .echelon_store
+            .add_account(&user_id, &session.server.uri())
+            .expect("the account should be recorded");
+        let sqlite_password = session
+            .app_state
+            .secret_service
+            .get_or_create_sqlite_pwd(&user_id)
+            .expect("the database password should be stored");
+        let account_dir = session.app_state.data_dir.join("accounts").join(
+            crate::storage::secret::SecretService::user_id_hash(&user_id),
+        );
+        std::fs::create_dir_all(account_dir.parent().expect("account directory parent"))
+            .expect("accounts directory should be created");
+        std::fs::write(&account_dir, "blocks directory deletion")
+            .expect("a file should block directory deletion");
+
+        session
+            .server
+            .mock_logout()
+            .expect_access_token("1234")
+            .ok()
+            .expect(1)
+            .mount()
+            .await;
+        let error = super::super::logout(session.state.clone())
+            .await
+            .expect_err("account database deletion failure must be reported");
+
+        assert!(
+            error.contains("could not delete account database"),
+            "got: {error}"
+        );
+        assert!(
+            !is_signed_in(&session.state).await,
+            "the old client session is cleared"
+        );
+        assert!(
+            session.state.read().await.is_some(),
+            "the unauthenticated handler remains available"
+        );
+        assert_eq!(
+            session
+                .app_state
+                .echelon_store
+                .get_last()
+                .expect("reading account recency should succeed"),
+            None
+        );
+        assert!(
+            session
+                .app_state
+                .secret_service
+                .get_session(&user_id)
+                .expect("reading session credentials should succeed")
+                .is_none()
+        );
+        assert_eq!(
+            *session
+                .app_state
+                .secret_service
+                .get_or_create_sqlite_pwd(&user_id)
+                .expect("the retained database password should remain readable"),
+            *sqlite_password
+        );
+    }
 }
 
 mod restore_session {
     use super::*;
+    use matrix_sdk::AuthSession;
 
     #[tokio::test]
     async fn restores_a_session_that_was_stored_earlier() {
@@ -610,6 +859,68 @@ mod restore_session {
 
         assert_eq!(outcome, "session restored");
         assert_eq!(signed_in_as(&session.state).await.as_deref(), Some(USER_ID));
+    }
+
+    #[tokio::test]
+    async fn restores_an_oauth_session_with_its_client_id() {
+        let session = mock_session("auth-restore-oauth").await;
+        session.server.mock_versions().ok().mount().await;
+        session
+            .server
+            .mock_sync()
+            .ok_and_run(&session.client, |_| {})
+            .await;
+
+        session
+            .app_state
+            .secret_service
+            .set_session(&crate::storage::secret::Session {
+                user_id: USER_ID.to_owned(),
+                device_id: DEVICE_ID.to_owned(),
+                access_token: "oauth-access-token".to_owned(),
+                refresh_token: Some("oauth-refresh-token".to_owned()),
+                oauth_client_id: Some("oauth-client-123".to_owned()),
+            })
+            .expect("storing the OAuth session should succeed");
+        session
+            .app_state
+            .echelon_store
+            .add_account(USER_ID, &session.server.uri())
+            .expect("recording the account should succeed");
+
+        let outcome = super::super::restore_session(
+            USER_ID.to_owned(),
+            Some(session.server.uri()),
+            session.state.clone(),
+        )
+        .await
+        .expect("restoring should succeed");
+
+        assert_eq!(outcome, "session restored");
+        let state = session.state.read().await;
+        let restored = state
+            .as_ref()
+            .expect("the session should be installed")
+            .get_client()
+            .session()
+            .expect("the client should have an authentication session");
+        match restored {
+            AuthSession::OAuth(oauth) => {
+                assert_eq!(oauth.client_id.as_str(), "oauth-client-123");
+                assert_eq!(oauth.user.tokens.access_token, "oauth-access-token");
+                assert_eq!(
+                    oauth.user.tokens.refresh_token.as_deref(),
+                    Some("oauth-refresh-token")
+                );
+            }
+            AuthSession::Matrix(_) => panic!("OAuth session restored as Matrix auth"),
+            _ => panic!("unexpected authentication session type"),
+        }
+        state
+            .as_ref()
+            .expect("the session should be installed")
+            .stop_sync()
+            .await;
     }
 
     #[tokio::test]

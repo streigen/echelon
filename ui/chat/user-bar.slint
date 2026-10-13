@@ -1,8 +1,6 @@
 import { UiState } from "../app-state.slint";
 
 export component UserBar inherits Rectangle {
-    in-out property <string> username: "Clumsy ☆";
-    
     background: #000000;
     border-top-left-radius: 32px;
     
@@ -166,10 +164,33 @@ export component UserBar inherits Rectangle {
                 padding-left: 16px; // 16px from the Rooms Sidebar edge
                 padding-right: 16px;
                 
-                VerticalLayout {
-                    alignment: center;
-                    Text { text: root.username; color: #FFFFFF; font-size: 15px; font-weight: 700; font-family: "JetBrains Mono"; }
-                    Text { text: "matrix.org"; color: #40529F; font-size: 13px; font-family: "JetBrains Mono"; }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: profile-ta.has-hover ? rgba(255, 255, 255, 0.08) : transparent;
+                    animate background { duration: 90ms; easing: ease-in-out; }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: profile-ta.has-hover && UiState.account-user-id != "" ? UiState.account-user-id : UiState.account-display-name;
+                            color: #FFFFFF;
+                            font-size: 15px;
+                            font-weight: 700;
+                            font-family: "JetBrains Mono";
+                            overflow: elide;
+                            Tooltip { text: @markdown("\{UiState.account-user-id}"); }
+                        }
+                        Text {
+                            text: UiState.account-homeserver;
+                            color: #40529F;
+                            font-size: 13px;
+                            font-family: "JetBrains Mono";
+                            overflow: elide;
+                        }
+                    }
+                    profile-ta := TouchArea {
+                        clicked => { UiState.settings-open = true; }
+                        mouse-cursor: pointer;
+                    }
                 }
                 
                 VerticalLayout {

@@ -1,6 +1,7 @@
 use matrix_sdk::ruma::api::client::account::register::v3::Request as RegistrationRequest;
 use ruma::api::client::uiaa::{AuthData, RegistrationToken};
 use tracing::debug;
+use zeroize::Zeroizing;
 
 use crate::client::session_of;
 
@@ -17,7 +18,7 @@ impl ClientHandler {
     pub async fn register(
         &self,
         username: String,
-        password: String,
+        password: Zeroizing<String>,
         homeserver: String,
         registration_token: Option<String>,
     ) -> anyhow::Result<ClientHandler> {
@@ -27,7 +28,7 @@ impl ClientHandler {
 
             let mut request = RegistrationRequest::new();
             request.username = Some(username.clone());
-            request.password = Some(password.clone());
+            request.password = Some(password.to_string());
             if let Some(token) = registration_token.clone() {
                 request.auth = Some(AuthData::RegistrationToken(RegistrationToken::new(token)));
             }
@@ -59,8 +60,8 @@ impl ClientHandler {
                 debug!("Registration returned no token, logging in to establish a session");
                 auth_client
                     .matrix_auth()
-                    .login_username(&username, &password)
-                    .initial_device_display_name("Echelon")
+                    .login_username(&username, password.as_str())
+                    .initial_device_display_name(super::device_display_name())
                     .send()
                     .await?;
             }

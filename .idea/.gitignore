@@ -1,0 +1,10 @@
+# Ignore all JetBrains files by default.
+/*
+
+# Keep this file
+!/.gitignore
+
+# Deliberately shared project settings.
+!/codeStyles/
+!/inspectionProfiles/
+!/runConfigurations/

@@ -1,6 +1,6 @@
 [package]
 name = "echelon"
-version = "0.1.5"
+version = "0.2.0"
 authors = [
   "Siddhant Misra <me@flaxeneel2.net>",
   "Rayyan Parkar <rayyan@streigen.com>",
@@ -26,14 +26,14 @@ ruma = "0.16.0"
 anyhow = "1.0.102"
 serde_json = "1"
 tracing = "0.1.44"
-tracing-subscriber = "0.3.22"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 rand = "0.10.0"
 iota_stronghold = "2.1.0"
 futures-util = "0.3.31"
 futures-core = "0.3.31"
 blake3 = "1.8.3"
 url = "2"
-open = "5"
+webbrowser = "1.2.1"
 jiff = "0.2"
 zeroize = { version = "1.9", features = ["derive"] }
 

@@ -1,6 +1,8 @@
 use matrix_sdk::authentication::matrix::MatrixSession;
+use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UserSession};
 use matrix_sdk::{AuthSession, SessionMeta, SessionTokens};
 use ruma::{OwnedDeviceId, OwnedUserId};
+use zeroize::Zeroizing;
 
 use crate::client::session_of;
 use crate::client::sync_manager::SyncManager;
@@ -18,14 +20,14 @@ impl ClientHandler {
     pub async fn login(
         &self,
         username: String,
-        password: String,
+        password: Zeroizing<String>,
         homeserver: String,
     ) -> anyhow::Result<Option<ClientHandler>> {
         let auth_client = self.get_auth_client(&homeserver).await?;
         auth_client
             .matrix_auth()
-            .login_username(&username, &password)
-            .initial_device_display_name("Echelon")
+            .login_username(&username, password.as_str())
+            .initial_device_display_name(super::device_display_name())
             .send()
             .await?;
 
@@ -83,21 +85,38 @@ impl ClientHandler {
             .secret_service
             .get_session(&user_id)?
             .ok_or_else(|| anyhow::anyhow!("No stored session found for user"))?;
+        let is_oauth_session = session.oauth_client_id.is_some();
 
+        let meta = SessionMeta {
+            user_id: OwnedUserId::try_from(session.user_id.as_str())?,
+            device_id: OwnedDeviceId::from(session.device_id.as_str()),
+        };
+        self.configure_session_persistence(&new_client, &user_id)?;
         let tokens = SessionTokens {
             access_token: std::mem::take(&mut session.access_token),
             refresh_token: session.refresh_token.take(),
         };
 
-        new_client
-            .restore_session(AuthSession::Matrix(MatrixSession {
-                meta: SessionMeta {
-                    user_id: OwnedUserId::try_from(session.user_id.as_str())?,
-                    device_id: OwnedDeviceId::from(session.device_id.as_str()),
-                },
-                tokens,
-            }))
-            .await?;
+        if let Some(client_id) = session.oauth_client_id.take() {
+            new_client
+                .oauth()
+                .restore_session(
+                    OAuthSession {
+                        client_id: ClientId::new(client_id),
+                        user: UserSession { meta, tokens },
+                    },
+                    Default::default(),
+                )
+                .await?;
+        } else {
+            new_client
+                .restore_session(AuthSession::Matrix(MatrixSession { meta, tokens }))
+                .await?;
+        }
+
+        if is_oauth_session {
+            super::ensure_oauth_device_display_name(&new_client, true).await;
+        }
 
         ClientEvents::register_events(&new_client, self.ui_handle.clone());
 

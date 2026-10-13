@@ -6,6 +6,7 @@ import { ChatPage } from "./chat/chat-page.slint";
 import { DebugPage } from "./debug/debug-page.slint";
 import { Lightbox } from "./components/lightbox.slint";
 import { Toast } from "./components/toast.slint";
+import { SettingsDrawer } from "./settings/settings-drawer.slint";
 import { UiState, Message, MessageAttachment, DebugCommand } from "./app-state.slint";
 export { UiState }
 
@@ -22,10 +23,12 @@ export component AppWindow inherits Window {
     in-out property <string> homeserver: "https://matrix.org";
     in-out property <string> error: "";
     in-out property <bool> loading: false;
+    in-out property <bool> oauth-waiting: false;
     in-out property <bool> show_password: false;
 
     callback login(string, string, string);
-    callback oauth_action(string, string);
+    callback oauth_action(string);
+    callback oauth_cancel();
     callback open_chat();
     callback forgot_password();
     in-out property <string> result: "";
@@ -71,7 +74,7 @@ export component AppWindow inherits Window {
                     edited(val) => { root.password = val; }
                     input-type: root.show_password ? InputType.text : InputType.password;
                     is-password: true;
-                    show-password: root.show_password;
+                    show-password <=> root.show_password;
                     enabled: !root.loading;
                     accepted => { root.login(root.username, root.password, root.homeserver); }
                 }
@@ -114,7 +117,30 @@ export component AppWindow inherits Window {
 
                 Rectangle { height: 12px; }
 
-                HorizontalLayout {
+                if root.loading && root.oauth-waiting : HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 8px;
+                        Text {
+                            text: "Waiting for browser login…";
+                            color: #818CF8;
+                            font-size: 14px;
+                            horizontal-alignment: center;
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            CustomButton {
+                                text: "Cancel login";
+                                width: 128px;
+                                height: 32px;
+                                clicked => { root.oauth_cancel(); }
+                            }
+                        }
+                    }
+                }
+
+                if !(root.loading && root.oauth-waiting) : HorizontalLayout {
                     alignment: center;
                     CustomButton {
                         text: root.loading ? "..." : "login";
@@ -139,18 +165,8 @@ export component AppWindow inherits Window {
                     ] : OAuthIcon {
                         icon: provider.img;
                         provider-id: provider.id;
-                        clicked(id) => { root.oauth_action("login", id); }
-                    }
-                }
-
-                HorizontalLayout {
-                    alignment: center;
-                    padding-top: 8px;
-                    CustomButton {
-                        text: "register";
                         enabled: !root.loading;
-                        width: parent.width * 0.8;
-                        clicked => { root.oauth_action("register", root.homeserver); }
+                        clicked(_provider) => { root.oauth_action(root.homeserver); }
                     }
                 }
 
@@ -168,6 +184,7 @@ export component AppWindow inherits Window {
                         animate color { duration: 90ms; easing: ease; }
                     }
                     chat-ta := TouchArea {
+                        enabled: !root.loading && !root.debug-busy;
                         clicked => { root.active-page = 1; root.open_chat(); }
                         mouse-cursor: pointer;
                     }
@@ -185,6 +202,7 @@ export component AppWindow inherits Window {
                         animate color { duration: 90ms; easing: ease; }
                     }
                     debug-ta := TouchArea {
+                        enabled: !root.loading && !root.debug-busy;
                         clicked => { root.active-page = 2; }
                         mouse-cursor: pointer;
                     }
@@ -194,12 +212,13 @@ export component AppWindow inherits Window {
     }
 
     if active-page == 1 : ChatPage {}
+    if active-page == 1 : SettingsDrawer {}
 
     if active-page == 2 : DebugPage {
         commands: root.debug-commands;
         busy: root.debug-busy;
         output: root.debug-output;
-        back => { root.active-page = 0; }
+        back => { if !root.debug-busy && !root.loading { root.active-page = 0; } }
         run(cmd, a0, a1, a2, a3) => { root.debug-run-command(cmd, a0, a1, a2, a3); }
     }
 

@@ -10,7 +10,7 @@ A cross-platform matrix client focus-built for the gaming community.
 
 ## Contributing
 
-The best way to contribute to us is by letting us know about any features you'd like to see in this app, or any bugs that you find. Currently pull requests are closed but we will work on opening that up once we have stable core app. 
+The best way to contribute to us is by letting us know about any features you'd like to see in this app, or any bugs that you find. Currently pull requests are closed but we will work on opening that up once we have a stable core app. 
 
 ## Building
 
@@ -88,9 +88,19 @@ To install the app in the emulator/on your device, you need to first build the a
 adb install -r android/app/build/outputs/apk/release/app-x86_64-release.apk
 ```
 
-#### Debugging
+### Debugging
 
-To debug the app, you can use logcat to view the logs.
+#### Desktop
+
+The application uses `tracing` for logging. You can control the log level using the `RUST_LOG` environment variable. The default log level is `warn`.
+
+```sh
+RUST_LOG=debug cargo run
+```
+
+#### Android
+
+To debug the app on Android, you can use logcat to view the logs.
 
 ```sh
 adb logcat -s 'RustStdoutStderr:* AndroidRuntime:E DEBUG:* *:F'

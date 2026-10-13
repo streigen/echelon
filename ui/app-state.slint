@@ -66,6 +66,13 @@ export struct DebugCommand {
 }
 
 export global UiState {
+    // Current account identity shown in the user bar and settings.
+    in-out property <string> account-display-name: "";
+    in-out property <string> account-user-id: "";
+    in-out property <string> account-homeserver: "";
+    in-out property <bool> settings-open: false;
+    in-out property <bool> logout-busy: false;
+
     // Chat state
     in-out property <string> active-room: "";
     in-out property <string> active-room-id: "";
@@ -80,6 +87,9 @@ export global UiState {
     // Layout state
     in-out property <bool> sidebar-collapsed: false;
     in-out property <bool> participants-visible: true;
+    // Panel widths are transient UI state and reset when the app exits.
+    in-out property <length> room-sidebar-width: 250px;
+    in-out property <length> participants-width: 250px;
 
     // Voice state
     in-out property <string> active-voice-room: "";
@@ -117,4 +127,5 @@ export global UiState {
     callback close-lightbox();
     callback save-attachment(string); // event id
     callback preview-window-changed(int, string, bool); // row index hint, event id, in-keep-window
+    callback logout();
 }

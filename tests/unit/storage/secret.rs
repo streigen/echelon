@@ -32,6 +32,7 @@ fn session_with(user_id: &str, access_token: &str, refresh_token: Option<&str>) 
         device_id: "DEVICE1".to_owned(),
         access_token: access_token.to_owned(),
         refresh_token: refresh_token.map(ToOwned::to_owned),
+        oauth_client_id: None,
     }
 }
 
@@ -108,6 +109,33 @@ mod sessions {
         assert_eq!(stored.device_id, "DEVICE1");
         assert_eq!(stored.access_token, "access-token");
         assert_eq!(stored.refresh_token.as_deref(), Some("refresh-token"));
+        // Password sessions and pre OAuth snapshots have no OAuth client ID.
+        assert_eq!(stored.oauth_client_id, None);
+    }
+
+    #[test]
+    fn malformed_access_token_bytes_return_an_error() {
+        const USER_ID: &str = "@alice:example.org";
+        let (_dir, secrets) = temp_secret_service("session-malformed-token");
+        secrets
+            .set_session(&session(USER_ID, Some("refresh-token")))
+            .expect("storing should succeed");
+        let (stronghold, store, key_provider, snapshot_path) = secrets
+            .open_store(USER_ID, false)
+            .expect("opening should succeed")
+            .expect("the snapshot exists");
+        store
+            .insert(b"access_token".to_vec(), vec![0xff, 0xfe], None)
+            .expect("corrupt fixture should be writable");
+        secrets
+            .commit(&stronghold, &key_provider, &snapshot_path)
+            .expect("corrupt fixture should be committed");
+
+        let error = match secrets.get_session(USER_ID) {
+            Ok(_) => panic!("malformed stored token bytes must not decode"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("access token"));
     }
 
     #[test]
@@ -143,6 +171,175 @@ mod sessions {
             .expect("reading should succeed")
             .expect("the session was just stored");
         assert_eq!(stored.refresh_token, None);
+    }
+
+    #[test]
+    fn updating_tokens_preserves_session_metadata_and_replaces_the_pair() {
+        let (_dir, secrets) = temp_secret_service("session-token-rotation");
+        let mut initial = session("@alice:example.org", Some("old-refresh"));
+        initial.oauth_client_id = Some("client-123".to_owned());
+        secrets
+            .set_session(&initial)
+            .expect("storing should succeed");
+
+        assert!(
+            secrets
+                .set_session_tokens_for_device(
+                    "@alice:example.org",
+                    "DEVICE1",
+                    Some("client-123"),
+                    "new-access",
+                    Some("new-refresh"),
+                )
+                .expect("storing rotated tokens should succeed")
+        );
+
+        let stored = secrets
+            .get_session("@alice:example.org")
+            .expect("reading should succeed")
+            .expect("the session was just stored");
+        assert_eq!(stored.access_token, "new-access");
+        assert_eq!(stored.refresh_token.as_deref(), Some("new-refresh"));
+        assert_eq!(stored.device_id, "DEVICE1");
+        assert_eq!(stored.oauth_client_id.as_deref(), Some("client-123"));
+    }
+
+    #[test]
+    fn ignores_a_late_refresh_from_a_different_device() {
+        let (_dir, secrets) = temp_secret_service("session-stale-refresh");
+        secrets
+            .set_session(&session("@alice:example.org", Some("current-refresh")))
+            .expect("storing should succeed");
+
+        assert!(
+            !secrets
+                .set_session_tokens_for_device(
+                    "@alice:example.org",
+                    "OLDDEVICE",
+                    None,
+                    "late-access",
+                    Some("late-refresh"),
+                )
+                .expect("a stale callback is a normal rejected write")
+        );
+        assert_eq!(
+            secrets
+                .get_session("@alice:example.org")
+                .expect("reading should succeed")
+                .expect("current session remains")
+                .access_token,
+            "access-token"
+        );
+    }
+
+    #[test]
+    fn late_refresh_after_delete_does_not_recreate_snapshot_or_keyring_entry() {
+        const USER_ID: &str = "@alice:example.org";
+        const SERVICE: &str = "echelon-test-session-stale-after-delete";
+        let (_dir, secrets) = temp_secret_service("session-stale-after-delete");
+        secrets
+            .set_session(&session(USER_ID, Some("refresh-token")))
+            .expect("storing should succeed");
+        let snapshot_path = secrets.snapshot_path(USER_ID);
+        let keyring_entry =
+            keyring_core::Entry::new(SERVICE, &SecretService::user_id_hash(USER_ID))
+                .expect("the test keyring entry should be addressable");
+        assert!(
+            keyring_entry.get_password().is_ok(),
+            "storing a session creates its keyring key"
+        );
+
+        secrets
+            .delete_session(USER_ID)
+            .expect("full session cleanup should succeed");
+        assert!(
+            !secrets
+                .set_session_tokens_for_device(
+                    USER_ID,
+                    "DEVICE1",
+                    None,
+                    "late-access",
+                    Some("late-refresh"),
+                )
+                .expect("a retired callback is safely ignored")
+        );
+
+        assert!(!snapshot_path.as_path().exists());
+        assert!(matches!(
+            keyring_entry.get_password(),
+            Err(keyring_core::Error::NoEntry)
+        ));
+    }
+
+    #[test]
+    fn preserving_database_key_removes_tokens_but_keeps_sqlite_password() {
+        let (_dir, secrets) = temp_secret_service("session-preserve-db-key");
+        secrets
+            .set_session(&session("@alice:example.org", Some("refresh-token")))
+            .expect("storing should succeed");
+        let password = secrets
+            .get_or_create_sqlite_pwd("@alice:example.org")
+            .expect("database password should be created");
+
+        secrets
+            .delete_session_preserving_key("@alice:example.org")
+            .expect("session tokens should be cleared");
+
+        assert!(
+            secrets
+                .get_session("@alice:example.org")
+                .expect("reading should succeed")
+                .is_none()
+        );
+        assert_eq!(
+            *secrets
+                .get_or_create_sqlite_pwd("@alice:example.org")
+                .expect("database password should remain available"),
+            *password
+        );
+        assert!(
+            !secrets
+                .set_session_tokens_for_device(
+                    "@alice:example.org",
+                    "DEVICE1",
+                    None,
+                    "late-access",
+                    Some("late-refresh"),
+                )
+                .expect("a callback without session credentials is rejected")
+        );
+    }
+
+    #[test]
+    fn stores_and_returns_an_oauth_session() {
+        let (_dir, secrets) = temp_secret_service("session-oauth");
+        let mut sess = session("@alice:example.org", Some("refresh-token"));
+        sess.oauth_client_id = Some("client-123".to_owned());
+
+        secrets.set_session(&sess).expect("storing should succeed");
+        let stored = secrets
+            .get_session("@alice:example.org")
+            .expect("reading should succeed")
+            .expect("the session was just stored");
+
+        assert_eq!(stored.oauth_client_id.as_deref(), Some("client-123"));
+    }
+
+    #[test]
+    fn replacing_a_session_drops_an_oauth_client_id_it_no_longer_has() {
+        let (_dir, secrets) = temp_secret_service("session-oauth-cleared");
+        let mut sess = session("@alice:example.org", Some("refresh-token"));
+        sess.oauth_client_id = Some("client-123".to_owned());
+        secrets.set_session(&sess).expect("storing should succeed");
+
+        sess.oauth_client_id = None;
+        secrets.set_session(&sess).expect("storing should succeed");
+
+        let stored = secrets
+            .get_session("@alice:example.org")
+            .expect("reading should succeed")
+            .expect("the session was just stored");
+        assert_eq!(stored.oauth_client_id, None);
     }
 
     #[test]

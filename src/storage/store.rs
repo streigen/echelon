@@ -212,6 +212,32 @@ impl EchelonStore {
     pub fn get_last(&self) -> Result<Option<String>> {
         Ok(self.get_accounts()?.last)
     }
+
+    pub fn oauth_client_id(&self, issuer: &str) -> Result<Option<String>> {
+        let (_, store, _) = self.open()?;
+        let Some(bytes) = store.get(b"oauth_clients")? else {
+            return Ok(None);
+        };
+        let clients: std::collections::HashMap<String, String> = serde_json::from_slice(&bytes)?;
+        Ok(clients.get(issuer).cloned())
+    }
+
+    pub fn set_oauth_client_id(&self, issuer: &str, client_id: &str) -> Result<()> {
+        let (stronghold, store, key_provider) = self.open()?;
+        let mut clients: std::collections::HashMap<String, String> =
+            match store.get(b"oauth_clients")? {
+                Some(bytes) => serde_json::from_slice(&bytes)?,
+                None => Default::default(),
+            };
+
+        clients.insert(issuer.to_owned(), client_id.to_owned());
+        store.insert(
+            b"oauth_clients".to_vec(),
+            serde_json::to_vec(&clients)?,
+            None,
+        )?;
+        self.commit(&stronghold, &key_provider)
+    }
 }
 
 /// Test fixture that writes an account list as raw JSON. Lives here rather than

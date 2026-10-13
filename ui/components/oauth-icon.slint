@@ -2,6 +2,7 @@ export component OAuthIcon {
     in property <image> icon;
     in property <string> provider-id;
     in property <color> icon-color: #38BDF8;
+    in property <bool> enabled: true;
     
     callback clicked(string);
 
@@ -22,6 +23,7 @@ export component OAuthIcon {
         }
 
         p-ta := TouchArea {
+            enabled: root.enabled;
             clicked => { root.clicked(root.provider-id); }
             mouse-cursor: pointer;
         }

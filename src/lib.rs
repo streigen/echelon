@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::sync::Arc;
+use url::Position;
 
 mod account;
 mod app_state;
@@ -27,6 +28,7 @@ use slint::Model;
 use storage::keyring_client::KeyringClient;
 use storage::secret::SecretService;
 use storage::store::EchelonStore;
+use zeroize::Zeroizing;
 
 pub use client::ClientState;
 
@@ -198,6 +200,12 @@ thread_local! {
     /// Counter incremented when the message model is reset.
     static MESSAGE_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 
+    /// Invalidates account-scoped UI work when the active session is cleared.
+    static ACCOUNT_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+
+    /// Invalidates UI work from earlier chat openings.
+    static CHAT_OPEN_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+
     /// Cached own display name for the active room.
     static OWN_DISPLAY_NAME: std::cell::RefCell<slint::SharedString> =
         std::cell::RefCell::new(slint::SharedString::new());
@@ -354,10 +362,7 @@ fn trim_messages(ui: &AppWindow, drop_oldest: bool) {
 /// # Arguments
 /// * `ui` - The window whose message view to reset.
 fn reset_message_view(ui: &AppWindow) {
-    clear_message_rows();
-    // Before any fetch this reset goes on to start, so that one carries the new
-    // generation and every page still in flight against the old rows carries the old.
-    MESSAGE_GENERATION.with(|g| g.set(g.get().wrapping_add(1)));
+    reset_message_rows();
     PREVIEW_WINDOW.with(|s| {
         let mut window = s.borrow_mut();
         window.loaded.clear();
@@ -369,6 +374,80 @@ fn reset_message_view(ui: &AppWindow) {
     state.set_next_token(slint::SharedString::new());
     state.set_loading_more(false);
     state.set_newer_trimmed(false);
+}
+
+/// Clear rows and invalidate asynchronous work that was keyed to them.
+fn reset_message_rows() {
+    clear_message_rows();
+    // Future fetches use the new generation; existing pages remain stale.
+    MESSAGE_GENERATION.with(|generation| generation.set(generation.get().wrapping_add(1)));
+}
+
+/// Close the lightbox and release its image and attachment identity.
+fn close_lightbox(ui: &AppWindow) {
+    let state = ui.global::<UiState>();
+    state.set_lightbox_visible(false);
+    state.set_lightbox_event_id(slint::SharedString::new());
+    state.set_lightbox_savable(false);
+    // Drop the held image now rather than retaining a full resolution decode.
+    state.set_lightbox_image(slint::Image::default());
+}
+
+/// Clear account-owned UI state after logout while retaining layout preferences.
+fn reset_account_ui(ui: &AppWindow) {
+    // Invalidate pending account and message work before clearing its view state.
+    ACCOUNT_GENERATION.with(|generation| {
+        generation.set(generation.get().wrapping_add(1));
+    });
+    reset_message_rows();
+    PREVIEW_WINDOW.with(|state| *state.borrow_mut() = PreviewWindow::default());
+    OWN_DISPLAY_NAME.with(|name| *name.borrow_mut() = slint::SharedString::new());
+
+    let state = ui.global::<UiState>();
+    // Clear attachment cache entries before discarding the active room id.
+    let previous_room_id = state.get_active_room_id();
+    if let Ok(room_id) = <&RoomId>::try_from(previous_room_id.as_str()) {
+        rooms::messages::clear_room_attachments(room_id);
+    }
+    rooms::set_active_room(None);
+    state.set_settings_open(false);
+    state.set_logout_busy(false);
+    // Clear account and room identity.
+    state.set_account_display_name(slint::SharedString::new());
+    state.set_account_user_id(slint::SharedString::new());
+    state.set_account_homeserver(slint::SharedString::new());
+    state.set_active_room(slint::SharedString::new());
+    state.set_active_room_id(slint::SharedString::new());
+
+    // Reset message paging and sidebar selection.
+    state.set_messages_loading(false);
+    state.set_next_token(slint::SharedString::new());
+    state.set_loading_more(false);
+    state.set_prepend_count(0);
+    state.set_prepend_epoch(state.get_prepend_epoch().wrapping_add(1));
+    state.set_newer_trimmed(false);
+    state.set_space_tabs(to_model(Vec::new()));
+    state.set_space_channels(to_model(Vec::new()));
+    state.set_active_space_index(-1);
+    state.set_active_space_name(slint::SharedString::new());
+    state.set_categories(to_model(Vec::new()));
+
+    // Reset voice controls for the logged-out account.
+    state.set_active_voice_room(slint::SharedString::new());
+    state.set_muted(false);
+    state.set_deafened(false);
+
+    // Logout also resets loading and dimensions beyond the normal lightbox close.
+    close_lightbox(ui);
+    state.set_lightbox_loading(false);
+    state.set_lightbox_width(0);
+    state.set_lightbox_height(0);
+    // Clear the login form.
+    ui.set_username(slint::SharedString::new());
+    ui.set_password(slint::SharedString::new());
+    ui.set_error(slint::SharedString::new());
+    ui.set_loading(false);
+    ui.set_active_page(0);
 }
 
 /// How long a toast stays up before clearing itself.
@@ -964,7 +1043,10 @@ fn android_main(app: slint::android::AndroidApp) {
 }
 
 pub async fn run_app() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     keyring_init();
     let data_dir = app_data_dir(APP_ID);
@@ -1013,9 +1095,15 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_handle = ui_handle.clone();
         move |username, password, homeserver| {
             let (client_state, ui_handle) = (client_state.clone(), ui_handle.clone());
+            if ui_handle
+                .upgrade()
+                .is_some_and(|ui| ui.get_loading() || ui.get_debug_busy())
+            {
+                return;
+            }
             let (username, password, homeserver) = (
                 username.to_string(),
-                password.to_string(),
+                Zeroizing::new(password.to_string()),
                 homeserver.to_string(),
             );
             if let Some(ui) = ui_handle.upgrade() {
@@ -1030,8 +1118,106 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                     };
                     ui.set_loading(false);
                     match result {
-                        Ok(message) => show_toast(&ui, message, false),
+                        Ok(message) => {
+                            ui.set_password(slint::SharedString::new());
+                            show_toast(&ui, message, false);
+                            ui.set_active_page(1);
+                            ui.invoke_open_chat();
+                        }
                         Err(e) => show_toast(&ui, e, true),
+                    }
+                });
+            });
+        }
+    });
+
+    ui.on_oauth_action({
+        let client_state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        let cancel_sender = Arc::new(std::sync::Mutex::new(
+            None::<tokio::sync::oneshot::Sender<()>>,
+        ));
+        let cancel_sender_for_action = cancel_sender.clone();
+        ui.on_oauth_cancel({
+            let cancel_sender = cancel_sender.clone();
+            move || {
+                if let Ok(mut sender) = cancel_sender.lock() {
+                    if let Some(sender) = sender.take() {
+                        let _ = sender.send(());
+                    }
+                }
+            }
+        });
+        move |homeserver| {
+            let (client_state, ui_handle) = (client_state.clone(), ui_handle.clone());
+            if ui_handle
+                .upgrade()
+                .is_some_and(|ui| ui.get_loading() || ui.get_debug_busy())
+            {
+                return;
+            }
+            let homeserver = homeserver.to_string();
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_loading(true);
+                ui.set_oauth_waiting(false);
+            }
+            let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+            if let Ok(mut sender) = cancel_sender_for_action.lock() {
+                *sender = Some(cancel_tx);
+            }
+            let cancel_sender = cancel_sender_for_action.clone();
+            handle.spawn(async move {
+                let result =
+                    commands::auth::oauth_login(homeserver, client_state, Some(cancel_rx)).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Ok(mut sender) = cancel_sender.lock() {
+                        *sender = None;
+                    }
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    ui.set_loading(false);
+                    ui.set_oauth_waiting(false);
+                    match result {
+                        Ok(Some(message)) => {
+                            ui.set_password(slint::SharedString::new());
+                            show_toast(&ui, message, false);
+                            ui.set_active_page(1);
+                            ui.invoke_open_chat();
+                        }
+                        Ok(None) => {}
+                        Err(e) => show_toast(&ui, e, true),
+                    }
+                });
+            });
+        }
+    });
+
+    ui.global::<UiState>().on_logout({
+        let client_state = client_state.clone();
+        let handle = rt_handle.clone();
+        let ui_handle = ui_handle.clone();
+        move || {
+            let (client_state, ui_handle) = (client_state.clone(), ui_handle.clone());
+            if let Some(ui) = ui_handle.upgrade() {
+                let state = ui.global::<UiState>();
+                if state.get_logout_busy() || ui.get_loading() || ui.get_debug_busy() {
+                    return;
+                }
+                state.set_logout_busy(true);
+                ui.set_loading(true);
+            }
+            handle.spawn(async move {
+                let result = commands::auth::logout(client_state).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    reset_account_ui(&ui);
+                    match result {
+                        Ok(message) => show_toast(&ui, message, false),
+                        Err(error) => show_toast(&ui, error, true),
                     }
                 });
             });
@@ -1044,15 +1230,103 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let state = client_state.clone();
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
+        let mut identity_task: Option<tokio::task::JoinHandle<()>> = None;
+        let mut hierarchy_task: Option<tokio::task::JoinHandle<()>> = None;
         move || {
+            let chat_open_generation = CHAT_OPEN_GENERATION.with(|generation| {
+                let next = generation.get().wrapping_add(1);
+                generation.set(next);
+                next
+            });
+            if let Some(task) = identity_task.take() {
+                task.abort();
+            }
+            if let Some(task) = hierarchy_task.take() {
+                task.abort();
+            }
             let state = state.clone();
             let ui_handle = ui_handle.clone();
-            handle.spawn(async move {
-                let result = commands::spaces::get_space_hierarchy(state).await;
+            let identity_state = state.clone();
+            let identity_ui = ui_handle.clone();
+            let account_generation = ACCOUNT_GENERATION.with(std::cell::Cell::get);
+            identity_task = Some(handle.spawn(async move {
+                let Ok(client) = commands::get_active_client(&identity_state).await else {
+                    return;
+                };
+                let Some(user_id) = client.user_id() else {
+                    return;
+                };
+                let fallback_name = user_id.localpart().to_string();
+                let user_id = user_id.to_string();
+                let url = client.homeserver();
+                let homeserver = url[Position::BeforeHost..Position::BeforePath].to_owned();
+                let expected_user_id = user_id.clone();
+                let _ = slint::invoke_from_event_loop({
+                    let identity_ui = identity_ui.clone();
+                    move || {
+                        if let Some(ui) = identity_ui.upgrade() {
+                            if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation
+                                || CHAT_OPEN_GENERATION.with(std::cell::Cell::get)
+                                    != chat_open_generation
+                            {
+                                return;
+                            }
+                            let state = ui.global::<UiState>();
+                            state.set_account_user_id(user_id.into());
+                            state.set_account_display_name(fallback_name.into());
+                            state.set_account_homeserver(homeserver.into());
+                        }
+                    }
+                });
+
+                // The global profile lookup is optional and must not delay chat.
+                if let Ok(Some(display_name)) = client.account().get_display_name().await
+                    && !display_name.trim().is_empty()
+                {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = identity_ui.upgrade() {
+                            if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation
+                                || CHAT_OPEN_GENERATION.with(std::cell::Cell::get)
+                                    != chat_open_generation
+                            {
+                                return;
+                            }
+                            let state = ui.global::<UiState>();
+                            if state.get_account_user_id().as_str() == expected_user_id {
+                                state.set_account_display_name(display_name.into());
+                            }
+                        }
+                    });
+                }
+            }));
+            hierarchy_task = Some(handle.spawn(async move {
+                // Subscribe before reading the local store so a sync update that
+                // races the initial query remains buffered for the receiver.
+                let mut room_updates = {
+                    let Ok(client) = commands::get_active_client(&state).await else {
+                        return;
+                    };
+                    client.subscribe_to_all_room_updates()
+                };
+
+                let result = match commands::spaces::get_space_hierarchy(state.clone()).await {
+                    Ok(hierarchy) if hierarchy.is_empty() => match room_updates.recv().await {
+                        Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            commands::spaces::get_space_hierarchy(state).await
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                    },
+                    result => result,
+                };
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(ui) = ui_handle.upgrade() else {
                         return;
                     };
+                    if ACCOUNT_GENERATION.with(std::cell::Cell::get) != account_generation
+                        || CHAT_OPEN_GENERATION.with(std::cell::Cell::get) != chat_open_generation
+                    {
+                        return;
+                    }
                     match result {
                         Ok(hierarchy) => {
                             let flat = space_hierarchy_to_ui(hierarchy);
@@ -1080,7 +1354,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 });
-            });
+            }));
         }
     });
 
@@ -1452,14 +1726,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let ui_handle = ui_handle.clone();
         move || {
             if let Some(ui) = ui_handle.upgrade() {
-                let global = ui.global::<UiState>();
-                global.set_lightbox_visible(false);
-                global.set_lightbox_event_id(slint::SharedString::new());
-                global.set_lightbox_savable(false);
-                // Drop the held image now, rather than leaving a full
-                // resolution decode on the model until the next open
-                // overwrites it.
-                global.set_lightbox_image(slint::Image::default());
+                close_lightbox(&ui);
             }
         }
     });
@@ -1544,31 +1811,81 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
         let handle = rt_handle.clone();
         let ui_handle = ui_handle.clone();
         move |command, arg0, arg1, arg2, arg3| {
+            let Some(ui) = ui_handle.upgrade() else {
+                return;
+            };
+            if ui.get_debug_busy() || ui.get_loading() {
+                return;
+            }
+            let auth_command = matches!(
+                command.as_str(),
+                "register" | "login" | "oauth_login" | "restore_session" | "logout"
+            );
             let state = state.clone();
             let command = command.to_string();
-            let args: Vec<String> = vec![
+            let args = Zeroizing::new(vec![
                 arg0.to_string(),
                 arg1.to_string(),
                 arg2.to_string(),
                 arg3.to_string(),
-            ];
+            ]);
             let ui_handle = ui_handle.clone();
-            if let Some(ui) = ui_handle.upgrade() {
-                ui.set_debug_busy(true);
+            ui.set_debug_busy(true);
+            if auth_command {
+                ui.set_loading(true);
             }
             handle.spawn(async move {
                 let result = commands::debug::dispatch(&command, &args, state).await;
+                let command_succeeded = result.is_ok();
+                let did_logout = command == "logout";
                 let msg: slint::SharedString =
                     result.map_or_else(|e| format!("Error: {e}").into(), |s| s.into());
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(ui) = ui_handle.upgrade() {
+                        if did_logout {
+                            reset_account_ui(&ui);
+                        }
                         ui.set_debug_output(msg);
                         ui.set_debug_busy(false);
+                        if auth_command && command_succeeded {
+                            ui.set_password(slint::SharedString::new());
+                        }
+                        if auth_command && !did_logout {
+                            ui.set_loading(false);
+                        }
                     }
                 });
             });
         }
     });
+
+    match app_state.echelon_store.get_last() {
+        Ok(Some(user_id)) => {
+            // Disable login actions before the window is shown while the saved
+            // local session is being restored.
+            ui.set_loading(true);
+            let client_state = client_state.clone();
+            let ui_handle = ui_handle.clone();
+            rt_handle.spawn(async move {
+                let result = commands::auth::restore_session(user_id, None, client_state).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(ui) = ui_handle.upgrade() else {
+                        return;
+                    };
+                    ui.set_loading(false);
+                    match result {
+                        Ok(_) => {
+                            ui.set_active_page(1);
+                            ui.invoke_open_chat();
+                        }
+                        Err(e) => show_toast(&ui, e, true),
+                    }
+                });
+            });
+        }
+        Ok(None) => {}
+        Err(e) => show_toast(&ui, format!("Failed to read last account: {e}"), true),
+    }
 
     ui.run()?;
 

@@ -27,10 +27,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         arg_labels: &["homeserver"],
     },
     CommandSpec {
-        name: "oauth_register",
-        arg_labels: &["homeserver"],
-    },
-    CommandSpec {
         name: "logout",
         arg_labels: &[],
     },
@@ -83,8 +79,9 @@ pub async fn dispatch(
     match command {
         "login" => super::auth::login(arg(0), arg(1), arg(2), state).await,
         "register" => super::auth::register(arg(0), arg(1), arg(2), opt(3), state).await,
-        "oauth_login" => super::auth::oauth_login(arg(0), state).await,
-        "oauth_register" => super::auth::oauth_register(arg(0), state).await,
+        "oauth_login" => super::auth::oauth_login(arg(0), state, None)
+            .await
+            .map(|message| message.unwrap_or_else(|| "OAuth login cancelled".to_string())),
         "logout" => super::auth::logout(state).await,
         "restore_session" => super::auth::restore_session(arg(0), opt(1), state).await,
         "list_accounts" => super::auth::list_accounts(state).await,

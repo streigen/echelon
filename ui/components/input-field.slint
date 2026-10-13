@@ -70,6 +70,7 @@ export component CustomInput {
                 colorize: root.icon-color;
             }
             ta := TouchArea {
+                enabled: root.enabled;
                 clicked => { root.show-password = !root.show-password; }
                 mouse-cursor: pointer;
             }
